@@ -1,6 +1,7 @@
 #include <gtk/gtk.h>
 #include <cairo.h>
 #include "transmission/JackConnectionManager.h"
+#include "transmission/TransportClock.h"
 #include "transmission/Vst3EditorHost.h"
 
 #include <algorithm>
@@ -55,6 +56,13 @@ struct GraphView {
     std::array<std::string, 2> systemOutputConnections{"system:playback_1", "system:playback_2"};
     std::unique_ptr<transmission::JackConnectionManager> jackConnections;
     std::unique_ptr<transmission::Vst3EditorHost> editorHost;
+    transmission::TransportClock transport{48000.0};
+    guint transportTimer = 0;
+    GtkSpinButton* tempo = nullptr;
+    GtkSpinButton* loopBars = nullptr;
+    GtkToggleButton* loop = nullptr;
+    GtkWidget* playButton = nullptr;
+    GtkWidget* positionLabel = nullptr;
 };
 
 struct PluginDialogContext {
@@ -270,6 +278,64 @@ void showSystemDialog(GtkWidget* canvas, GraphView& view, bool input) {
     gtk_widget_show_all(dialog);
 }
 
+void updateTransportDisplay(GraphView& view) {
+    if (view.playButton)
+        gtk_button_set_label(GTK_BUTTON(view.playButton), view.transport.running() ? "Stop" : "Play");
+    if (view.positionLabel) {
+        const auto position = view.transport.positionBeats();
+        char text[96];
+        g_snprintf(text, sizeof(text), "%s  •  beat %.2f", view.transport.running() ? "Playing" : "Stopped",
+                   position);
+        gtk_label_set_text(GTK_LABEL(view.positionLabel), text);
+    }
+}
+
+gboolean transportTick(gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    if (!view.transport.running()) {
+        view.transportTimer = 0;
+        updateTransportDisplay(view);
+        return G_SOURCE_REMOVE;
+    }
+    view.transport.advance(1440); // 30 ms at the UI's nominal 48 kHz clock.
+    updateTransportDisplay(view);
+    return G_SOURCE_CONTINUE;
+}
+
+void startTransportTimer(GraphView& view) {
+    if (!view.transportTimer)
+        view.transportTimer = g_timeout_add(30, transportTick, &view);
+}
+
+void playStopClicked(GtkButton*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    if (view.transport.running()) {
+        view.transport.stop();
+    } else {
+        view.transport.start();
+        startTransportTimer(view);
+    }
+    updateTransportDisplay(view);
+}
+
+void tempoChanged(GtkSpinButton* spin, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    view.transport.setTempo(gtk_spin_button_get_value(spin), view.transport.positionBeats());
+}
+
+void loopChanged(GtkWidget*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    const auto bars = view.loopBars ? gtk_spin_button_get_value(view.loopBars) : 4.0;
+    const auto enabled = view.loop && gtk_toggle_button_get_active(view.loop);
+    view.transport.setLoop(0.0, std::max(1.0, bars) * 4.0, enabled);
+}
+
+void resetTransportClicked(GtkButton*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    view.transport.stop(true);
+    updateTransportDisplay(view);
+}
+
 void drawArrow(cairo_t* cr, double x1, double y1, double x2, double y2) {
     const double control = std::max(40.0, (x2 - x1) * 0.45);
     cairo_move_to(cr, x1, y1);
@@ -440,6 +506,48 @@ void activate(GtkApplication* application, gpointer) {
     gtk_widget_set_margin_start(title, 8);
     gtk_box_pack_start(GTK_BOX(frame), title, FALSE, FALSE, 0);
 
+    GtkWidget* transportBar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_margin_start(transportBar, 8);
+    gtk_widget_set_margin_end(transportBar, 8);
+    gtk_widget_set_margin_bottom(transportBar, 8);
+    auto* playButton = gtk_button_new_with_label("Play");
+    auto* resetButton = gtk_button_new_with_label("Reset");
+    gtk_box_pack_start(GTK_BOX(transportBar), playButton, FALSE, FALSE, 4);
+    gtk_box_pack_start(GTK_BOX(transportBar), resetButton, FALSE, FALSE, 4);
+    GtkWidget* tempoLabel = gtk_label_new("Tempo");
+    gtk_widget_set_margin_start(tempoLabel, 12);
+    gtk_box_pack_start(GTK_BOX(transportBar), tempoLabel, FALSE, FALSE, 4);
+    auto* tempo = GTK_SPIN_BUTTON(gtk_spin_button_new_with_range(20.0, 300.0, 1.0));
+    gtk_spin_button_set_value(tempo, 120.0);
+    gtk_spin_button_set_numeric(tempo, TRUE);
+    gtk_box_pack_start(GTK_BOX(transportBar), GTK_WIDGET(tempo), FALSE, FALSE, 4);
+    GtkWidget* loop = gtk_check_button_new_with_label("Loop");
+    gtk_widget_set_margin_start(loop, 12);
+    gtk_box_pack_start(GTK_BOX(transportBar), loop, FALSE, FALSE, 4);
+    GtkWidget* loopLabel = gtk_label_new("Length (bars)");
+    gtk_widget_set_margin_start(loopLabel, 4);
+    gtk_box_pack_start(GTK_BOX(transportBar), loopLabel, FALSE, FALSE, 4);
+    auto* loopBars = GTK_SPIN_BUTTON(gtk_spin_button_new_with_range(1.0, 64.0, 1.0));
+    gtk_spin_button_set_value(loopBars, 4.0);
+    gtk_spin_button_set_numeric(loopBars, TRUE);
+    gtk_box_pack_start(GTK_BOX(transportBar), GTK_WIDGET(loopBars), FALSE, FALSE, 4);
+    auto* positionLabel = gtk_label_new("Stopped  •  beat 0.00");
+    gtk_widget_set_margin_start(positionLabel, 16);
+    gtk_box_pack_start(GTK_BOX(transportBar), positionLabel, FALSE, FALSE, 4);
+    gtk_box_pack_start(GTK_BOX(frame), transportBar, FALSE, FALSE, 0);
+
+    view->tempo = tempo;
+    view->loopBars = loopBars;
+    view->loop = GTK_TOGGLE_BUTTON(loop);
+    view->playButton = playButton;
+    view->positionLabel = positionLabel;
+    loopChanged(nullptr, view);
+    g_signal_connect(playButton, "clicked", G_CALLBACK(playStopClicked), view);
+    g_signal_connect(resetButton, "clicked", G_CALLBACK(resetTransportClicked), view);
+    g_signal_connect(tempo, "value-changed", G_CALLBACK(tempoChanged), view);
+    g_signal_connect(loop, "toggled", G_CALLBACK(loopChanged), view);
+    g_signal_connect(loopBars, "value-changed", G_CALLBACK(loopChanged), view);
+
     GtkWidget* canvas = gtk_drawing_area_new();
     gtk_widget_set_hexpand(canvas, TRUE);
     gtk_widget_set_vexpand(canvas, TRUE);
@@ -452,7 +560,9 @@ void activate(GtkApplication* application, gpointer) {
     gtk_box_pack_start(GTK_BOX(frame), canvas, TRUE, TRUE, 0);
     gtk_container_add(GTK_CONTAINER(window), frame);
     g_signal_connect(window, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) {
-        delete static_cast<GraphView*>(data);
+        auto* view = static_cast<GraphView*>(data);
+        if (view->transportTimer) g_source_remove(view->transportTimer);
+        delete view;
     }), view);
     gtk_widget_show_all(window);
 }

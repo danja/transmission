@@ -125,6 +125,7 @@ if(TRANSMISSION_WITH_GTK_UI)
   add_executable(transmission_graph_ui
     src/native_graph_ui_main.cpp
     src/JackConnectionManager.cpp
+    src/TransportClock.cpp
     src/Vst3EditorHost.cpp
   )
   target_link_libraries(transmission_graph_ui PRIVATE PkgConfig::GTK3)

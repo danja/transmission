@@ -1,8 +1,15 @@
 #include <gtk/gtk.h>
 #include <cairo.h>
+#include "transmission/JackConnectionManager.h"
+#include "transmission/Vst3EditorHost.h"
 
 #include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -19,6 +26,7 @@ struct Node {
     std::size_t audioOutputs = 0;
     double x = 0.0;
     double y = 0.0;
+    std::string pluginPath;
 };
 
 struct Edge {
@@ -30,9 +38,9 @@ struct Edge {
 
 struct GraphView {
     std::vector<Node> nodes{
-        {"system-input", "System Input", true, 2, 0, 60.0, 150.0},
-        {"gain", "AGain / VST3", false, 2, 2, 340.0, 150.0},
-        {"system-output", "System Output", true, 0, 2, 620.0, 150.0},
+        {"system-input", "System Input", true, 0, 2, 60.0, 150.0, ""},
+        {"gain", "AGain / VST3", false, 2, 2, 340.0, 150.0, ""},
+        {"system-output", "System Output", true, 2, 0, 580.0, 150.0, ""},
     };
     std::vector<Edge> edges{{0, 1}, {1, 2}};
     std::size_t dragging = static_cast<std::size_t>(-1);
@@ -42,6 +50,25 @@ struct GraphView {
     std::size_t connectingPort = 0;
     double pointerX = 0.0;
     double pointerY = 0.0;
+    std::vector<std::string> pluginPaths;
+    std::array<std::string, 2> systemInputConnections{"system:capture_1", "system:capture_2"};
+    std::array<std::string, 2> systemOutputConnections{"system:playback_1", "system:playback_2"};
+    std::unique_ptr<transmission::JackConnectionManager> jackConnections;
+    std::unique_ptr<transmission::Vst3EditorHost> editorHost;
+};
+
+struct PluginDialogContext {
+    GraphView* view = nullptr;
+    GtkWidget* canvas = nullptr;
+    GtkWidget* dialog = nullptr;
+    GtkComboBoxText* selector = nullptr;
+};
+
+struct SystemDialogContext {
+    GraphView* view = nullptr;
+    GtkWidget* dialog = nullptr;
+    bool input = false;
+    std::array<GtkComboBoxText*, 2> selectors{};
 };
 
 Node* nodeAt(GraphView& view, double x, double y) {
@@ -78,6 +105,53 @@ PortHit portAt(const GraphView& view, double x, double y) {
     return {};
 }
 
+double pointToSegmentDistance(double px, double py, double x1, double y1, double x2, double y2) {
+    const double dx = x2 - x1;
+    const double dy = y2 - y1;
+    const double lengthSquared = dx * dx + dy * dy;
+    const double projection = lengthSquared == 0.0
+                                  ? 0.0
+                                  : std::clamp(((px - x1) * dx + (py - y1) * dy) / lengthSquared,
+                                               0.0, 1.0);
+    return std::hypot(px - (x1 + projection * dx), py - (y1 + projection * dy));
+}
+
+std::size_t edgeAt(const GraphView& view, double x, double y) {
+    constexpr double hitRadius = 9.0;
+    constexpr int samples = 32;
+    for (std::size_t edgeIndex = 0; edgeIndex < view.edges.size(); ++edgeIndex) {
+        const auto& edge = view.edges[edgeIndex];
+        const auto& from = view.nodes[edge.from];
+        const auto& to = view.nodes[edge.to];
+        const double x1 = from.x + nodeWidth;
+        const double y1 = portY(from, edge.fromPort);
+        const double x2 = to.x;
+        const double y2 = portY(to, edge.toPort);
+        const double control = std::max(40.0, (x2 - x1) * 0.45);
+        const double c1x = x1 + control;
+        const double c1y = y1;
+        const double c2x = x2 - control;
+        const double c2y = y2;
+        double previousX = x1;
+        double previousY = y1;
+        for (int sample = 1; sample <= samples; ++sample) {
+            const double t = static_cast<double>(sample) / samples;
+            const double inverse = 1.0 - t;
+            const double curveX = inverse * inverse * inverse * x1 +
+                                  3.0 * inverse * inverse * t * c1x +
+                                  3.0 * inverse * t * t * c2x + t * t * t * x2;
+            const double curveY = inverse * inverse * inverse * y1 +
+                                  3.0 * inverse * inverse * t * c1y +
+                                  3.0 * inverse * t * t * c2y + t * t * t * y2;
+            if (pointToSegmentDistance(x, y, previousX, previousY, curveX, curveY) <= hitRadius)
+                return edgeIndex;
+            previousX = curveX;
+            previousY = curveY;
+        }
+    }
+    return static_cast<std::size_t>(-1);
+}
+
 void drawPort(cairo_t* cr, double x, double y, bool output) {
     cairo_set_source_rgb(cr, output ? 0.42 : 0.28, output ? 0.74 : 0.62,
                          output ? 0.92 : 0.76);
@@ -87,6 +161,113 @@ void drawPort(cairo_t* cr, double x, double y, bool output) {
     cairo_set_line_width(cr, 1.5);
     cairo_arc(cr, x, y, 6.0, 0.0, 2.0 * M_PI);
     cairo_stroke(cr);
+}
+
+void addPluginFromDialog(GtkDialog*, gint response, gpointer data) {
+    auto* context = static_cast<PluginDialogContext*>(data);
+    if (response == GTK_RESPONSE_ACCEPT) {
+        const auto selected = gtk_combo_box_get_active(GTK_COMBO_BOX(context->selector));
+        if (selected >= 0 && static_cast<std::size_t>(selected) < context->view->pluginPaths.size()) {
+            const auto& path = context->view->pluginPaths[static_cast<std::size_t>(selected)];
+            const auto stem = std::filesystem::path(path).stem().string();
+            const auto id = "plugin-" + std::to_string(context->view->nodes.size());
+            const auto offset = static_cast<double>(context->view->nodes.size() % 3) * 35.0;
+            context->view->nodes.push_back({id, stem, false, 2, 2, 300.0 + offset,
+                                            300.0 + offset, path});
+            gtk_widget_queue_draw(context->canvas);
+        }
+    }
+    gtk_widget_destroy(context->dialog);
+    delete context;
+}
+
+void showPluginDialog(GtkWidget* canvas, GraphView& view) {
+    auto* dialog = gtk_dialog_new_with_buttons(
+        "Add VST3 Plugin", GTK_WINDOW(gtk_widget_get_toplevel(canvas)),
+        static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
+        "_Cancel", GTK_RESPONSE_CANCEL, "_Add", GTK_RESPONSE_ACCEPT, nullptr);
+    auto* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+    GtkWidget* label = gtk_label_new("Choose a bundle from ~/.vst3:");
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), label, FALSE, FALSE, 8);
+    auto* selector = GTK_COMBO_BOX_TEXT(gtk_combo_box_text_new());
+    for (const auto& path : view.pluginPaths)
+        gtk_combo_box_text_append_text(selector, std::filesystem::path(path).stem().c_str());
+    if (!view.pluginPaths.empty()) gtk_combo_box_set_active(GTK_COMBO_BOX(selector), 0);
+    gtk_widget_set_size_request(GTK_WIDGET(selector), 320, -1);
+    gtk_box_pack_start(GTK_BOX(content), GTK_WIDGET(selector), FALSE, FALSE, 0);
+    auto* context = new PluginDialogContext{&view, canvas, dialog, selector};
+    g_signal_connect(dialog, "response", G_CALLBACK(addPluginFromDialog), context);
+    gtk_widget_show_all(dialog);
+}
+
+void systemDialogResponse(GtkDialog*, gint response, gpointer data) {
+    auto* context = static_cast<SystemDialogContext*>(data);
+    if (response == GTK_RESPONSE_ACCEPT) {
+        auto& connections = context->input ? context->view->systemInputConnections
+                                           : context->view->systemOutputConnections;
+        for (std::size_t index = 0; index < connections.size(); ++index) {
+            if (auto* selected = gtk_combo_box_text_get_active_text(context->selectors[index])) {
+                std::string selectedName = selected;
+                std::string error;
+                const bool applied = !context->view->jackConnections->available() ||
+                    (context->input ? context->view->jackConnections->connectInput(index, selectedName, error)
+                                    : context->view->jackConnections->connectOutput(index, selectedName, error));
+                if (applied) connections[index] = std::move(selectedName);
+                g_free(selected);
+            }
+        }
+    }
+    gtk_widget_destroy(context->dialog);
+    delete context;
+}
+
+void showSystemDialog(GtkWidget* canvas, GraphView& view, bool input) {
+    auto* dialog = gtk_dialog_new_with_buttons(
+        input ? "System Input Connections" : "System Output Connections",
+        GTK_WINDOW(gtk_widget_get_toplevel(canvas)),
+        static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
+        "_Cancel", GTK_RESPONSE_CANCEL, "_Apply", GTK_RESPONSE_ACCEPT, nullptr);
+    auto* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+    GtkWidget* description = gtk_label_new(
+        input ? "Select the external source for each Transmission input channel."
+              : "Select the external destination for each Transmission output channel.");
+    gtk_label_set_xalign(GTK_LABEL(description), 0.0F);
+    gtk_label_set_line_wrap(GTK_LABEL(description), TRUE);
+    gtk_box_pack_start(GTK_BOX(content), description, FALSE, FALSE, 8);
+    auto* grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 8);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 12);
+    gtk_box_pack_start(GTK_BOX(content), grid, FALSE, FALSE, 0);
+    auto* context = new SystemDialogContext{&view, dialog, input, {}};
+    const auto& connections = input ? view.systemInputConnections : view.systemOutputConnections;
+    const auto jackPorts = input ? view.jackConnections->inputSources()
+                                 : view.jackConnections->outputDestinations();
+    for (std::size_t index = 0; index < connections.size(); ++index) {
+        GtkWidget* label = gtk_label_new(("Channel " + std::to_string(index + 1)).c_str());
+        gtk_widget_set_halign(label, GTK_ALIGN_START);
+        gtk_grid_attach(GTK_GRID(grid), label, 0, static_cast<gint>(index), 1, 1);
+        auto* selector = GTK_COMBO_BOX_TEXT(gtk_combo_box_text_new());
+        for (const auto& port : jackPorts) gtk_combo_box_text_append_text(selector, port.c_str());
+        if (jackPorts.empty()) {
+            const auto prefix = input ? "system:capture_" : "system:playback_";
+            gtk_combo_box_text_append_text(selector, (prefix + std::to_string(index + 1)).c_str());
+            gtk_combo_box_text_append_text(selector, (prefix + std::to_string(index == 0 ? 2 : 1)).c_str());
+        }
+        gtk_combo_box_text_append_text(selector, "No connection");
+        gint active = 0;
+        for (gint option = 0; option < static_cast<gint>(jackPorts.size()); ++option)
+            if (connections[index] == jackPorts[static_cast<std::size_t>(option)]) active = option;
+        if (connections[index] == "No connection") active = static_cast<gint>(jackPorts.size()) +
+                                                             (jackPorts.empty() ? 2 : 0);
+        gtk_combo_box_set_active(GTK_COMBO_BOX(selector), active);
+        gtk_grid_attach(GTK_GRID(grid), GTK_WIDGET(selector), 1, static_cast<gint>(index), 1, 1);
+        context->selectors[index] = selector;
+    }
+    g_signal_connect(dialog, "response", G_CALLBACK(systemDialogResponse), context);
+    gtk_widget_show_all(dialog);
 }
 
 void drawArrow(cairo_t* cr, double x1, double y1, double x2, double y2) {
@@ -141,7 +322,9 @@ gboolean drawGraph(GtkWidget*, cairo_t* cr, gpointer data) {
         cairo_set_font_size(cr, 11.0);
         cairo_set_source_rgb(cr, 0.70, 0.75, 0.82);
         cairo_move_to(cr, node.x + 15.0, node.y + 68.0);
-        cairo_show_text(cr, node.system ? "audio ports" : "audio processor");
+        cairo_show_text(cr, node.id == "system-input" ? "audio outputs"
+                                                        : node.id == "system-output" ? "audio inputs"
+                                                                                       : "audio processor");
         for (std::size_t port = 0; port < node.audioInputs; ++port)
             drawPort(cr, node.x, portY(node, port), false);
         for (std::size_t port = 0; port < node.audioOutputs; ++port)
@@ -151,8 +334,32 @@ gboolean drawGraph(GtkWidget*, cairo_t* cr, gpointer data) {
 }
 
 gboolean buttonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
-    if (event->button != GDK_BUTTON_PRIMARY) return FALSE;
     auto& view = *static_cast<GraphView*>(data);
+    if (event->button == GDK_BUTTON_SECONDARY) {
+        const auto edge = edgeAt(view, event->x, event->y);
+        if (edge != static_cast<std::size_t>(-1)) {
+            view.edges.erase(view.edges.begin() + static_cast<std::ptrdiff_t>(edge));
+            gtk_widget_queue_draw(widget);
+            return TRUE;
+        }
+        if (!nodeAt(view, event->x, event->y) &&
+            portAt(view, event->x, event->y).node == static_cast<std::size_t>(-1))
+            showPluginDialog(widget, view);
+        return TRUE;
+    }
+    if (event->button != GDK_BUTTON_PRIMARY) return FALSE;
+    if (event->type == GDK_2BUTTON_PRESS) {
+        if (auto* node = nodeAt(view, event->x, event->y);
+            node && !node->pluginPath.empty() && view.editorHost) {
+            view.editorHost->open(node->pluginPath, node->label);
+            return TRUE;
+        }
+        if (auto* node = nodeAt(view, event->x, event->y);
+            node && node->system) {
+            showSystemDialog(widget, view, node->id == "system-input");
+            return TRUE;
+        }
+    }
     const auto hit = portAt(view, event->x, event->y);
     if (hit.output) {
         view.connectingFrom = hit.node;
@@ -210,12 +417,23 @@ gboolean buttonRelease(GtkWidget* widget, GdkEventButton* event, gpointer data) 
 
 void activate(GtkApplication* application, gpointer) {
     auto* view = new GraphView();
+    view->jackConnections = std::make_unique<transmission::JackConnectionManager>();
+    view->editorHost = std::make_unique<transmission::Vst3EditorHost>();
+    const char* home = std::getenv("HOME");
+    const auto pluginRoot = std::filesystem::path(home ? home : ".") / ".vst3";
+    if (std::filesystem::is_directory(pluginRoot)) {
+        for (const auto& entry : std::filesystem::directory_iterator(pluginRoot)) {
+            if (entry.is_directory() && entry.path().extension() == ".vst3")
+                view->pluginPaths.push_back(entry.path().string());
+        }
+        std::sort(view->pluginPaths.begin(), view->pluginPaths.end());
+    }
     GtkWidget* window = gtk_application_window_new(application);
     gtk_window_set_title(GTK_WINDOW(window), "Transmission — Graph");
     gtk_window_set_default_size(GTK_WINDOW(window), 900, 520);
 
     GtkWidget* frame = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    GtkWidget* title = gtk_label_new("  Transmission   •   drag nodes   •   connect output sockets to input sockets");
+    GtkWidget* title = gtk_label_new("  Transmission   •   right-click the graph background to add a VST3 plugin, or a connection to remove it");
     gtk_widget_set_halign(title, GTK_ALIGN_START);
     gtk_widget_set_margin_top(title, 12);
     gtk_widget_set_margin_bottom(title, 12);

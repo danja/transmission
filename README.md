@@ -31,7 +31,14 @@ cmake --build native/build
 ctest --test-dir native/build --output-on-failure
 ```
 
-The native engine currently provides lifecycle, transport, linear and routed graph execution, fake-device, VST3 discovery, metadata inspection, a deterministic VST3 processing probe, a reusable VST3 processor inside `AudioGraph`, and an optional N-API control addon. The VST3-enabled addon can construct routed processors directly from compiled node settings; JACK/PipeWire production device hosting and the UI remain subsequent implementation slices.
+The complete local build, including JavaScript checks/tests, native CTest, JACK tools, and the GTK/JACK/VST3 UI, is available as:
+
+```sh
+./build.sh
+./transmission
+```
+
+The native engine currently provides lifecycle, transport, linear and routed graph execution, fake-device, VST3 discovery, metadata inspection, a deterministic VST3 processing probe, a reusable VST3 processor inside `AudioGraph`, and an optional N-API control addon. The VST3-enabled addon can construct routed processors directly from compiled node settings. The native UI includes a modular graph canvas, VST3 browsing/editor embedding, and JACK-backed external connection management for system I/O nodes.
 
 Build and smoke-test the optional Node addon:
 
@@ -51,7 +58,32 @@ cmake --build native/build-ui --target transmission_graph_ui
 native/build-ui/transmission_graph_ui
 ```
 
-The current editor is a deliberately small native canvas: it renders node/arc topology, identifies system audio input/output nodes, supports dragging nodes, and allows new audio arcs to be drawn from output sockets to input sockets. Project loading, graph editing commands, and native/Node synchronization are the next UI slices.
+The current editor is a deliberately small native canvas: it renders node/arc topology, identifies system audio input/output nodes with correctly directed sockets, opens per-channel external-connection dialogs for those nodes, discovers JACK ports when enabled, applies JACK connections to the running engine, discovers bundles from `~/.vst3`, opens a modal plugin chooser from the graph background’s context menu, creates plugin nodes carrying their bundle paths, supports dragging nodes, and allows new audio arcs to be drawn from output sockets to input sockets. Project loading, graph editing commands, and native/Node synchronization are the next UI slices.
+
+Build the VST3-enabled UI to open native plugin editors by double-clicking plugin nodes:
+
+```sh
+cmake -S native -B native/build-ui-vst3 \
+  -DTRANSMISSION_WITH_GTK_UI=ON -DTRANSMISSION_WITH_VST3=ON \
+  -DTRANSMISSION_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build native/build-ui-vst3 --target transmission_graph_ui
+native/build-ui-vst3/transmission_graph_ui
+```
+
+For the GTK UI with native VST3 editors and JACK external-port management:
+
+```sh
+cmake -S native -B native/build-ui-jack-vst3 \
+  -DTRANSMISSION_WITH_GTK_UI=ON -DTRANSMISSION_WITH_JACK=ON \
+  -DTRANSMISSION_WITH_VST3=ON -DTRANSMISSION_BUILD_TESTS=OFF \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build native/build-ui-jack-vst3 --target transmission_graph_ui
+native/build-ui-jack-vst3/transmission_graph_ui
+```
+
+The System Input and System Output dialogs enumerate JACK ports on demand and apply connections to `transmission:in_N` and `transmission:out_N`. The Transmission engine must already be running in the same JACK server for routes to apply.
+
+On Linux the editor host embeds the VST3 `IPlugView` through X11 and supplies the SDK run-loop interface using GTK timers. Double-clicking system nodes has no editor action.
 
 To build the addon with VST3 node construction enabled:
 

@@ -87,14 +87,6 @@ if(TRANSMISSION_WITH_NAPI AND TRANSMISSION_WITH_JACK)
   target_compile_definitions(transmission_native PRIVATE TRANSMISSION_NAPI_WITH_JACK=1)
 endif()
 
-if(TRANSMISSION_WITH_GTK_UI)
-  find_package(PkgConfig REQUIRED)
-  pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
-  add_executable(transmission_graph_ui src/native_graph_ui_main.cpp)
-  target_link_libraries(transmission_graph_ui PRIVATE PkgConfig::GTK3)
-  target_compile_options(transmission_graph_ui PRIVATE -Wall -Wextra -Wpedantic)
-endif()
-
 # JACK/PipeWire and the Node bridge sit behind these stable engine interfaces.
 # Keeping the default target dependency-free makes lifecycle tests fast.
 if(TRANSMISSION_BUILD_TESTS)
@@ -125,4 +117,29 @@ if(TRANSMISSION_BUILD_TESTS)
   add_executable(transmission_transport_test tests/TransportClockTest.cpp)
   target_link_libraries(transmission_transport_test PRIVATE transmission_engine)
   add_test(NAME transmission_transport_test COMMAND transmission_transport_test)
+endif()
+
+if(TRANSMISSION_WITH_GTK_UI)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
+  add_executable(transmission_graph_ui
+    src/native_graph_ui_main.cpp
+    src/JackConnectionManager.cpp
+    src/Vst3EditorHost.cpp
+  )
+  target_link_libraries(transmission_graph_ui PRIVATE PkgConfig::GTK3)
+  target_include_directories(transmission_graph_ui PRIVATE include)
+  target_compile_options(transmission_graph_ui PRIVATE -Wall -Wextra -Wpedantic)
+  if(TRANSMISSION_WITH_VST3)
+    target_compile_definitions(transmission_graph_ui PRIVATE TRANSMISSION_UI_WITH_VST3=1)
+    target_include_directories(transmission_graph_ui PRIVATE "${VST3_SDK_ROOT}")
+    target_link_libraries(transmission_graph_ui PRIVATE transmission_vst3_inspector)
+  endif()
+  if(TRANSMISSION_WITH_JACK)
+    find_path(TRANSMISSION_UI_JACK_INCLUDE_DIR jack/jack.h REQUIRED)
+    find_library(TRANSMISSION_UI_JACK_LIBRARY jack REQUIRED)
+    target_compile_definitions(transmission_graph_ui PRIVATE TRANSMISSION_UI_WITH_JACK=1)
+    target_include_directories(transmission_graph_ui PRIVATE "${TRANSMISSION_UI_JACK_INCLUDE_DIR}")
+    target_link_libraries(transmission_graph_ui PRIVATE "${TRANSMISSION_UI_JACK_LIBRARY}")
+  endif()
 endif()

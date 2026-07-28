@@ -1,6 +1,7 @@
 // native/tests/AudioEngineTest.cpp
 
 #include "transmission/AudioEngine.h"
+#include "transmission/FakeAudioDevice.h"
 
 #include <cassert>
 
@@ -22,5 +23,25 @@ int main() {
     assert(!engine.loadRuntimeGraph(R"({"version":1})"));
     engine.stop();
     assert(!engine.diagnostics().running);
+
+    transmission::FakeAudioDevice device;
+    assert(engine.configureDevice(device, {1, 4, 48000.0}));
+    auto graph = std::make_unique<transmission::AudioGraph>();
+    graph->addProcessor(std::make_unique<transmission::PassThroughProcessor>());
+    assert(engine.setAudioGraph(std::move(graph), 1, 4));
+    assert(engine.start());
+    const float input[] = {1.0F, 2.0F, 3.0F, 4.0F};
+    float output[] = {0.0F, 0.0F, 0.0F, 0.0F};
+    const float* inputs[] = {input};
+    float* outputs[] = {output};
+    assert(device.render(inputs, outputs));
+    assert(output[3] == 4.0F);
+    assert(engine.diagnostics().processedBlocks == 1);
+    transmission::MidiEvent noteOn;
+    noteOn.size = 3;
+    noteOn.data = {0x90, 60, 100};
+    engine.handleMidi(noteOn);
+    assert(engine.diagnostics().midiEvents == 1);
+    engine.stop();
     return 0;
 }

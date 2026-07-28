@@ -25,30 +25,37 @@ struct Node {
     bool system = false;
     std::size_t audioInputs = 0;
     std::size_t audioOutputs = 0;
+    std::size_t midiInputs = 0;
+    std::size_t midiOutputs = 0;
     double x = 0.0;
     double y = 0.0;
     std::string pluginPath;
 };
+
+enum class PortKind { Audio, Midi };
 
 struct Edge {
     std::size_t from;
     std::size_t to;
     std::size_t fromPort = 0;
     std::size_t toPort = 0;
+    PortKind kind = PortKind::Audio;
 };
 
 struct GraphView {
     std::vector<Node> nodes{
-        {"system-input", "System Input", true, 0, 2, 60.0, 150.0, ""},
-        {"gain", "AGain / VST3", false, 2, 2, 340.0, 150.0, ""},
-        {"system-output", "System Output", true, 2, 0, 580.0, 150.0, ""},
+        {"system-input", "System Input", true, 0, 2, 0, 1, 60.0, 150.0, ""},
+        {"gain", "AGain / VST3", false, 2, 2, 1, 1, 340.0, 150.0, ""},
+        {"system-output", "System Output", true, 2, 0, 1, 0, 580.0, 150.0, ""},
     };
-    std::vector<Edge> edges{{0, 1}, {1, 2}};
+    std::vector<Edge> edges{{0, 1, 0, 0, PortKind::Audio}, {1, 2, 0, 0, PortKind::Audio},
+                            {0, 1, 0, 0, PortKind::Midi}, {1, 2, 0, 0, PortKind::Midi}};
     std::size_t dragging = static_cast<std::size_t>(-1);
     double dragX = 0.0;
     double dragY = 0.0;
     std::size_t connectingFrom = static_cast<std::size_t>(-1);
     std::size_t connectingPort = 0;
+    PortKind connectingKind = PortKind::Audio;
     double pointerX = 0.0;
     double pointerY = 0.0;
     std::vector<std::string> pluginPaths;
@@ -79,6 +86,12 @@ struct SystemDialogContext {
     std::array<GtkComboBoxText*, 2> selectors{};
 };
 
+struct NodeMenuContext {
+    GraphView* view = nullptr;
+    GtkWidget* canvas = nullptr;
+    std::size_t node = static_cast<std::size_t>(-1);
+};
+
 Node* nodeAt(GraphView& view, double x, double y) {
     for (auto it = view.nodes.rbegin(); it != view.nodes.rend(); ++it) {
         if (x >= it->x && x <= it->x + nodeWidth &&
@@ -95,7 +108,12 @@ struct PortHit {
     std::size_t node = static_cast<std::size_t>(-1);
     std::size_t port = 0;
     bool output = false;
+    PortKind kind = PortKind::Audio;
 };
+
+double midiPortY(const Node& node, std::size_t port) {
+    return node.y + nodeHeight - 14.0 - static_cast<double>(port) * portSpacing;
+}
 
 PortHit portAt(const GraphView& view, double x, double y) {
     constexpr double radius = 9.0;
@@ -103,11 +121,19 @@ PortHit portAt(const GraphView& view, double x, double y) {
         const auto& node = view.nodes[index];
         for (std::size_t port = 0; port < node.audioInputs; ++port) {
             if (std::hypot(x - node.x, y - portY(node, port)) <= radius)
-                return {index, port, false};
+                return {index, port, false, PortKind::Audio};
         }
         for (std::size_t port = 0; port < node.audioOutputs; ++port) {
             if (std::hypot(x - (node.x + nodeWidth), y - portY(node, port)) <= radius)
-                return {index, port, true};
+                return {index, port, true, PortKind::Audio};
+        }
+        for (std::size_t port = 0; port < node.midiInputs; ++port) {
+            if (std::hypot(x - node.x, y - midiPortY(node, port)) <= radius)
+                return {index, port, false, PortKind::Midi};
+        }
+        for (std::size_t port = 0; port < node.midiOutputs; ++port) {
+            if (std::hypot(x - (node.x + nodeWidth), y - midiPortY(node, port)) <= radius)
+                return {index, port, true, PortKind::Midi};
         }
     }
     return {};
@@ -132,9 +158,11 @@ std::size_t edgeAt(const GraphView& view, double x, double y) {
         const auto& from = view.nodes[edge.from];
         const auto& to = view.nodes[edge.to];
         const double x1 = from.x + nodeWidth;
-        const double y1 = portY(from, edge.fromPort);
+        const double y1 = edge.kind == PortKind::Midi ? midiPortY(from, edge.fromPort)
+                                                       : portY(from, edge.fromPort);
         const double x2 = to.x;
-        const double y2 = portY(to, edge.toPort);
+        const double y2 = edge.kind == PortKind::Midi ? midiPortY(to, edge.toPort)
+                                                       : portY(to, edge.toPort);
         const double control = std::max(40.0, (x2 - x1) * 0.45);
         const double c1x = x1 + control;
         const double c1y = y1;
@@ -160,9 +188,12 @@ std::size_t edgeAt(const GraphView& view, double x, double y) {
     return static_cast<std::size_t>(-1);
 }
 
-void drawPort(cairo_t* cr, double x, double y, bool output) {
-    cairo_set_source_rgb(cr, output ? 0.42 : 0.28, output ? 0.74 : 0.62,
-                         output ? 0.92 : 0.76);
+void drawPort(cairo_t* cr, double x, double y, bool output, PortKind kind) {
+    if (kind == PortKind::Midi)
+        cairo_set_source_rgb(cr, output ? 0.90 : 0.68, output ? 0.40 : 0.30, 0.78);
+    else
+        cairo_set_source_rgb(cr, output ? 0.42 : 0.28, output ? 0.74 : 0.62,
+                             output ? 0.92 : 0.76);
     cairo_arc(cr, x, y, 6.0, 0.0, 2.0 * M_PI);
     cairo_fill(cr);
     cairo_set_source_rgb(cr, 0.08, 0.10, 0.14);
@@ -180,7 +211,7 @@ void addPluginFromDialog(GtkDialog*, gint response, gpointer data) {
             const auto stem = std::filesystem::path(path).stem().string();
             const auto id = "plugin-" + std::to_string(context->view->nodes.size());
             const auto offset = static_cast<double>(context->view->nodes.size() % 3) * 35.0;
-            context->view->nodes.push_back({id, stem, false, 2, 2, 300.0 + offset,
+            context->view->nodes.push_back({id, stem, false, 2, 2, 1, 1, 300.0 + offset,
                                             300.0 + offset, path});
             gtk_widget_queue_draw(context->canvas);
         }
@@ -336,6 +367,51 @@ void resetTransportClicked(GtkButton*, gpointer data) {
     updateTransportDisplay(view);
 }
 
+void destroyNodeMenuContext(GtkWidget*, gpointer data) {
+    delete static_cast<NodeMenuContext*>(data);
+}
+
+void editNodeFromMenu(GtkMenuItem*, gpointer data) {
+    auto* context = static_cast<NodeMenuContext*>(data);
+    if (context->node >= context->view->nodes.size()) return;
+    auto& node = context->view->nodes[context->node];
+    if (node.system) {
+        showSystemDialog(context->canvas, *context->view, node.id == "system-input");
+    } else if (!node.pluginPath.empty() && context->view->editorHost) {
+        context->view->editorHost->open(node.pluginPath, node.label);
+    }
+}
+
+void removeNodeFromMenu(GtkMenuItem*, gpointer data) {
+    auto* context = static_cast<NodeMenuContext*>(data);
+    auto& view = *context->view;
+    if (context->node >= view.nodes.size()) return;
+    view.edges.erase(std::remove_if(view.edges.begin(), view.edges.end(), [&](const auto& edge) {
+        return edge.from == context->node || edge.to == context->node;
+    }), view.edges.end());
+    view.nodes.erase(view.nodes.begin() + static_cast<std::ptrdiff_t>(context->node));
+    for (auto& edge : view.edges) {
+        if (edge.from > context->node) --edge.from;
+        if (edge.to > context->node) --edge.to;
+    }
+    gtk_widget_queue_draw(context->canvas);
+}
+
+void showNodeMenu(GtkWidget* canvas, GraphView& view, std::size_t nodeIndex, GdkEventButton* event) {
+    auto* menu = gtk_menu_new();
+    auto* edit = gtk_menu_item_new_with_label("Edit");
+    auto* remove = gtk_menu_item_new_with_label("Remove");
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), edit);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), remove);
+    auto* context = new NodeMenuContext{&view, canvas, nodeIndex};
+    g_signal_connect(edit, "activate", G_CALLBACK(editNodeFromMenu), context);
+    g_signal_connect(remove, "activate", G_CALLBACK(removeNodeFromMenu), context);
+    g_signal_connect_data(menu, "destroy", G_CALLBACK(destroyNodeMenuContext), context, nullptr,
+                          static_cast<GConnectFlags>(0));
+    gtk_widget_show_all(menu);
+    gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
+}
+
 void drawArrow(cairo_t* cr, double x1, double y1, double x2, double y2) {
     const double control = std::max(40.0, (x2 - x1) * 0.45);
     cairo_move_to(cr, x1, y1);
@@ -359,15 +435,26 @@ gboolean drawGraph(GtkWidget*, cairo_t* cr, gpointer data) {
     for (const auto& edge : view.edges) {
         const auto& from = view.nodes[edge.from];
         const auto& to = view.nodes[edge.to];
-        drawArrow(cr, from.x + nodeWidth, portY(from, edge.fromPort),
-                  to.x, portY(to, edge.toPort));
+        const double fromY = edge.kind == PortKind::Midi ? midiPortY(from, edge.fromPort)
+                                                          : portY(from, edge.fromPort);
+        const double toY = edge.kind == PortKind::Midi ? midiPortY(to, edge.toPort)
+                                                        : portY(to, edge.toPort);
+        if (edge.kind == PortKind::Midi)
+            cairo_set_source_rgb(cr, 0.86, 0.34, 0.76);
+        else
+            cairo_set_source_rgb(cr, 0.32, 0.62, 0.86);
+        drawArrow(cr, from.x + nodeWidth, fromY, to.x, toY);
     }
 
     if (view.connectingFrom != static_cast<std::size_t>(-1)) {
         const auto& from = view.nodes[view.connectingFrom];
-        cairo_set_source_rgb(cr, 0.74, 0.80, 0.94);
+        cairo_set_source_rgb(cr, view.connectingKind == PortKind::Midi ? 0.94 : 0.74,
+                             view.connectingKind == PortKind::Midi ? 0.48 : 0.80,
+                             view.connectingKind == PortKind::Midi ? 0.84 : 0.94);
         cairo_set_line_width(cr, 2.0);
-        drawArrow(cr, from.x + nodeWidth, portY(from, view.connectingPort),
+        const auto y = view.connectingKind == PortKind::Midi ? midiPortY(from, view.connectingPort)
+                                                               : portY(from, view.connectingPort);
+        drawArrow(cr, from.x + nodeWidth, y,
                   view.pointerX, view.pointerY);
     }
 
@@ -388,13 +475,17 @@ gboolean drawGraph(GtkWidget*, cairo_t* cr, gpointer data) {
         cairo_set_font_size(cr, 11.0);
         cairo_set_source_rgb(cr, 0.70, 0.75, 0.82);
         cairo_move_to(cr, node.x + 15.0, node.y + 68.0);
-        cairo_show_text(cr, node.id == "system-input" ? "audio outputs"
-                                                        : node.id == "system-output" ? "audio inputs"
-                                                                                       : "audio processor");
+        cairo_show_text(cr, node.id == "system-input" ? "audio + MIDI outputs"
+                                                        : node.id == "system-output" ? "audio + MIDI inputs"
+                                                                                       : "audio + MIDI processor");
         for (std::size_t port = 0; port < node.audioInputs; ++port)
-            drawPort(cr, node.x, portY(node, port), false);
+            drawPort(cr, node.x, portY(node, port), false, PortKind::Audio);
         for (std::size_t port = 0; port < node.audioOutputs; ++port)
-            drawPort(cr, node.x + nodeWidth, portY(node, port), true);
+            drawPort(cr, node.x + nodeWidth, portY(node, port), true, PortKind::Audio);
+        for (std::size_t port = 0; port < node.midiInputs; ++port)
+            drawPort(cr, node.x, midiPortY(node, port), false, PortKind::Midi);
+        for (std::size_t port = 0; port < node.midiOutputs; ++port)
+            drawPort(cr, node.x + nodeWidth, midiPortY(node, port), true, PortKind::Midi);
     }
     return FALSE;
 }
@@ -408,9 +499,11 @@ gboolean buttonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
             gtk_widget_queue_draw(widget);
             return TRUE;
         }
-        if (!nodeAt(view, event->x, event->y) &&
-            portAt(view, event->x, event->y).node == static_cast<std::size_t>(-1))
+        if (auto* node = nodeAt(view, event->x, event->y)) {
+            showNodeMenu(widget, view, static_cast<std::size_t>(node - view.nodes.data()), event);
+        } else if (portAt(view, event->x, event->y).node == static_cast<std::size_t>(-1)) {
             showPluginDialog(widget, view);
+        }
         return TRUE;
     }
     if (event->button != GDK_BUTTON_PRIMARY) return FALSE;
@@ -430,6 +523,7 @@ gboolean buttonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
     if (hit.output) {
         view.connectingFrom = hit.node;
         view.connectingPort = hit.port;
+        view.connectingKind = hit.kind;
         view.pointerX = event->x;
         view.pointerY = event->y;
         gtk_widget_queue_draw(widget);
@@ -465,13 +559,15 @@ gboolean buttonRelease(GtkWidget* widget, GdkEventButton* event, gpointer data) 
     auto& view = *static_cast<GraphView*>(data);
     if (view.connectingFrom != static_cast<std::size_t>(-1)) {
         const auto hit = portAt(view, event->x, event->y);
-        if (!hit.output && hit.node != static_cast<std::size_t>(-1) && hit.node != view.connectingFrom) {
+        if (!hit.output && hit.node != static_cast<std::size_t>(-1) && hit.node != view.connectingFrom &&
+            hit.kind == view.connectingKind) {
             const auto duplicate = std::find_if(view.edges.begin(), view.edges.end(), [&](const auto& edge) {
                 return edge.from == view.connectingFrom && edge.fromPort == view.connectingPort &&
-                       edge.to == hit.node && edge.toPort == hit.port;
+                       edge.to == hit.node && edge.toPort == hit.port && edge.kind == view.connectingKind;
             });
             if (duplicate == view.edges.end())
-                view.edges.push_back({view.connectingFrom, hit.node, view.connectingPort, hit.port});
+                view.edges.push_back({view.connectingFrom, hit.node, view.connectingPort, hit.port,
+                                      view.connectingKind});
         }
         view.connectingFrom = static_cast<std::size_t>(-1);
         gtk_widget_queue_draw(widget);

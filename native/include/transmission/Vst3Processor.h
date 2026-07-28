@@ -30,10 +30,15 @@ public:
 
     /** Queue a normalized parameter value for the next process block. */
     bool setParameter(std::uint32_t parameterId, double normalizedValue,
-                      std::string& error);
+                      std::string& error) override;
+    bool enqueueParameter(std::uint32_t parameterId, double normalizedValue) noexcept override;
+    void applyPendingParameters() noexcept override;
 
     void process(const float* const* inputs, float* const* outputs,
                  std::size_t channels, std::size_t frames) noexcept override;
+    void processWithMidi(const float* const* inputs, float* const* outputs,
+                         std::size_t channels, std::size_t frames,
+                         const MidiEvent* events, std::size_t eventCount) noexcept override;
 
 private:
     struct Impl;

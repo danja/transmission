@@ -8,11 +8,13 @@ export class EngineSession {
     this.bridge = bridge
     this.project = project
     this.state = 'idle'
+    this.engineCreated = false
   }
 
   open(definition, filePath = null) {
     if (this.state === 'running') throw new Error('Stop audio before opening a project')
     const compiled = this.project.open(definition, filePath)
+    this.#ensureEngine()
     this.bridge.loadProject(compiled)
     this.#configureTransport()
     this.state = 'loaded'
@@ -22,6 +24,7 @@ export class EngineSession {
   update(mutator) {
     if (this.state === 'running') throw new Error('Stop audio before editing the runtime graph')
     const compiled = this.project.update(mutator)
+    this.#ensureEngine()
     this.bridge.loadProject(compiled)
     this.#configureTransport()
     this.state = 'loaded'
@@ -60,9 +63,17 @@ export class EngineSession {
     }
   }
 
+  #ensureEngine() {
+    if (!this.engineCreated && typeof this.bridge.createEngine === 'function') {
+      this.bridge.createEngine()
+      this.engineCreated = true
+    }
+  }
+
   dispose() {
     this.stop()
     this.bridge.dispose()
+    this.engineCreated = false
     this.state = 'disposed'
   }
 }

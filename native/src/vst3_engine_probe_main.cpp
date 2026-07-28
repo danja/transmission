@@ -47,6 +47,10 @@ int main(int argc, char** argv) {
             input[channel][frame] = static_cast<float>(0.25 * std::sin(
                 2.0 * 3.141592653589793 * 220.0 * frame / sampleRate));
     }
+    transmission::MidiEvent noteOn;
+    noteOn.size = 3;
+    noteOn.data = {0x90, 60, 100};
+    engine.handleMidi(noteOn);
     if (!device.render(inputs.data(), outputs.data())) {
         engine.stop();
         std::cerr << "device render failed\n";
@@ -60,6 +64,7 @@ int main(int argc, char** argv) {
     std::cout << "plugin=" << pluginName << "\n"
               << "processedBlocks=" << diagnostics.processedBlocks << "\n"
               << "underruns=" << diagnostics.underruns << "\n"
+              << "midiEvents=" << diagnostics.midiEvents << "\n"
               << "outputRms=" << std::sqrt(energy / (channels * frames)) << "\n";
     return 0;
 }

@@ -40,6 +40,18 @@ When implementing:
 
 Before handoff, run the narrowest relevant tests, a Node type check or build, and a native configure/build check when native code changed. Report any environment-dependent tests separately.
 
+## Native UI screenshot workflow
+
+When visually checking the GTK UI on the host desktop, use the active X11 session rather than the sandbox display:
+
+```sh
+DISPLAY=:0 XAUTHORITY=/run/user/1000/gdm/Xauthority native/build-ui/transmission_graph_ui
+wmctrl -lG
+DISPLAY=:0 XAUTHORITY=/run/user/1000/gdm/Xauthority import -window <window-id> /tmp/transmission-ui.png
+```
+
+Keep the UI running in a terminal session while iterating. Inspect the captured PNG with the image viewer tool. `gnome-screenshot` can capture the whole desktop, but ImageMagick `import -window` is more reliable for the specific GTK window.
+
 ## VST3 and licensing
 
 Use `/chalet/VST_SDK/vst3sdk` as the local SDK reference. Check the SDK licensing and redistribution requirements before packaging or distributing binaries.

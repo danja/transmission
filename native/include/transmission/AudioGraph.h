@@ -17,6 +17,9 @@ public:
     bool prepare(std::size_t channels, std::size_t frames) noexcept;
     void process(const float* const* inputs, float* const* outputs,
                  std::size_t channels, std::size_t frames) noexcept;
+    void processWithMidi(const float* const* inputs, float* const* outputs,
+                         std::size_t channels, std::size_t frames,
+                         const MidiEvent* events, std::size_t eventCount) noexcept;
 
     std::size_t processorCount() const noexcept { return processors_.size(); }
 

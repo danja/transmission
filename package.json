@@ -10,7 +10,9 @@
     "test:watch": "vitest",
     "check": "node --check src/model/Graph.js && node --check src/compiler/GraphCompiler.js && node --check src/bridge/NativeBridge.js",
     "native:configure": "cmake -S native -B native/build",
-    "native:build": "cmake --build native/build"
+    "native:build": "cmake --build native/build",
+    "native:configure:napi": "cmake -S native -B native/build-napi -DTRANSMISSION_WITH_NAPI=ON",
+    "native:build:napi": "cmake --build native/build-napi --target transmission_native"
   },
   "dependencies": {
     "@rdfjs/parser-n3": "^2.1.0",

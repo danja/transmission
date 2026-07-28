@@ -37,9 +37,46 @@ bool AudioEngine::setAudioGraph(std::unique_ptr<AudioGraph> graph,
     if (device_ && (channels != deviceConfig_.channels || frames != deviceConfig_.blockSize)) return false;
     if (!graph->prepare(channels, frames)) return false;
     audioGraph_ = std::move(graph);
+    routedAudioGraph_.reset();
     graphChannels_ = channels;
     graphFrames_ = frames;
     return true;
+}
+
+bool AudioEngine::setRoutedAudioGraph(std::unique_ptr<RoutedAudioGraph> graph,
+                                      std::size_t channels, std::size_t frames) {
+    std::scoped_lock lock(controlMutex_);
+    if (diagnostics_.running || !graph || channels == 0 || frames == 0) return false;
+    if (device_ && (channels != deviceConfig_.channels || frames != deviceConfig_.blockSize)) return false;
+    if (!graph->prepare(channels, frames)) return false;
+    routedAudioGraph_ = std::move(graph);
+    audioGraph_.reset();
+    graphChannels_ = channels;
+    graphFrames_ = frames;
+    return true;
+}
+
+bool AudioEngine::setSampleRate(double sampleRate) {
+    std::scoped_lock lock(controlMutex_);
+    if (diagnostics_.running) return false;
+    return transport_.setSampleRate(sampleRate);
+}
+
+bool AudioEngine::setParameter(const std::string& nodeId, std::uint32_t parameterId,
+                               double normalizedValue, std::string& error) {
+    std::scoped_lock lock(controlMutex_);
+    if (diagnostics_.running) {
+        if (!routedAudioGraph_ || !routedAudioGraph_->enqueueParameter(nodeId, parameterId, normalizedValue)) {
+            error = "real-time parameter queue is full or node does not support parameters";
+            return false;
+        }
+        return true;
+    }
+    if (!routedAudioGraph_) {
+        error = "no routed graph is loaded";
+        return false;
+    }
+    return routedAudioGraph_->setParameter(nodeId, parameterId, normalizedValue, error);
 }
 
 bool AudioEngine::start() {
@@ -104,21 +141,44 @@ void AudioEngine::process(const float* const* inputs, float* const* outputs,
         underruns_.fetch_add(1, std::memory_order_relaxed);
         return;
     }
+    while (midiEventCount_ < maxMidiEventsPerBlock) {
+        const auto read = midiQueueRead_.load(std::memory_order_relaxed);
+        if (read == midiQueueWrite_.load(std::memory_order_acquire)) break;
+        midiEventBuffer_[midiEventCount_++] = midiControlQueue_[read];
+        midiQueueRead_.store((read + 1) % maxMidiEventsPerBlock, std::memory_order_release);
+    }
     const auto advance = transport_.advance(frames);
     positionBeats_.store(advance.endBeat, std::memory_order_release);
     if (audioGraph_ && inputs && channels == graphChannels_ && frames == graphFrames_) {
-        audioGraph_->process(inputs, outputs, channels, frames);
+        audioGraph_->processWithMidi(inputs, outputs, channels, frames,
+                                     midiEventBuffer_.data(), midiEventCount_);
+    } else if (routedAudioGraph_ && inputs && channels == graphChannels_ && frames == graphFrames_) {
+        routedAudioGraph_->processWithMidi(inputs, outputs, channels, frames,
+                                           midiEventBuffer_.data(), midiEventCount_);
     } else {
         for (std::size_t channel = 0; channel < channels; ++channel) {
             if (outputs[channel]) std::fill(outputs[channel], outputs[channel] + frames, 0.0F);
         }
-        if (audioGraph_) underruns_.fetch_add(1, std::memory_order_relaxed);
+        if (audioGraph_ || routedAudioGraph_) underruns_.fetch_add(1, std::memory_order_relaxed);
     }
+    midiEventCount_ = 0;
     processedBlocks_.fetch_add(1, std::memory_order_relaxed);
 }
 
-void AudioEngine::handleMidi(const MidiEvent& /*event*/) noexcept {
+void AudioEngine::handleMidi(const MidiEvent& event) noexcept {
     midiEvents_.fetch_add(1, std::memory_order_relaxed);
+    if (midiEventCount_ < maxMidiEventsPerBlock)
+        midiEventBuffer_[midiEventCount_++] = event;
+}
+
+bool AudioEngine::enqueueMidi(const MidiEvent& event) noexcept {
+    const auto write = midiQueueWrite_.load(std::memory_order_relaxed);
+    const auto next = (write + 1) % maxMidiEventsPerBlock;
+    if (next == midiQueueRead_.load(std::memory_order_acquire)) return false;
+    midiControlQueue_[write] = event;
+    midiQueueWrite_.store(next, std::memory_order_release);
+    midiEvents_.fetch_add(1, std::memory_order_relaxed);
+    return true;
 }
 
 } // namespace transmission

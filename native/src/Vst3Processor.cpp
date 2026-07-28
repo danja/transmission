@@ -5,10 +5,13 @@
 #include "public.sdk/source/vst/hosting/parameterchanges.h"
 #include "public.sdk/source/vst/hosting/plugprovider.h"
 #include "public.sdk/source/vst/hosting/processdata.h"
+#include "public.sdk/source/vst/hosting/eventlist.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstprocesscontext.h"
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <memory>
 
 namespace transmission {
@@ -20,7 +23,8 @@ struct Vst3Processor::Impl {
     Steinberg::IPtr<Steinberg::Vst::IComponent> component;
     Steinberg::FUnknownPtr<Steinberg::Vst::IAudioProcessor> processor;
     Steinberg::Vst::HostProcessData processData;
-    Steinberg::Vst::ParameterChanges parameterChanges{4};
+    Steinberg::Vst::EventList inputEvents{256};
+    Steinberg::Vst::ParameterChanges parameterChanges{32};
     Steinberg::Vst::ProcessContext processContext{};
     std::string name;
     std::size_t channels = 0;
@@ -28,6 +32,11 @@ struct Vst3Processor::Impl {
     bool active = false;
     bool processing = false;
     bool hasParameterChanges = false;
+    static constexpr std::size_t maxPendingParameters = 32;
+    // 0 = free, 1 = producer writing, 2 = ready for the audio thread.
+    std::array<std::atomic<std::uint8_t>, maxPendingParameters> pendingParameterSlots{};
+    std::array<std::atomic<std::uint32_t>, maxPendingParameters> pendingParameterIds{};
+    std::array<std::atomic<double>, maxPendingParameters> pendingParameterValues{};
 
     ~Impl() {
         if (processing && processor) processor->setProcessing(false);
@@ -171,25 +180,55 @@ bool Vst3Processor::setParameter(std::uint32_t parameterId, double normalizedVal
         error = "VST3 parameter value must be normalized to [0, 1]";
         return false;
     }
-    impl_->parameterChanges.clearQueue();
-    Steinberg::int32 queueIndex = 0;
-    auto* queue = impl_->parameterChanges.addParameterData(
-        static_cast<Steinberg::Vst::ParamID>(parameterId), queueIndex);
-    if (!queue) {
-        error = "failed to create VST3 parameter queue";
+    if (!enqueueParameter(parameterId, normalizedValue)) {
+        error = "VST3 parameter queue is full";
         return false;
     }
-    Steinberg::int32 pointIndex = 0;
-    if (queue->addPoint(0, normalizedValue, pointIndex) != Steinberg::kResultOk) {
-        error = "failed to queue VST3 parameter value";
-        return false;
-    }
-    impl_->hasParameterChanges = true;
     return true;
+}
+
+bool Vst3Processor::enqueueParameter(std::uint32_t parameterId, double normalizedValue) noexcept {
+    if (!ready() || normalizedValue < 0.0 || normalizedValue > 1.0) return false;
+    for (std::size_t index = 0; index < Impl::maxPendingParameters; ++index) {
+        std::uint8_t available = 0;
+        if (impl_->pendingParameterSlots[index].compare_exchange_strong(
+                available, 1, std::memory_order_acquire, std::memory_order_relaxed)) {
+            impl_->pendingParameterIds[index].store(parameterId, std::memory_order_relaxed);
+            impl_->pendingParameterValues[index].store(normalizedValue, std::memory_order_relaxed);
+            impl_->pendingParameterSlots[index].store(2, std::memory_order_release);
+            return true;
+        }
+    }
+    return false;
+}
+
+void Vst3Processor::applyPendingParameters() noexcept {
+    if (!ready()) return;
+    impl_->parameterChanges.clearQueue();
+    impl_->hasParameterChanges = false;
+    Steinberg::int32 queueIndex = 0;
+    for (std::size_t index = 0; index < Impl::maxPendingParameters; ++index) {
+        std::uint8_t ready = 2;
+        if (!impl_->pendingParameterSlots[index].compare_exchange_strong(
+                ready, 0, std::memory_order_acquire, std::memory_order_relaxed)) continue;
+        auto* queue = impl_->parameterChanges.addParameterData(
+            static_cast<Steinberg::Vst::ParamID>(impl_->pendingParameterIds[index].load(std::memory_order_relaxed)),
+            queueIndex);
+        if (!queue) continue;
+        Steinberg::int32 pointIndex = 0;
+        if (queue->addPoint(0, impl_->pendingParameterValues[index].load(std::memory_order_relaxed), pointIndex) ==
+            Steinberg::kResultOk) impl_->hasParameterChanges = true;
+    }
 }
 
 void Vst3Processor::process(const float* const* inputs, float* const* outputs,
                             std::size_t channels, std::size_t frames) noexcept {
+    processWithMidi(inputs, outputs, channels, frames, nullptr, 0);
+}
+
+void Vst3Processor::processWithMidi(const float* const* inputs, float* const* outputs,
+                                    std::size_t channels, std::size_t frames,
+                                    const MidiEvent* events, std::size_t eventCount) noexcept {
     if (!ready() || !inputs || !outputs || channels != impl_->channels ||
         frames != impl_->frames) {
         if (outputs) {
@@ -208,6 +247,39 @@ void Vst3Processor::process(const float* const* inputs, float* const* outputs,
         impl_->processData.setChannelBuffer(Steinberg::Vst::kOutput, 0,
                                              static_cast<Steinberg::int32>(channel), outputs[channel]);
     }
+    impl_->inputEvents.clear();
+    for (std::size_t index = 0; index < eventCount; ++index) {
+        const auto& midi = events[index];
+        if (midi.size < 3) continue;
+        const auto status = midi.data[0] & 0xf0;
+        const auto channel = static_cast<Steinberg::int16>(midi.data[0] & 0x0f);
+        Steinberg::Vst::Event event{};
+        event.busIndex = 0;
+        event.sampleOffset = static_cast<Steinberg::int32>(
+            std::min<std::size_t>(midi.frameOffset, frames - 1));
+        event.ppqPosition = 0.0;
+        event.flags = Steinberg::Vst::Event::kIsLive;
+        if (status == 0x90 && midi.data[2] != 0) {
+            event.type = Steinberg::Vst::Event::kNoteOnEvent;
+            event.noteOn.channel = channel;
+            event.noteOn.pitch = midi.data[1];
+            event.noteOn.tuning = 0.0F;
+            event.noteOn.velocity = static_cast<float>(midi.data[2]) / 127.0F;
+            event.noteOn.length = 0;
+            event.noteOn.noteId = -1;
+        } else if (status == 0x80 || status == 0x90) {
+            event.type = Steinberg::Vst::Event::kNoteOffEvent;
+            event.noteOff.channel = channel;
+            event.noteOff.pitch = midi.data[1];
+            event.noteOff.velocity = static_cast<float>(midi.data[2]) / 127.0F;
+            event.noteOff.noteId = -1;
+            event.noteOff.tuning = 0.0F;
+        } else {
+            continue;
+        }
+        impl_->inputEvents.addEvent(event);
+    }
+    impl_->processData.inputEvents = &impl_->inputEvents;
     impl_->processData.inputParameterChanges =
         impl_->hasParameterChanges ? &impl_->parameterChanges : nullptr;
     if (impl_->processor->process(impl_->processData) != Steinberg::kResultOk) {

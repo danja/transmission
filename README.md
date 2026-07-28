@@ -9,11 +9,15 @@ The project is split between a Node.js control plane and a C++ real-time engine.
 - RDF/Turtle graph parsing, validation, compilation, and persistence
 - Modular plugin registry and VST3 bundle discovery
 - Native preallocated audio processor and graph contracts
+- Native routed DAG graph with fan-out/fan-in mixing and cycle rejection
 - Deterministic fake audio device for offline testing
 - DAW transport with start/stop, seeking, tempo maps, and looping
 - Optional Steinberg SDK-backed VST3 metadata inspection, offline block processing, and graph integration
 - Optional JACK audio-device backend with callback-safe port bridging
 - JACK MIDI input events with bounded channel-message forwarding
+- VST3 note-on/note-off event conversion
+- Optional Node N-API control addon
+- Optional native GTK graph editor with system input/output nodes
 - Node project sessions with undo/redo and a control-plane engine session
 
 ## Development
@@ -27,7 +31,53 @@ cmake --build native/build
 ctest --test-dir native/build --output-on-failure
 ```
 
-The native engine currently provides lifecycle, transport, graph, fake-device, VST3 discovery, metadata inspection, a deterministic VST3 processing probe, and a reusable VST3 processor inside `AudioGraph`. JACK/PipeWire integration, production device hosting, N-API packaging, and the UI are subsequent implementation slices.
+The native engine currently provides lifecycle, transport, linear and routed graph execution, fake-device, VST3 discovery, metadata inspection, a deterministic VST3 processing probe, a reusable VST3 processor inside `AudioGraph`, and an optional N-API control addon. The VST3-enabled addon can construct routed processors directly from compiled node settings; JACK/PipeWire production device hosting and the UI remain subsequent implementation slices.
+
+Build and smoke-test the optional Node addon:
+
+```sh
+npm run native:configure:napi
+npm run native:build:napi
+node -e "const n=require('./native/build-napi/transmission_native.node'); n.createEngine(); n.loadProject({}); n.configureTransport({sampleRate:48000,tempoMap:[{beat:0,bpm:120}]}); console.log(n.getDiagnostics()); n.disposeEngine()"
+```
+
+The addon exposes control-rate lifecycle, transport, MIDI, and diagnostics calls. Audio buffers and real-time callbacks stay in native code.
+
+To try the first native graph UI slice:
+
+```sh
+cmake -S native -B native/build-ui -DTRANSMISSION_WITH_GTK_UI=ON
+cmake --build native/build-ui --target transmission_graph_ui
+native/build-ui/transmission_graph_ui
+```
+
+The current editor is a deliberately small native canvas: it renders node/arc topology, identifies system audio input/output nodes, supports dragging nodes, and allows new audio arcs to be drawn from output sockets to input sockets. Project loading, graph editing commands, and native/Node synchronization are the next UI slices.
+
+To build the addon with VST3 node construction enabled:
+
+```sh
+cmake -S native -B native/build-napi-vst3 \
+  -DTRANSMISSION_WITH_NAPI=ON -DTRANSMISSION_WITH_VST3=ON
+cmake --build native/build-napi-vst3 --target transmission_native
+```
+
+Compiled nodes with `settings.pluginPath` are instantiated as VST3 processors; other nodes currently use native pass-through processors until their processor factories are registered.
+
+Stopped-engine parameter routing can be smoke-tested against a VST3 bundle:
+
+```sh
+scripts/test-napi-vst3-parameter.sh /path/to/Plugin.vst3
+```
+
+`setParameter(nodeId, parameterId, normalizedValue, sampleOffset)` accepts numeric or string parameter IDs. Changes are submitted through a bounded native queue and applied at the start of the next audio block; updates are rejected only when the queue is full or the target processor has no parameter support.
+
+For a Node-controlled JACK engine, enable JACK as well and pass `{ device: 'jack', blockSize: 1024, sampleRate: 48000 }` to `createEngine`:
+
+```sh
+cmake -S native -B native/build-napi-jack \
+  -DTRANSMISSION_WITH_NAPI=ON -DTRANSMISSION_WITH_JACK=ON
+cmake --build native/build-napi-jack --target transmission_native
+```
 
 The optional JACK backend is built with:
 

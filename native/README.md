@@ -14,6 +14,8 @@ The audio callback must be added in a separate module. It must not use the contr
 
 `AudioProcessor` is the first real-time processing contract. Its `process` method receives caller-owned, preallocated channel buffers and is required to be `noexcept` and allocation-free.
 
+`RoutedAudioGraph` provides the DAG form used for project execution. Its control side registers node IDs and edges, `prepare()` resolves a topological order and allocates buffers, and the callback performs only buffer mixing and processor calls.
+
 The SDK-backed metadata inspector is opt-in because it adds the Steinberg SDK build graph:
 
 ```sh
@@ -87,6 +89,21 @@ native/build-jack/transmission_jack_engine_probe --auto-connect
 The probe runs for three seconds and reports processed blocks and underruns.
 
 JACK configurations create one MIDI input port by default. Channel messages up to three bytes are copied into fixed-size `MidiEvent` values and delivered to `AudioCallback::handleMidi` on the process thread; larger events are ignored until SysEx storage is added.
+
+`Vst3Processor` converts note-on and note-off messages into preallocated VST3 `IEventList` entries for the current audio block. Other MIDI channel messages remain available to the engine callback for later mapping.
+
+The optional N-API addon is built with:
+
+```sh
+cmake -S native -B native/build-napi -DTRANSMISSION_WITH_NAPI=ON
+cmake --build native/build-napi --target transmission_native
+```
+
+It exposes only control-rate calls; it does not pass audio buffers or JavaScript values through the process callback.
+
+When built with `TRANSMISSION_WITH_VST3=ON` as well, `loadProject` constructs the routed native graph from compiled node and connection arrays. A node with `settings.pluginPath` is loaded as a VST3 processor; generic nodes currently use pass-through processing.
+
+When built with `TRANSMISSION_WITH_JACK=ON`, `createEngine({device: 'jack', blockSize: 1024, sampleRate: 48000})` configures the JACK device before the Node session starts audio. MIDI submitted from JavaScript is placed in a bounded native queue and drained by the audio callback.
 
 The repository smoke test automates the live connection and generates note-on/note-off events:
 

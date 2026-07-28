@@ -32,20 +32,29 @@ bool AudioGraph::prepare(std::size_t channels, std::size_t frames) noexcept {
 
 void AudioGraph::process(const float* const* inputs, float* const* outputs,
                          std::size_t channels, std::size_t frames) noexcept {
+    processWithMidi(inputs, outputs, channels, frames, nullptr, 0);
+}
+
+void AudioGraph::processWithMidi(const float* const* inputs, float* const* outputs,
+                                 std::size_t channels, std::size_t frames,
+                                 const MidiEvent* events, std::size_t eventCount) noexcept {
     if (!inputs || !outputs || processors_.empty() || channels != preparedChannels_ || frames != preparedFrames_) return;
 
     const float* const* currentInputs = inputs;
     for (std::size_t index = 0; index < processors_.size(); ++index) {
+        processors_[index]->applyPendingParameters();
         const bool last = index + 1 == processors_.size();
         if (last) {
-            processors_[index]->process(currentInputs, outputs, channels, frames);
+            processors_[index]->processWithMidi(currentInputs, outputs, channels, frames,
+                                                events, eventCount);
             continue;
         }
         for (std::size_t channel = 0; channel < channels; ++channel) {
             inputPointers_[channel] = currentInputs[channel];
             outputPointers_[channel] = scratch_[index].data() + channel * frames;
         }
-        processors_[index]->process(inputPointers_.data(), outputPointers_.data(), channels, frames);
+        processors_[index]->processWithMidi(inputPointers_.data(), outputPointers_.data(),
+                                            channels, frames, events, eventCount);
         currentInputs = inputPointers_.data();
         for (std::size_t channel = 0; channel < channels; ++channel) {
             inputPointers_[channel] = scratch_[index].data() + channel * frames;

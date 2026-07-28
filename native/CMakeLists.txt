@@ -9,6 +9,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(TRANSMISSION_BUILD_TESTS "Build native unit tests" ON)
 option(TRANSMISSION_WITH_VST3 "Build Steinberg SDK-backed VST3 hosting tools" OFF)
 option(TRANSMISSION_WITH_JACK "Build the JACK audio-device backend" OFF)
+option(TRANSMISSION_WITH_NAPI "Build the Node N-API control addon" OFF)
+option(TRANSMISSION_WITH_GTK_UI "Build the native GTK graph editor" OFF)
 set(VST3_SDK_ROOT "/chalet/VST_SDK/vst3sdk" CACHE PATH "Path to the Steinberg VST3 SDK")
 
 add_library(transmission_engine STATIC
@@ -17,12 +19,14 @@ add_library(transmission_engine STATIC
   src/AudioProcessor.cpp
   src/FakeAudioDevice.cpp
   src/PluginScanner.cpp
+  src/RoutedAudioGraph.cpp
   src/TransportClock.cpp
 )
 target_include_directories(transmission_engine
   PUBLIC include
 )
 target_compile_options(transmission_engine PRIVATE -Wall -Wextra -Wpedantic)
+set_target_properties(transmission_engine PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if(TRANSMISSION_WITH_JACK)
   find_path(JACK_INCLUDE_DIR jack/jack.h REQUIRED)
@@ -34,6 +38,14 @@ if(TRANSMISSION_WITH_JACK)
   target_link_libraries(transmission_jack_engine_probe PRIVATE transmission_engine)
   add_executable(transmission_jack_midi_source src/jack_midi_source_main.cpp)
   target_link_libraries(transmission_jack_midi_source PRIVATE "${JACK_LIBRARY}")
+endif()
+
+if(TRANSMISSION_WITH_NAPI)
+  find_path(NODE_API_INCLUDE_DIR node_api.h PATHS /usr/include/node REQUIRED)
+  add_library(transmission_native MODULE src/napi_bridge.cpp)
+  target_include_directories(transmission_native PRIVATE "${NODE_API_INCLUDE_DIR}" include)
+  target_link_libraries(transmission_native PRIVATE transmission_engine)
+  set_target_properties(transmission_native PROPERTIES PREFIX "" SUFFIX ".node")
 endif()
 
 if(TRANSMISSION_WITH_VST3)
@@ -55,6 +67,8 @@ if(TRANSMISSION_WITH_VST3)
   target_include_directories(transmission_vst3_inspector PUBLIC include "${VST3_SDK_ROOT}")
   target_link_libraries(transmission_vst3_inspector PRIVATE sdk_hosting)
   target_compile_features(transmission_vst3_inspector PRIVATE cxx_std_17)
+  set_target_properties(transmission_vst3_inspector sdk_hosting sdk_common base pluginterfaces
+                        PROPERTIES POSITION_INDEPENDENT_CODE ON)
   add_executable(transmission_vst3_inspect src/vst3_inspect_main.cpp)
   target_link_libraries(transmission_vst3_inspect PRIVATE transmission_vst3_inspector)
   add_executable(transmission_vst3_offline src/vst3_offline_probe_main.cpp)
@@ -65,8 +79,24 @@ if(TRANSMISSION_WITH_VST3)
   target_link_libraries(transmission_vst3_engine_probe PRIVATE transmission_vst3_inspector transmission_engine)
 endif()
 
-# JACK/PipeWire and the Node bridge will be added behind these stable engine
-# interfaces. Keeping the default target dependency-free makes lifecycle tests fast.
+if(TRANSMISSION_WITH_NAPI AND TRANSMISSION_WITH_VST3)
+  target_compile_definitions(transmission_native PRIVATE TRANSMISSION_NAPI_WITH_VST3=1)
+  target_link_libraries(transmission_native PRIVATE transmission_vst3_inspector)
+endif()
+if(TRANSMISSION_WITH_NAPI AND TRANSMISSION_WITH_JACK)
+  target_compile_definitions(transmission_native PRIVATE TRANSMISSION_NAPI_WITH_JACK=1)
+endif()
+
+if(TRANSMISSION_WITH_GTK_UI)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
+  add_executable(transmission_graph_ui src/native_graph_ui_main.cpp)
+  target_link_libraries(transmission_graph_ui PRIVATE PkgConfig::GTK3)
+  target_compile_options(transmission_graph_ui PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# JACK/PipeWire and the Node bridge sit behind these stable engine interfaces.
+# Keeping the default target dependency-free makes lifecycle tests fast.
 if(TRANSMISSION_BUILD_TESTS)
   enable_testing()
   add_executable(transmission_engine_test tests/AudioEngineTest.cpp)
@@ -81,6 +111,9 @@ if(TRANSMISSION_BUILD_TESTS)
   add_executable(transmission_audio_graph_test tests/AudioGraphTest.cpp)
   target_link_libraries(transmission_audio_graph_test PRIVATE transmission_engine)
   add_test(NAME transmission_audio_graph_test COMMAND transmission_audio_graph_test)
+  add_executable(transmission_routed_audio_graph_test tests/RoutedAudioGraphTest.cpp)
+  target_link_libraries(transmission_routed_audio_graph_test PRIVATE transmission_engine)
+  add_test(NAME transmission_routed_audio_graph_test COMMAND transmission_routed_audio_graph_test)
   add_executable(transmission_audio_device_test tests/AudioDeviceTest.cpp)
   target_link_libraries(transmission_audio_device_test PRIVATE transmission_engine)
   add_test(NAME transmission_audio_device_test COMMAND transmission_audio_device_test)

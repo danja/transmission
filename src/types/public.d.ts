@@ -39,6 +39,7 @@ export interface NativeBridgeApi {
   createEngine(options?: Record<string, unknown>): unknown
   scanPlugins(paths: string[]): unknown
   loadProject(graph: CompiledGraph): unknown
+  configureTransport(state: Record<string, unknown>): unknown
   startAudio(): unknown
   stopAudio(): unknown
   setParameter(nodeId: string, parameterId: string, value: number, sampleOffset?: number): unknown

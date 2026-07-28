@@ -140,8 +140,6 @@ int JackAudioDevice::process(unsigned frames) noexcept {
             jack_port_get_buffer(outputPorts_[channel], frames));
         if (!inputPointers_[channel] || !outputPointers_[channel]) return 0;
     }
-    callback->process(inputPointers_.data(), outputPointers_.data(),
-                      config_.channels, frames);
     for (auto* port : midiInputPorts_) {
         auto* midiBuffer = jack_port_get_buffer(port, frames);
         if (!midiBuffer) continue;
@@ -157,6 +155,8 @@ int JackAudioDevice::process(unsigned frames) noexcept {
             callback->handleMidi(midi);
         }
     }
+    callback->process(inputPointers_.data(), outputPointers_.data(),
+                      config_.channels, frames);
     return 0;
 }
 

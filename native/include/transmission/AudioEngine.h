@@ -5,12 +5,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <atomic>
+#include <array>
 #include <memory>
 #include <mutex>
 #include <string>
 
 #include "AudioDevice.h"
 #include "AudioGraph.h"
+#include "RoutedAudioGraph.h"
 #include "TransportClock.h"
 
 namespace transmission {
@@ -37,6 +39,11 @@ public:
     bool configureDevice(AudioDevice& device, const AudioDeviceConfig& config);
     bool setAudioGraph(std::unique_ptr<AudioGraph> graph,
                        std::size_t channels, std::size_t frames);
+    bool setRoutedAudioGraph(std::unique_ptr<RoutedAudioGraph> graph,
+                             std::size_t channels, std::size_t frames);
+    bool setSampleRate(double sampleRate);
+    bool setParameter(const std::string& nodeId, std::uint32_t parameterId,
+                      double normalizedValue, std::string& error);
     bool start();
     void stop();
     bool setTempo(double bpm, double atBeat);
@@ -47,6 +54,7 @@ public:
     void process(const float* const* inputs, float* const* outputs,
                  std::size_t channels, std::size_t frames) noexcept override;
     void handleMidi(const MidiEvent& event) noexcept override;
+    bool enqueueMidi(const MidiEvent& event) noexcept;
 
 private:
     mutable std::mutex controlMutex_;
@@ -56,12 +64,19 @@ private:
     AudioDevice* device_ = nullptr;
     AudioDeviceConfig deviceConfig_;
     std::unique_ptr<AudioGraph> audioGraph_;
+    std::unique_ptr<RoutedAudioGraph> routedAudioGraph_;
     std::size_t graphChannels_ = 0;
     std::size_t graphFrames_ = 0;
     std::atomic<std::uint64_t> processedBlocks_{0};
     std::atomic<std::uint64_t> underruns_{0};
     std::atomic<std::uint64_t> midiEvents_{0};
     std::atomic<double> positionBeats_{0.0};
+    static constexpr std::size_t maxMidiEventsPerBlock = 256;
+    std::array<MidiEvent, maxMidiEventsPerBlock> midiEventBuffer_{};
+    std::size_t midiEventCount_ = 0;
+    std::array<MidiEvent, maxMidiEventsPerBlock> midiControlQueue_{};
+    std::atomic<std::size_t> midiQueueRead_{0};
+    std::atomic<std::size_t> midiQueueWrite_{0};
 };
 
 } // namespace transmission

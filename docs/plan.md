@@ -2,7 +2,7 @@
 
 ## Current implementation status
 
-The repository now contains the modular Node/C++ foundation, typed graph compiler, RDF/Turtle round trips, project sessions, plugin registry and bundle discovery, allocation-free native audio graph/device abstractions, transport with tempo maps and looping, SDK-backed VST3 metadata inspection, deterministic offline instance processing, `AudioGraph` integration, an optional JACK device adapter with rate/period negotiation, physical-port routing, MIDI input forwarding, and `AudioEngine` device/graph lifecycle wiring. The VST3 path has been verified against the SDK’s real `again-sample-accurate.vst3` bundle, including an AddressSanitizer graph run and an engine callback run. The remaining major runtime work is production graph lifecycle/routing, JACK/PipeWire device connection policy validation with a live server, VST3 MIDI event conversion, N-API packaging, UI integration, and plugin editor embedding.
+The repository now contains the modular Node/C++ foundation, typed graph compiler, RDF/Turtle round trips, project sessions, plugin registry and bundle discovery, allocation-free native audio device abstractions, transport with tempo maps and looping, linear and routed DAG graph execution, SDK-backed VST3 metadata inspection, deterministic offline instance processing, an optional JACK device adapter with rate/period negotiation, physical-port routing, MIDI input forwarding, `AudioEngine` device/graph lifecycle wiring, VST3 note event conversion, an optional N-API control addon, compiled-graph-to-native routed node construction, bounded real-time VST3 parameter queuing, and a Node-controlled JACK configuration path. The VST3 path has been verified against the SDK’s real `again-sample-accurate.vst3` bundle, including an AddressSanitizer graph run, an engine callback run, and a real VST3 `IEventList` note event. The remaining major runtime work is processor factory coverage beyond pass-through/VST3, JACK/PipeWire device connection policy validation through the N-API path, broader MIDI mapping/SysEx, UI integration, and plugin editor embedding.
 
 ## Summary
 
@@ -66,10 +66,10 @@ Native notifications are limited to lifecycle, plugin errors, underruns, device 
 3. Implement RDF loading, validation, compilation, and round-trip serialization.
 4. Implement VST3 discovery and metadata. *(bundle discovery, SDK metadata inspector, and CLI complete)*
 5. Implement deterministic offline native processing. *(processor, graph, fake device, transport, SDK-backed VST3 probe, and reusable graph-integrated VST3 processor complete)*
-6. Add JACK/PipeWire audio and MIDI I/O. *(optional JACK callback/device adapter, rate/period negotiation, physical-port auto-connect, bounded MIDI input forwarding, engine lifecycle wiring, live probe, and automated MIDI smoke test complete; VST3 event conversion, live-server validation in this execution environment, and PipeWire remain)*
-7. Implement native graph routing and multi-plugin processing. *(linear graph and one VST3 processor are complete; project graph construction and multi-bus routing remain)*
-8. Add the N-API bridge and Node session lifecycle.
-9. Build graph editing and plugin browsing.
+6. Add JACK/PipeWire audio and MIDI I/O. *(optional JACK callback/device adapter, rate/period negotiation, physical-port auto-connect, bounded MIDI input forwarding, engine lifecycle wiring, live probe, automated MIDI smoke test, and VST3 note event conversion complete; broader MIDI mapping, live-server validation in this execution environment, and PipeWire remain)*
+7. Implement native graph routing and multi-plugin processing. *(routed DAG, fan-out/fan-in mixing, cycle rejection, engine integration, compiled graph construction, and VST3 instance loading are complete; processor factory coverage and multi-bus routing remain)*
+8. Add the N-API bridge and Node session lifecycle. *(control addon, transport/MIDI/diagnostics calls, EngineSession engine creation, compiled graph construction, bounded MIDI and parameter submission, optional JACK device construction, and VST3 parameter application complete; richer device selection and notifications remain)*
+9. Build graph editing and plugin browsing. *(native GTK graph canvas prototype complete: system input/output nodes, visible audio sockets, node dragging, and output-to-input arc creation; project synchronization, editing commands, and plugin browser remain)*
 10. Add Linux plugin-editor embedding, parameter/state management, diagnostics, and packaging.
 
 ## Testing and acceptance

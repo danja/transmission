@@ -2,7 +2,7 @@
 
 /**
  * Control-rate boundary for the native engine. Audio buffers never cross this API.
- * The native implementation will be supplied by the N-API addon in a later slice.
+ * The optional N-API addon supplies the same narrow control surface.
  */
 export class NativeBridge {
   constructor(nativeModule = null) {

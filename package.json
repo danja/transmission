@@ -1,0 +1,22 @@
+{
+  "name": "transmission-daw",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "types": "src/types/public.d.ts",
+  "description": "Modular Linux VST3 transmission host",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "node --check src/model/Graph.js && node --check src/compiler/GraphCompiler.js && node --check src/bridge/NativeBridge.js",
+    "native:configure": "cmake -S native -B native/build",
+    "native:build": "cmake --build native/build"
+  },
+  "dependencies": {
+    "@rdfjs/parser-n3": "^2.1.0",
+    "rdf-ext": "^2.5.2"
+  },
+  "devDependencies": {
+    "vitest": "^3.1.3"
+  }
+}

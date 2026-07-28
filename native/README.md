@@ -11,3 +11,5 @@ ctest --test-dir native/build --output-on-failure
 ```
 
 The audio callback must be added in a separate module. It must not use the control mutex or call into Node.js.
+
+`AudioProcessor` is the first real-time processing contract. Its `process` method receives caller-owned, preallocated channel buffers and is required to be `noexcept` and allocation-free.

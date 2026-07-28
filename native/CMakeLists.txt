@@ -11,6 +11,8 @@ set(VST3_SDK_ROOT "/chalet/VST_SDK/vst3sdk" CACHE PATH "Path to the Steinberg VS
 
 add_library(transmission_engine STATIC
   src/AudioEngine.cpp
+  src/AudioProcessor.cpp
+  src/PluginScanner.cpp
 )
 target_include_directories(transmission_engine
   PUBLIC include
@@ -24,4 +26,10 @@ if(TRANSMISSION_BUILD_TESTS)
   add_executable(transmission_engine_test tests/AudioEngineTest.cpp)
   target_link_libraries(transmission_engine_test PRIVATE transmission_engine)
   add_test(NAME transmission_engine_test COMMAND transmission_engine_test)
+  add_executable(transmission_plugin_scanner_test tests/PluginScannerTest.cpp)
+  target_link_libraries(transmission_plugin_scanner_test PRIVATE transmission_engine)
+  add_test(NAME transmission_plugin_scanner_test COMMAND transmission_plugin_scanner_test)
+  add_executable(transmission_audio_processor_test tests/AudioProcessorTest.cpp)
+  target_link_libraries(transmission_audio_processor_test PRIVATE transmission_engine)
+  add_test(NAME transmission_audio_processor_test COMMAND transmission_audio_processor_test)
 endif()

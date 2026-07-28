@@ -16,3 +16,5 @@ ctest --test-dir native/build --output-on-failure
 ```
 
 The native engine currently provides lifecycle contracts and tests. VST3 hosting and JACK/PipeWire integration are subsequent implementation slices.
+
+Project edits should flow through `EngineSession`, which compiles and validates the graph before passing it to the native boundary.

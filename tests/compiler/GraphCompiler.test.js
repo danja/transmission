@@ -38,4 +38,11 @@ describe('compileGraph', () => {
       ]
     })).toThrow('Audio graph contains a cycle')
   })
+
+  it('rejects incompatible ports', () => {
+    expect(() => compileGraph({
+      id: 'project:test', nodes,
+      connections: [{ from: 'output', to: 'input', kind: 'audio' }]
+    })).toThrow('Invalid audio output port 0 on output')
+  })
 })

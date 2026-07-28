@@ -26,6 +26,12 @@ export function graphFromDataset(dataset, transmissionId) {
       id: node.value,
       type: first(dataset, node, ns.rdf.type)?.value,
       label: first(dataset, node, ns.rdfs.label)?.value ?? '',
+      ports: {
+        audioInputs: numeric(first(dataset, node, ns.trn.audioInputs)),
+        audioOutputs: numeric(first(dataset, node, ns.trn.audioOutputs)),
+        midiInputs: numeric(first(dataset, node, ns.trn.midiInputs)),
+        midiOutputs: numeric(first(dataset, node, ns.trn.midiOutputs))
+      },
       settings: settingsObject(dataset, first(dataset, node, ns.trn.settings))
     }))
 
@@ -39,6 +45,33 @@ export function graphFromDataset(dataset, transmissionId) {
       kind: 'audio'
     }))
   })
+}
+
+export function serializeGraph(graph) {
+  const base = 'http://purl.org/stuff/transmissions/'
+  const nodeNames = new Map([...graph.nodes.keys()].map(id => [id, compact(id, base)]))
+  const subject = compact(graph.id, base)
+  const lines = [`@prefix : <${base}> .`, '@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .', '']
+  lines.push(`${subject} a :Transmission ;`)
+  if (graph.label) lines.push(`    <http://www.w3.org/2000/01/rdf-schema#label> ${literal(graph.label)} ;`)
+  lines.push(`    :pipe ( ${[...graph.nodes.keys()].map(id => nodeNames.get(id)).join(' ')} ) .`, '')
+  for (const node of graph.nodes.values()) {
+    lines.push(`${nodeNames.get(node.id)} a ${term(node.type, base)} ;`)
+    if (node.label) lines.push(`    <http://www.w3.org/2000/01/rdf-schema#label> ${literal(node.label)} ;`)
+    const portValues = [
+      [':audioInputs', node.ports.audioInputs], [':audioOutputs', node.ports.audioOutputs],
+      [':midiInputs', node.ports.midiInputs], [':midiOutputs', node.ports.midiOutputs]
+    ].filter(([, value]) => value > 0)
+    for (const [predicate, value] of portValues) lines.push(`    ${predicate} ${value} ;`)
+    const settings = Object.entries(node.settings ?? {})
+    for (const [key, values] of settings) {
+      const items = Array.isArray(values) ? values : [values]
+      lines.push(`    ${term(key, base)} ${items.map(value => literal(value)).join(', ')} ;`)
+    }
+    lines[lines.length - 1] = lines[lines.length - 1].replace(/ ;$/, ' .')
+    lines.push('')
+  }
+  return `${lines.join('\n').trim()}\n`
 }
 
 function terms(dataset, subject, predicate) {
@@ -74,4 +107,22 @@ function settingsObject(dataset, settingsNode) {
     values[quad.predicate.value] = current
   }
   return values
+}
+
+function numeric(termValue) {
+  const value = Number(termValue?.value ?? 0)
+  return Number.isFinite(value) ? value : 0
+}
+
+function compact(value, base) {
+  return value.startsWith(base) ? `:${value.slice(base.length) || 'project'}` : `<${value}>`
+}
+
+function term(value, base) {
+  return value.startsWith(base) ? `:${value.slice(base.length)}` : `<${value}>`
+}
+
+function literal(value) {
+  if (typeof value === 'number') return String(value)
+  return JSON.stringify(String(value))
 }

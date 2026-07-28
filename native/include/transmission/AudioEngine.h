@@ -12,7 +12,9 @@ namespace transmission {
 struct Diagnostics {
     std::uint64_t underruns = 0;
     std::uint64_t processedBlocks = 0;
+    std::uint64_t controlEventsDropped = 0;
     bool running = false;
+    bool graphLoaded = false;
 };
 
 /** Control-plane lifecycle contract for the future VST3/JACK engine. */
@@ -23,6 +25,7 @@ public:
     AudioEngine& operator=(const AudioEngine&) = delete;
 
     bool loadRuntimeGraph(std::string serializedGraph);
+    std::string runtimeGraph() const;
     bool start();
     void stop();
     Diagnostics diagnostics() const;

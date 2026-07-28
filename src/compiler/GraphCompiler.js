@@ -21,6 +21,14 @@ export function compileGraph(input) {
     if (!nodeIds.has(connection.to)) issues.push(`Connection target does not exist: ${connection.to}`)
     if (connection.from === connection.to) issues.push(`Self-connection is not allowed: ${connection.from}`)
     if (!['audio', 'midi'].includes(connection.kind)) issues.push(`Unsupported connection kind: ${connection.kind}`)
+    validatePorts(graph, connection, issues)
+  }
+
+  const duplicateConnections = new Set()
+  for (const connection of graph.connections) {
+    const key = `${connection.kind}:${connection.from}:${connection.fromPort ?? 0}:${connection.to}:${connection.toPort ?? 0}`
+    if (duplicateConnections.has(key)) issues.push(`Duplicate connection: ${key}`)
+    duplicateConnections.add(key)
   }
 
   const audioEdges = graph.connections.filter(connection => connection.kind === 'audio')
@@ -37,6 +45,23 @@ export function compileGraph(input) {
     connections: Object.freeze([...graph.connections]),
     metadata: graph.metadata
   })
+}
+
+function validatePorts(graph, connection, issues) {
+  const from = graph.node(connection.from)
+  const to = graph.node(connection.to)
+  if (!from || !to) return
+  const portType = connection.kind === 'audio' ? 'audio' : 'midi'
+  const fromCount = from.ports[`${portType}Outputs`]
+  const toCount = to.ports[`${portType}Inputs`]
+  const fromPort = connection.fromPort ?? 0
+  const toPort = connection.toPort ?? 0
+  if (!Number.isInteger(fromPort) || fromPort < 0 || fromPort >= fromCount) {
+    issues.push(`Invalid ${connection.kind} output port ${fromPort} on ${connection.from}`)
+  }
+  if (!Number.isInteger(toPort) || toPort < 0 || toPort >= toCount) {
+    issues.push(`Invalid ${connection.kind} input port ${toPort} on ${connection.to}`)
+  }
 }
 
 function topologicalOrder(nodeIds, edges) {

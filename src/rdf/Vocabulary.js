@@ -7,5 +7,8 @@ const TRN = 'http://purl.org/stuff/transmissions/'
 export const vocabulary = Object.freeze({
   rdf: Object.freeze({ type: `${RDF}type`, first: `${RDF}first`, rest: `${RDF}rest`, nil: `${RDF}nil` }),
   rdfs: Object.freeze({ label: `${RDFS}label`, comment: `${RDFS}comment` }),
-  trn: Object.freeze({ transmission: `${TRN}Transmission`, entryTransmission: `${TRN}EntryTransmission`, pipe: `${TRN}pipe`, settings: `${TRN}settings` })
+  trn: Object.freeze({
+    transmission: `${TRN}Transmission`, entryTransmission: `${TRN}EntryTransmission`, pipe: `${TRN}pipe`, settings: `${TRN}settings`,
+    audioInputs: `${TRN}audioInputs`, audioOutputs: `${TRN}audioOutputs`, midiInputs: `${TRN}midiInputs`, midiOutputs: `${TRN}midiOutputs`
+  })
 })

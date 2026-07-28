@@ -9,6 +9,8 @@ int main() {
     assert(!engine.start());
     assert(!engine.loadRuntimeGraph(""));
     assert(engine.loadRuntimeGraph(R"({"version":1})"));
+    assert(engine.diagnostics().graphLoaded);
+    assert(engine.runtimeGraph() == R"({"version":1})");
     assert(engine.start());
     assert(engine.diagnostics().running);
     assert(!engine.loadRuntimeGraph(R"({"version":1})"));

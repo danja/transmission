@@ -28,6 +28,8 @@ export class NativeBridge {
   }
   sendMidi(nodeId, event) { return this.#call('sendMidi', nodeId, event) }
   getDiagnostics() { return this.#call('getDiagnostics') }
+  savePluginState(nodeId) { return this.#call('savePluginState', nodeId) }
+  restorePluginState(nodeId, state) { return this.#call('restorePluginState', nodeId, state) }
   dispose() {
     if (!this.disposed && this.nativeModule?.disposeEngine) this.nativeModule.disposeEngine()
     this.disposed = true

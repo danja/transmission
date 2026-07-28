@@ -18,6 +18,8 @@ export interface GraphConnection {
   from: string
   to: string
   kind: 'audio' | 'midi'
+  fromPort?: number
+  toPort?: number
 }
 
 export interface GraphDefinition {
@@ -44,3 +46,5 @@ export interface NativeBridgeApi {
   getDiagnostics(): unknown
   dispose(): void
 }
+
+export type EngineSessionState = 'idle' | 'loaded' | 'running' | 'disposed'

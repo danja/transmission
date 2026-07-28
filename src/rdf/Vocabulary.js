@@ -9,6 +9,7 @@ export const vocabulary = Object.freeze({
   rdfs: Object.freeze({ label: `${RDFS}label`, comment: `${RDFS}comment` }),
   trn: Object.freeze({
     transmission: `${TRN}Transmission`, entryTransmission: `${TRN}EntryTransmission`, pipe: `${TRN}pipe`, settings: `${TRN}settings`,
-    audioInputs: `${TRN}audioInputs`, audioOutputs: `${TRN}audioOutputs`, midiInputs: `${TRN}midiInputs`, midiOutputs: `${TRN}midiOutputs`
+    audioInputs: `${TRN}audioInputs`, audioOutputs: `${TRN}audioOutputs`, midiInputs: `${TRN}midiInputs`, midiOutputs: `${TRN}midiOutputs`,
+    tempoMap: `${TRN}tempoMap`, atBeat: `${TRN}atBeat`, bpm: `${TRN}bpm`, loopStart: `${TRN}loopStart`, loopEnd: `${TRN}loopEnd`, loopEnabled: `${TRN}loopEnabled`
   })
 })

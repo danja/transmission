@@ -29,13 +29,25 @@ export class EngineSession {
   start() {
     if (this.state !== 'loaded') throw new Error('A compiled project must be loaded before starting audio')
     this.bridge.startAudio()
+    this.project.transport.start()
     this.state = 'running'
   }
 
   stop() {
     if (this.state !== 'running') return
     this.bridge.stopAudio()
+    this.project.transport.stop()
     this.state = 'loaded'
+  }
+
+  setTempo(bpm, atBeat = this.project.transport.positionBeats) {
+    if (this.state === 'running') throw new Error('Stop audio before changing the tempo map')
+    this.project.transport.setTempo(bpm, atBeat)
+  }
+
+  setLoop(startBeat, endBeat, enabled = true) {
+    if (this.state === 'running') throw new Error('Stop audio before changing the loop')
+    this.project.transport.setLoop(startBeat, endBeat, enabled)
   }
 
   dispose() {

@@ -24,7 +24,7 @@ afterEach(async () => {
 describe('ProjectSession', () => {
   it('supports validated updates, undo, and redo', () => {
     const session = new ProjectSession()
-    session.open(base)
+    session.open({ ...base, transport: { tempoMap: [{ beat: 0, bpm: 100 }], positionBeats: 2 } })
     session.update(definition => ({ ...definition, label: 'Updated' }))
     expect(session.graph.label).toBe('Updated')
     expect(session.undo()).toBe(true)
@@ -38,11 +38,13 @@ describe('ProjectSession', () => {
     directories.push(directory)
     const filePath = join(directory, 'project.json')
     const session = new ProjectSession()
-    session.open(base)
+    session.open({ ...base, transport: { tempoMap: [{ beat: 0, bpm: 100 }], positionBeats: 2 } })
     await session.save(filePath)
     const loaded = await ProjectSession.load(filePath)
     expect(JSON.parse(await readFile(filePath, 'utf8')).id).toBe('project:test')
     expect(loaded.compiledGraph.executionOrder).toEqual(['in', 'out'])
+    expect(loaded.transport.tempoAt(0)).toBe(100)
+    expect(loaded.transport.positionBeats).toBe(2)
   })
 
   it('round-trips the canonical Turtle format', async () => {
@@ -50,10 +52,13 @@ describe('ProjectSession', () => {
     directories.push(directory)
     const filePath = join(directory, 'project.ttl')
     const session = new ProjectSession()
-    session.open(base)
+    session.open({ ...base, transport: { tempoMap: [{ beat: 0, bpm: 90 }, { beat: 4, bpm: 120 }], loop: { startBeat: 2, endBeat: 6 } } })
     await session.save(filePath)
     const loaded = await ProjectSession.load(filePath)
     expect(loaded.graph.nodes.size).toBe(2)
     expect(loaded.compiledGraph.executionOrder).toEqual(['in', 'out'])
+    expect(loaded.transport.tempoAt(0)).toBe(90)
+    expect(loaded.transport.tempoAt(4)).toBe(120)
+    expect(loaded.transport.loop).toMatchObject({ startBeat: 2, endBeat: 6, enabled: true })
   })
 })

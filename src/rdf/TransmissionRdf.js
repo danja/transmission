@@ -47,13 +47,43 @@ export function graphFromDataset(dataset, transmissionId) {
   })
 }
 
-export function serializeGraph(graph) {
+export function transportFromDataset(dataset, transmissionId) {
+  const subject = rdf.namedNode(transmissionId)
+  const state = { tempoMap: [] }
+  const tempoHead = first(dataset, subject, ns.trn.tempoMap)
+  for (const changeNode of list(dataset, tempoHead)) {
+    const beat = numeric(first(dataset, changeNode, ns.trn.atBeat))
+    const bpm = numeric(first(dataset, changeNode, ns.trn.bpm))
+    if (bpm > 0) state.tempoMap.push({ beat, bpm })
+  }
+  const loopStart = first(dataset, subject, ns.trn.loopStart)
+  const loopEnd = first(dataset, subject, ns.trn.loopEnd)
+  if (loopStart && loopEnd) {
+    state.loop = {
+      startBeat: numeric(loopStart),
+      endBeat: numeric(loopEnd),
+      enabled: first(dataset, subject, ns.trn.loopEnabled)?.value !== 'false'
+    }
+  }
+  return state
+}
+
+export function serializeGraph(graph, transport = null) {
   const base = 'http://purl.org/stuff/transmissions/'
   const nodeNames = new Map([...graph.nodes.keys()].map(id => [id, compact(id, base)]))
   const subject = compact(graph.id, base)
   const lines = [`@prefix : <${base}> .`, '@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .', '']
   lines.push(`${subject} a :Transmission ;`)
   if (graph.label) lines.push(`    <http://www.w3.org/2000/01/rdf-schema#label> ${literal(graph.label)} ;`)
+  if (transport?.tempoMap?.length) {
+    const changes = transport.tempoMap.map(change => `[ :atBeat ${change.beat} ; :bpm ${change.bpm} ]`).join(' ')
+    lines.push(`    :tempoMap ( ${changes} ) ;`)
+  }
+  if (transport?.loop) {
+    lines.push(`    :loopStart ${transport.loop.startBeat} ;`)
+    lines.push(`    :loopEnd ${transport.loop.endBeat} ;`)
+    lines.push(`    :loopEnabled ${transport.loop.enabled !== false} ;`)
+  }
   lines.push(`    :pipe ( ${[...graph.nodes.keys()].map(id => nodeNames.get(id)).join(' ')} ) .`, '')
   for (const node of graph.nodes.values()) {
     lines.push(`${nodeNames.get(node.id)} a ${term(node.type, base)} ;`)

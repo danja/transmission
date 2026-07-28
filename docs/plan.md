@@ -29,6 +29,10 @@ The C++ layer owns VST3 module discovery, plugin lifecycle, bus configuration, a
 
 The native engine receives a compiled graph rather than RDF. Nested transmissions may be flattened during compilation.
 
+### Transport
+
+Transport is shared between the project/session layer and native processing. It supports start, stop, seek, tempo changes scheduled at musical beats, and bounded looping. The Node model owns editable project state; the native `TransportClock` advances per audio block and returns fixed-capacity timing segments so callback execution does not allocate.
+
 ### Persisted model
 
 RDF/Turtle remains canonical. The vocabulary covers projects, transmissions, plugin instances, audio/MIDI ports, connections, bus layouts, parameters, automation, devices, plugin state, and editor metadata. Editor layout properties remain separate from execution properties.

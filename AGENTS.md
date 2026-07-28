@@ -8,6 +8,7 @@ Build Transmission as a maintainable Linux VST3 host with a Node.js control plan
 
 - Never allocate, access the filesystem or network, log through an unbounded sink, call JavaScript, or take an unpredictable lock on the audio callback thread.
 - Use preallocated buffers and bounded lock-free queues for callback communication.
+- Transport advancement on the callback must use fixed-capacity storage; tempo-map edits belong on the control thread.
 - Keep RDF parsing, graph compilation, plugin discovery, and project I/O outside the real-time path.
 - Treat plugin code as untrusted: surface errors, isolate failures where practical, and make shutdown recoverable.
 

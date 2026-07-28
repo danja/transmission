@@ -14,7 +14,7 @@ const definition = {
 
 function bridge() {
   return {
-    loadProject: vi.fn(), startAudio: vi.fn(), stopAudio: vi.fn(), dispose: vi.fn()
+    loadProject: vi.fn(), configureTransport: vi.fn(), startAudio: vi.fn(), stopAudio: vi.fn(), dispose: vi.fn()
   }
 }
 
@@ -27,6 +27,7 @@ describe('EngineSession', () => {
     session.stop()
     session.dispose()
     expect(native.loadProject).toHaveBeenCalledOnce()
+    expect(native.configureTransport).toHaveBeenCalledOnce()
     expect(native.startAudio).toHaveBeenCalledOnce()
     expect(native.stopAudio).toHaveBeenCalledOnce()
     expect(session.state).toBe('disposed')

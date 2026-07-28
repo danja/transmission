@@ -14,6 +14,7 @@ export class EngineSession {
     if (this.state === 'running') throw new Error('Stop audio before opening a project')
     const compiled = this.project.open(definition, filePath)
     this.bridge.loadProject(compiled)
+    this.#configureTransport()
     this.state = 'loaded'
     return compiled
   }
@@ -22,6 +23,7 @@ export class EngineSession {
     if (this.state === 'running') throw new Error('Stop audio before editing the runtime graph')
     const compiled = this.project.update(mutator)
     this.bridge.loadProject(compiled)
+    this.#configureTransport()
     this.state = 'loaded'
     return compiled
   }
@@ -43,11 +45,19 @@ export class EngineSession {
   setTempo(bpm, atBeat = this.project.transport.positionBeats) {
     if (this.state === 'running') throw new Error('Stop audio before changing the tempo map')
     this.project.transport.setTempo(bpm, atBeat)
+    this.#configureTransport()
   }
 
   setLoop(startBeat, endBeat, enabled = true) {
     if (this.state === 'running') throw new Error('Stop audio before changing the loop')
     this.project.transport.setLoop(startBeat, endBeat, enabled)
+    this.#configureTransport()
+  }
+
+  #configureTransport() {
+    if (typeof this.bridge.configureTransport === 'function') {
+      this.bridge.configureTransport(this.project.transport.toJSON())
+    }
   }
 
   dispose() {

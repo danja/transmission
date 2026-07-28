@@ -21,6 +21,7 @@ export class NativeBridge {
   createEngine(options = {}) { return this.#call('createEngine', options) }
   scanPlugins(paths) { return this.#call('scanPlugins', paths) }
   loadProject(graph) { return this.#call('loadProject', graph) }
+  configureTransport(state) { return this.#call('configureTransport', state) }
   startAudio() { return this.#call('startAudio') }
   stopAudio() { return this.#call('stopAudio') }
   setParameter(nodeId, parameterId, value, sampleOffset = 0) {

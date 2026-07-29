@@ -137,6 +137,10 @@ bool Vst3EditorHost::open(const std::string& modulePath, const std::string& titl
         close();
         return false;
     };
+    const auto* display = gdk_display_get_default();
+    if (!display || !GDK_IS_X11_DISPLAY(display)) {
+        return fail("native editors require the GTK X11 backend; launch with GDK_BACKEND=x11");
+    }
     std::string error;
     impl_->module = VST3::Hosting::Module::create(modulePath, error);
     if (!impl_->module) return fail(error.empty() ? "module load failed" : error.c_str());

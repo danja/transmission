@@ -149,6 +149,9 @@ void AudioEngine::process(const float* const* inputs, float* const* outputs,
     }
     const auto advance = transport_.advance(frames);
     positionBeats_.store(advance.endBeat, std::memory_order_release);
+    const auto tempo = advance.segmentCount > 0 ? advance.segments[0].bpm : 120.0;
+    if (routedAudioGraph_)
+        routedAudioGraph_->setProcessContext({advance.startBeat, tempo, true});
     if (audioGraph_ && inputs && channels == graphChannels_ && frames == graphFrames_) {
         audioGraph_->processWithMidi(inputs, outputs, channels, frames,
                                      midiEventBuffer_.data(), midiEventCount_);

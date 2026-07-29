@@ -24,13 +24,16 @@ struct Vst3Processor::Impl {
     Steinberg::FUnknownPtr<Steinberg::Vst::IAudioProcessor> processor;
     Steinberg::Vst::HostProcessData processData;
     Steinberg::Vst::EventList inputEvents{256};
+    Steinberg::Vst::EventList outputEvents{256};
     Steinberg::Vst::ParameterChanges parameterChanges{32};
+    Steinberg::Vst::ParameterChanges outputParameterChanges{32};
     Steinberg::Vst::ProcessContext processContext{};
     std::string name;
     std::size_t channels = 0;
     std::size_t frames = 0;
     bool active = false;
     bool processing = false;
+    bool hasAudioInput = false;
     bool hasParameterChanges = false;
     static constexpr std::size_t maxPendingParameters = 32;
     // 0 = free, 1 = producer writing, 2 = ready for the audio thread.
@@ -100,8 +103,8 @@ bool Vst3Processor::initialize(const std::string& modulePath, std::size_t channe
         Steinberg::Vst::kAudio, Steinberg::Vst::kInput);
     const auto outputBusCount = candidate->component->getBusCount(
         Steinberg::Vst::kAudio, Steinberg::Vst::kOutput);
-    if (inputBusCount < 1 || outputBusCount < 1) {
-        error = "VST3 effect has no audio input/output bus";
+    if (outputBusCount < 1) {
+        error = "VST3 effect has no audio output bus";
         return false;
     }
 
@@ -133,8 +136,10 @@ bool Vst3Processor::initialize(const std::string& modulePath, std::size_t channe
         error = "failed to prepare VST3 process buffers";
         return false;
     }
-    if (candidate->processData.numInputs < 1 || candidate->processData.numOutputs < 1 ||
-        candidate->processData.inputs[0].numChannels < static_cast<Steinberg::int32>(channels) ||
+    candidate->hasAudioInput = inputBusCount > 0 && candidate->processData.numInputs > 0;
+    if (candidate->processData.numOutputs < 1 ||
+        (candidate->hasAudioInput &&
+         candidate->processData.inputs[0].numChannels < static_cast<Steinberg::int32>(channels)) ||
         candidate->processData.outputs[0].numChannels < static_cast<Steinberg::int32>(channels)) {
         error = "VST3 effect does not provide the requested channel count";
         return false;
@@ -156,9 +161,14 @@ bool Vst3Processor::initialize(const std::string& modulePath, std::size_t channe
     candidate->channels = channels;
     candidate->frames = frames;
     candidate->processContext.sampleRate = sampleRate;
-    candidate->processContext.state = Steinberg::Vst::ProcessContext::kPlaying;
+    candidate->processContext.state = Steinberg::Vst::ProcessContext::kPlaying |
+                                      Steinberg::Vst::ProcessContext::kTempoValid |
+                                      Steinberg::Vst::ProcessContext::kProjectTimeMusicValid |
+                                      Steinberg::Vst::ProcessContext::kTimeSigValid;
     candidate->processContext.tempo = 120.0;
     candidate->processContext.projectTimeMusic = 0.0;
+    candidate->processContext.timeSigNumerator = 4;
+    candidate->processContext.timeSigDenominator = 4;
     impl_ = std::move(candidate);
     return true;
 }
@@ -241,13 +251,16 @@ void Vst3Processor::processWithMidi(const float* const* inputs, float* const* ou
     impl_->processData.processContext = &impl_->processContext;
     for (std::size_t channel = 0; channel < channels; ++channel) {
         if (!inputs[channel] || !outputs[channel]) return;
-        impl_->processData.setChannelBuffer(Steinberg::Vst::kInput, 0,
-                                             static_cast<Steinberg::int32>(channel),
-                                             const_cast<float*>(inputs[channel]));
+        if (impl_->hasAudioInput)
+            impl_->processData.setChannelBuffer(Steinberg::Vst::kInput, 0,
+                                                static_cast<Steinberg::int32>(channel),
+                                                const_cast<float*>(inputs[channel]));
         impl_->processData.setChannelBuffer(Steinberg::Vst::kOutput, 0,
                                              static_cast<Steinberg::int32>(channel), outputs[channel]);
     }
     impl_->inputEvents.clear();
+    impl_->outputEvents.clear();
+    impl_->outputParameterChanges.clearQueue();
     for (std::size_t index = 0; index < eventCount; ++index) {
         const auto& midi = events[index];
         if (midi.size < 3) continue;
@@ -280,12 +293,62 @@ void Vst3Processor::processWithMidi(const float* const* inputs, float* const* ou
         impl_->inputEvents.addEvent(event);
     }
     impl_->processData.inputEvents = &impl_->inputEvents;
+    impl_->processData.outputEvents = &impl_->outputEvents;
     impl_->processData.inputParameterChanges =
         impl_->hasParameterChanges ? &impl_->parameterChanges : nullptr;
+    impl_->processData.outputParameterChanges = &impl_->outputParameterChanges;
     if (impl_->processor->process(impl_->processData) != Steinberg::kResultOk) {
         for (std::size_t channel = 0; channel < channels; ++channel)
             if (outputs[channel]) std::fill(outputs[channel], outputs[channel] + frames, 0.0F);
     }
+}
+
+void Vst3Processor::setProcessContext(const AudioProcessContext& context) noexcept {
+    if (!impl_) return;
+    impl_->processContext.projectTimeMusic = context.projectTimeMusic;
+    impl_->processContext.tempo = context.tempo;
+    impl_->processContext.state = Steinberg::Vst::ProcessContext::kTempoValid |
+                                  Steinberg::Vst::ProcessContext::kProjectTimeMusicValid |
+                                  Steinberg::Vst::ProcessContext::kTimeSigValid;
+    if (context.playing)
+        impl_->processContext.state |= Steinberg::Vst::ProcessContext::kPlaying;
+}
+
+std::size_t Vst3Processor::takeOutputMidi(MidiEvent* events,
+                                         std::size_t capacity) noexcept {
+    if (!impl_ || !events || capacity == 0) return 0;
+    const auto available = std::min<std::size_t>(
+        static_cast<std::size_t>(std::max<Steinberg::int32>(
+            0, impl_->outputEvents.getEventCount())), capacity);
+    std::size_t count = 0;
+    for (std::size_t index = 0; index < available; ++index) {
+        Steinberg::Vst::Event event{};
+        if (impl_->outputEvents.getEvent(static_cast<Steinberg::int32>(index), event) !=
+            Steinberg::kResultOk) continue;
+        MidiEvent midi;
+        midi.frameOffset = static_cast<std::size_t>(
+            std::max<Steinberg::int32>(0, event.sampleOffset));
+        midi.size = 3;
+        if (event.type == Steinberg::Vst::Event::kNoteOnEvent) {
+            midi.data = {
+                static_cast<std::uint8_t>(0x90 | (event.noteOn.channel & 0x0f)),
+                static_cast<std::uint8_t>(std::clamp<Steinberg::int16>(
+                    event.noteOn.pitch, 0, 127)),
+                static_cast<std::uint8_t>(std::clamp(
+                    static_cast<int>(event.noteOn.velocity * 127.0F), 0, 127))};
+        } else if (event.type == Steinberg::Vst::Event::kNoteOffEvent) {
+            midi.data = {
+                static_cast<std::uint8_t>(0x80 | (event.noteOff.channel & 0x0f)),
+                static_cast<std::uint8_t>(std::clamp<Steinberg::int16>(
+                    event.noteOff.pitch, 0, 127)),
+                static_cast<std::uint8_t>(std::clamp(
+                    static_cast<int>(event.noteOff.velocity * 127.0F), 0, 127))};
+        } else {
+            continue;
+        }
+        events[count++] = midi;
+    }
+    return count;
 }
 
 } // namespace transmission

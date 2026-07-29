@@ -33,6 +33,8 @@ public:
                       std::string& error) override;
     bool enqueueParameter(std::uint32_t parameterId, double normalizedValue) noexcept override;
     void applyPendingParameters() noexcept override;
+    void setProcessContext(const AudioProcessContext& context) noexcept override;
+    std::size_t takeOutputMidi(MidiEvent* events, std::size_t capacity) noexcept override;
 
     void process(const float* const* inputs, float* const* outputs,
                  std::size_t channels, std::size_t frames) noexcept override;

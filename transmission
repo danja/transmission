@@ -9,4 +9,5 @@ if [[ ! -x "$APP" ]]; then
   exit 1
 fi
 
+export GDK_BACKEND=x11
 exec "$APP" "$@"

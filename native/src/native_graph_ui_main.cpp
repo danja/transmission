@@ -1,8 +1,11 @@
 #include <gtk/gtk.h>
 #include <cairo.h>
+#include "transmission/AudioProcessor.h"
+#include "transmission/GraphRuntimeController.h"
 #include "transmission/JackConnectionManager.h"
-#include "transmission/TransportClock.h"
+#include "transmission/JackAudioDevice.h"
 #include "transmission/Vst3EditorHost.h"
+#include "transmission/Vst3Processor.h"
 
 #include <algorithm>
 #include <array>
@@ -59,17 +62,22 @@ struct GraphView {
     double pointerX = 0.0;
     double pointerY = 0.0;
     std::vector<std::string> pluginPaths;
+    std::size_t nextPluginId = 1;
     std::array<std::string, 2> systemInputConnections{"system:capture_1", "system:capture_2"};
     std::array<std::string, 2> systemOutputConnections{"system:playback_1", "system:playback_2"};
     std::unique_ptr<transmission::JackConnectionManager> jackConnections;
     std::unique_ptr<transmission::Vst3EditorHost> editorHost;
-    transmission::TransportClock transport{48000.0};
+#if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
+    std::unique_ptr<transmission::JackAudioDevice> jackDevice;
+    std::unique_ptr<transmission::GraphRuntimeController> runtime;
+#endif
     guint transportTimer = 0;
     GtkSpinButton* tempo = nullptr;
     GtkSpinButton* loopBars = nullptr;
     GtkToggleButton* loop = nullptr;
     GtkWidget* playButton = nullptr;
     GtkWidget* positionLabel = nullptr;
+    GtkWidget* statusLabel = nullptr;
 };
 
 struct PluginDialogContext {
@@ -91,6 +99,57 @@ struct NodeMenuContext {
     GtkWidget* canvas = nullptr;
     std::size_t node = static_cast<std::size_t>(-1);
 };
+
+void setStatus(GraphView& view, const std::string& message, bool error = false) {
+    if (!view.statusLabel) return;
+    gtk_label_set_text(GTK_LABEL(view.statusLabel), message.c_str());
+    auto* style = gtk_widget_get_style_context(view.statusLabel);
+    if (error)
+        gtk_style_context_add_class(style, "error");
+    else
+        gtk_style_context_remove_class(style, "error");
+}
+
+bool runtimeRunning(const GraphView& view) {
+#if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
+    return view.runtime && view.runtime->running();
+#else
+    (void)view;
+    return false;
+#endif
+}
+
+void stopRuntime(GraphView& view, const char* status = nullptr) {
+#if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
+    if (view.runtime) view.runtime->stop();
+#endif
+    if (status) setStatus(view, status);
+}
+
+transmission::RuntimeGraphSnapshot runtimeSnapshot(const GraphView& view) {
+    transmission::RuntimeGraphSnapshot snapshot;
+    snapshot.nodes.reserve(view.nodes.size());
+    for (const auto& node : view.nodes) {
+        auto kind = node.pluginPath.empty()
+            ? transmission::RuntimeNodeKind::PassThrough
+            : transmission::RuntimeNodeKind::Plugin;
+        if (node.id == "system-input")
+            kind = transmission::RuntimeNodeKind::SystemInput;
+        else if (node.id == "system-output")
+            kind = transmission::RuntimeNodeKind::SystemOutput;
+        snapshot.nodes.push_back({node.id, kind, node.pluginPath});
+    }
+    snapshot.connections.reserve(view.edges.size());
+    for (const auto& edge : view.edges) {
+        if (edge.from >= view.nodes.size() || edge.to >= view.nodes.size()) continue;
+        snapshot.connections.push_back({
+            view.nodes[edge.from].id, view.nodes[edge.to].id,
+            edge.kind == PortKind::Audio
+                ? transmission::RuntimeConnectionKind::Audio
+                : transmission::RuntimeConnectionKind::Midi});
+    }
+    return snapshot;
+}
 
 Node* nodeAt(GraphView& view, double x, double y) {
     for (auto it = view.nodes.rbegin(); it != view.nodes.rend(); ++it) {
@@ -209,8 +268,9 @@ void addPluginFromDialog(GtkDialog*, gint response, gpointer data) {
         if (selected >= 0 && static_cast<std::size_t>(selected) < context->view->pluginPaths.size()) {
             const auto& path = context->view->pluginPaths[static_cast<std::size_t>(selected)];
             const auto stem = std::filesystem::path(path).stem().string();
-            const auto id = "plugin-" + std::to_string(context->view->nodes.size());
+            const auto id = "plugin-" + std::to_string(context->view->nextPluginId++);
             const auto offset = static_cast<double>(context->view->nodes.size() % 3) * 35.0;
+            stopRuntime(*context->view, "Graph changed — press Play to compile and start audio");
             context->view->nodes.push_back({id, stem, false, 2, 2, 1, 1, 300.0 + offset,
                                             300.0 + offset, path});
             gtk_widget_queue_draw(context->canvas);
@@ -241,6 +301,32 @@ void showPluginDialog(GtkWidget* canvas, GraphView& view) {
     gtk_widget_show_all(dialog);
 }
 
+bool applyExternalConnections(GraphView& view, std::string& error) {
+    if (!view.jackConnections || !view.jackConnections->available()) {
+        error = "JACK server is not available";
+        return false;
+    }
+    bool applied = true;
+    const auto appendError = [&](const std::string& message) {
+        if (!error.empty()) error += "; ";
+        error += message;
+        applied = false;
+    };
+    for (std::size_t index = 0; index < view.systemInputConnections.size(); ++index) {
+        std::string routeError;
+        if (!view.jackConnections->connectInput(index, view.systemInputConnections[index],
+                                                routeError))
+            appendError("input " + std::to_string(index + 1) + ": " + routeError);
+    }
+    for (std::size_t index = 0; index < view.systemOutputConnections.size(); ++index) {
+        std::string routeError;
+        if (!view.jackConnections->connectOutput(index, view.systemOutputConnections[index],
+                                                 routeError))
+            appendError("output " + std::to_string(index + 1) + ": " + routeError);
+    }
+    return applied;
+}
+
 void systemDialogResponse(GtkDialog*, gint response, gpointer data) {
     auto* context = static_cast<SystemDialogContext*>(data);
     if (response == GTK_RESPONSE_ACCEPT) {
@@ -248,14 +334,19 @@ void systemDialogResponse(GtkDialog*, gint response, gpointer data) {
                                            : context->view->systemOutputConnections;
         for (std::size_t index = 0; index < connections.size(); ++index) {
             if (auto* selected = gtk_combo_box_text_get_active_text(context->selectors[index])) {
-                std::string selectedName = selected;
-                std::string error;
-                const bool applied = !context->view->jackConnections->available() ||
-                    (context->input ? context->view->jackConnections->connectInput(index, selectedName, error)
-                                    : context->view->jackConnections->connectOutput(index, selectedName, error));
-                if (applied) connections[index] = std::move(selectedName);
+                connections[index] = selected;
                 g_free(selected);
             }
+        }
+        if (runtimeRunning(*context->view)) {
+            std::string error;
+            if (!applyExternalConnections(*context->view, error))
+                setStatus(*context->view, error, true);
+            else
+                setStatus(*context->view, "External JACK connections applied");
+        } else {
+            setStatus(*context->view,
+                      "Connection choices saved — they will be applied when audio starts");
         }
     }
     gtk_widget_destroy(context->dialog);
@@ -289,18 +380,22 @@ void showSystemDialog(GtkWidget* canvas, GraphView& view, bool input) {
         gtk_widget_set_halign(label, GTK_ALIGN_START);
         gtk_grid_attach(GTK_GRID(grid), label, 0, static_cast<gint>(index), 1, 1);
         auto* selector = GTK_COMBO_BOX_TEXT(gtk_combo_box_text_new());
-        for (const auto& port : jackPorts) gtk_combo_box_text_append_text(selector, port.c_str());
+        std::vector<std::string> options = jackPorts;
         if (jackPorts.empty()) {
             const auto prefix = input ? "system:capture_" : "system:playback_";
-            gtk_combo_box_text_append_text(selector, (prefix + std::to_string(index + 1)).c_str());
-            gtk_combo_box_text_append_text(selector, (prefix + std::to_string(index == 0 ? 2 : 1)).c_str());
+            options.push_back(prefix + std::to_string(index + 1));
+            options.push_back(prefix + std::to_string(index == 0 ? 2 : 1));
         }
-        gtk_combo_box_text_append_text(selector, "No connection");
-        gint active = 0;
-        for (gint option = 0; option < static_cast<gint>(jackPorts.size()); ++option)
-            if (connections[index] == jackPorts[static_cast<std::size_t>(option)]) active = option;
-        if (connections[index] == "No connection") active = static_cast<gint>(jackPorts.size()) +
-                                                             (jackPorts.empty() ? 2 : 0);
+        if (std::find(options.begin(), options.end(), connections[index]) == options.end())
+            options.push_back(connections[index]);
+        if (std::find(options.begin(), options.end(), "No connection") == options.end())
+            options.push_back("No connection");
+        for (const auto& option : options)
+            gtk_combo_box_text_append_text(selector, option.c_str());
+        const auto selected = std::find(options.begin(), options.end(), connections[index]);
+        const auto active = selected == options.end()
+            ? 0
+            : static_cast<gint>(selected - options.begin());
         gtk_combo_box_set_active(GTK_COMBO_BOX(selector), active);
         gtk_grid_attach(GTK_GRID(grid), GTK_WIDGET(selector), 1, static_cast<gint>(index), 1, 1);
         context->selectors[index] = selector;
@@ -310,12 +405,16 @@ void showSystemDialog(GtkWidget* canvas, GraphView& view, bool input) {
 }
 
 void updateTransportDisplay(GraphView& view) {
+    const auto running = runtimeRunning(view);
     if (view.playButton)
-        gtk_button_set_label(GTK_BUTTON(view.playButton), view.transport.running() ? "Stop" : "Play");
+        gtk_button_set_label(GTK_BUTTON(view.playButton), running ? "Stop" : "Play");
     if (view.positionLabel) {
-        const auto position = view.transport.positionBeats();
+        double position = 0.0;
+#if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
+        if (view.runtime) position = view.runtime->diagnostics().positionBeats;
+#endif
         char text[96];
-        g_snprintf(text, sizeof(text), "%s  •  beat %.2f", view.transport.running() ? "Playing" : "Stopped",
+        g_snprintf(text, sizeof(text), "%s  •  beat %.2f", running ? "Playing" : "Stopped",
                    position);
         gtk_label_set_text(GTK_LABEL(view.positionLabel), text);
     }
@@ -323,12 +422,11 @@ void updateTransportDisplay(GraphView& view) {
 
 gboolean transportTick(gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
-    if (!view.transport.running()) {
+    if (!runtimeRunning(view)) {
         view.transportTimer = 0;
         updateTransportDisplay(view);
         return G_SOURCE_REMOVE;
     }
-    view.transport.advance(1440); // 30 ms at the UI's nominal 48 kHz clock.
     updateTransportDisplay(view);
     return G_SOURCE_CONTINUE;
 }
@@ -340,30 +438,64 @@ void startTransportTimer(GraphView& view) {
 
 void playStopClicked(GtkButton*, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
-    if (view.transport.running()) {
-        view.transport.stop();
-    } else {
-        view.transport.start();
-        startTransportTimer(view);
+    if (runtimeRunning(view)) {
+        stopRuntime(view, "Audio stopped");
+        updateTransportDisplay(view);
+        return;
     }
+#if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
+    transmission::AudioDeviceConfig deviceConfig;
+    deviceConfig.channels = 2;
+    deviceConfig.midiInputs = 1;
+    std::string error;
+    if (!view.jackConnections->deviceConfig(deviceConfig, error)) {
+        setStatus(view, error, true);
+        updateTransportDisplay(view);
+        return;
+    }
+    transmission::RuntimeTransportConfig transportConfig;
+    transportConfig.tempo = gtk_spin_button_get_value(view.tempo);
+    transportConfig.loopEnabled = view.loop && gtk_toggle_button_get_active(view.loop);
+    transportConfig.loopEndBeat =
+        std::max(1.0, gtk_spin_button_get_value(view.loopBars)) * 4.0;
+    if (!view.runtime->start(runtimeSnapshot(view), *view.jackDevice, deviceConfig,
+                             transportConfig, error)) {
+        if (error == "unable to configure the audio device" &&
+            !view.jackDevice->lastError().empty())
+            error = view.jackDevice->lastError();
+        setStatus(view, error, true);
+        updateTransportDisplay(view);
+        return;
+    }
+    if (!applyExternalConnections(view, error))
+        setStatus(view, "Audio is running, but JACK routing failed: " + error, true);
+    else
+        setStatus(view, "Audio running through JACK");
+    startTransportTimer(view);
+#else
+    setStatus(view, "This UI build requires both JACK and VST3 support", true);
+#endif
     updateTransportDisplay(view);
 }
 
 void tempoChanged(GtkSpinButton* spin, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
-    view.transport.setTempo(gtk_spin_button_get_value(spin), view.transport.positionBeats());
+    (void)spin;
+    if (runtimeRunning(view))
+        stopRuntime(view, "Tempo changed — press Play to restart audio");
+    updateTransportDisplay(view);
 }
 
 void loopChanged(GtkWidget*, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
-    const auto bars = view.loopBars ? gtk_spin_button_get_value(view.loopBars) : 4.0;
-    const auto enabled = view.loop && gtk_toggle_button_get_active(view.loop);
-    view.transport.setLoop(0.0, std::max(1.0, bars) * 4.0, enabled);
+    if (runtimeRunning(view))
+        stopRuntime(view, "Loop changed — press Play to restart audio");
+    updateTransportDisplay(view);
 }
 
 void resetTransportClicked(GtkButton*, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
-    view.transport.stop(true);
+    stopRuntime(view, "Audio stopped and transport reset");
     updateTransportDisplay(view);
 }
 
@@ -386,6 +518,7 @@ void removeNodeFromMenu(GtkMenuItem*, gpointer data) {
     auto* context = static_cast<NodeMenuContext*>(data);
     auto& view = *context->view;
     if (context->node >= view.nodes.size()) return;
+    stopRuntime(view, "Graph changed — press Play to compile and start audio");
     view.edges.erase(std::remove_if(view.edges.begin(), view.edges.end(), [&](const auto& edge) {
         return edge.from == context->node || edge.to == context->node;
     }), view.edges.end());
@@ -495,6 +628,7 @@ gboolean buttonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
     if (event->button == GDK_BUTTON_SECONDARY) {
         const auto edge = edgeAt(view, event->x, event->y);
         if (edge != static_cast<std::size_t>(-1)) {
+            stopRuntime(view, "Graph changed — press Play to compile and start audio");
             view.edges.erase(view.edges.begin() + static_cast<std::ptrdiff_t>(edge));
             gtk_widget_queue_draw(widget);
             return TRUE;
@@ -565,9 +699,11 @@ gboolean buttonRelease(GtkWidget* widget, GdkEventButton* event, gpointer data) 
                 return edge.from == view.connectingFrom && edge.fromPort == view.connectingPort &&
                        edge.to == hit.node && edge.toPort == hit.port && edge.kind == view.connectingKind;
             });
-            if (duplicate == view.edges.end())
+            if (duplicate == view.edges.end()) {
+                stopRuntime(view, "Graph changed — press Play to compile and start audio");
                 view.edges.push_back({view.connectingFrom, hit.node, view.connectingPort, hit.port,
                                       view.connectingKind});
+            }
         }
         view.connectingFrom = static_cast<std::size_t>(-1);
         gtk_widget_queue_draw(widget);
@@ -581,6 +717,21 @@ void activate(GtkApplication* application, gpointer) {
     auto* view = new GraphView();
     view->jackConnections = std::make_unique<transmission::JackConnectionManager>();
     view->editorHost = std::make_unique<transmission::Vst3EditorHost>();
+#if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
+    view->jackDevice = std::make_unique<transmission::JackAudioDevice>();
+    view->runtime = std::make_unique<transmission::GraphRuntimeController>(
+        [](const transmission::RuntimeGraphNode& node,
+           const transmission::AudioDeviceConfig& config,
+           std::string& error) -> std::unique_ptr<transmission::AudioProcessor> {
+            if (node.kind != transmission::RuntimeNodeKind::Plugin)
+                return std::make_unique<transmission::PassThroughProcessor>();
+            auto processor = std::make_unique<transmission::Vst3Processor>();
+            if (!processor->initialize(node.pluginPath, config.channels,
+                                       config.blockSize, config.sampleRate, error))
+                return nullptr;
+            return processor;
+        });
+#endif
     const char* home = std::getenv("HOME");
     const auto pluginRoot = std::filesystem::path(home ? home : ".") / ".vst3";
     if (std::filesystem::is_directory(pluginRoot)) {
@@ -631,12 +782,19 @@ void activate(GtkApplication* application, gpointer) {
     gtk_widget_set_margin_start(positionLabel, 16);
     gtk_box_pack_start(GTK_BOX(transportBar), positionLabel, FALSE, FALSE, 4);
     gtk_box_pack_start(GTK_BOX(frame), transportBar, FALSE, FALSE, 0);
+    auto* statusLabel = gtk_label_new(
+        "Stopped — edit the graph and press Play to compile and start JACK audio");
+    gtk_widget_set_halign(statusLabel, GTK_ALIGN_START);
+    gtk_widget_set_margin_start(statusLabel, 12);
+    gtk_widget_set_margin_bottom(statusLabel, 8);
+    gtk_box_pack_start(GTK_BOX(frame), statusLabel, FALSE, FALSE, 0);
 
     view->tempo = tempo;
     view->loopBars = loopBars;
     view->loop = GTK_TOGGLE_BUTTON(loop);
     view->playButton = playButton;
     view->positionLabel = positionLabel;
+    view->statusLabel = statusLabel;
     loopChanged(nullptr, view);
     g_signal_connect(playButton, "clicked", G_CALLBACK(playStopClicked), view);
     g_signal_connect(resetButton, "clicked", G_CALLBACK(resetTransportClicked), view);

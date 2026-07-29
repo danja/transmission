@@ -8,6 +8,8 @@
 
 namespace transmission {
 
+inline constexpr std::size_t maxMidiEventsPerBlock = 256;
+
 struct AudioDeviceConfig {
     std::size_t channels = 2;
     std::size_t blockSize = 256;

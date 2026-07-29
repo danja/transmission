@@ -15,4 +15,22 @@ void PassThroughProcessor::process(const float* const* inputs, float* const* out
     }
 }
 
+void PassThroughProcessor::processWithMidi(const float* const* inputs, float* const* outputs,
+                                           std::size_t channels, std::size_t frames,
+                                           const MidiEvent* events,
+                                           std::size_t eventCount) noexcept {
+    midiInput_ = events;
+    midiInputCount_ = eventCount;
+    process(inputs, outputs, channels, frames);
+}
+
+std::size_t PassThroughProcessor::takeOutputMidi(MidiEvent* events,
+                                                 std::size_t capacity) noexcept {
+    const auto count = std::min(midiInputCount_, capacity);
+    if (events && midiInput_) std::copy_n(midiInput_, count, events);
+    midiInput_ = nullptr;
+    midiInputCount_ = 0;
+    return count;
+}
+
 } // namespace transmission

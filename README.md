@@ -22,6 +22,10 @@ The project is split between a Node.js control plane and a C++ real-time engine.
 
 ## Development
 
+Download the [Steinberg VST 3 SDK](https://www.steinberg.net/developers/vstsdk/)
+and extract it into `~/VST_SDK`. The build expects the SDK source tree at
+`~/VST_SDK/vst3sdk`.
+
 ```sh
 npm install
 npm test
@@ -58,7 +62,7 @@ cmake --build native/build-ui --target transmission_graph_ui
 native/build-ui/transmission_graph_ui
 ```
 
-The current editor is a deliberately small native canvas: it renders typed audio and MIDI node/arc topology with distinct colors, identifies system audio input/output nodes with correctly directed sockets, opens per-channel external-connection dialogs for those nodes, discovers JACK ports when enabled, applies JACK connections to the running engine, provides a tempo/play-stop/reset/loop transport bar backed by `TransportClock`, discovers bundles from `~/.vst3`, opens a modal plugin chooser from the graph background’s context menu, provides node context menus for editing/removing nodes and their connections, creates plugin nodes carrying their bundle paths, supports dragging nodes, and allows new type-compatible arcs to be drawn from output sockets to input sockets. Project loading, graph editing commands, and native/Node synchronization are the next UI slices.
+The native canvas renders typed audio and MIDI topology, compiles execution data through a control-thread graph compiler, starts the VST3 graph on JACK from the Play button, displays engine transport diagnostics, preserves and applies external system-port choices, and reports runtime failures in the window. VST3 MIDI output is routed through bounded native buffers, so generator-to-instrument chains execute without callback allocation. It also discovers bundles from `~/.vst3`, opens native plugin editors, provides node context menus, supports dragging nodes, and creates type-compatible arcs. Persisted project loading and native/Node synchronization remain future UI slices.
 
 Build the VST3-enabled UI to open native plugin editors by double-clicking plugin nodes:
 
@@ -84,6 +88,8 @@ native/build-ui-jack-vst3/transmission_graph_ui
 The System Input and System Output dialogs enumerate JACK ports on demand and apply connections to `transmission:in_N` and `transmission:out_N`. The Transmission engine must already be running in the same JACK server for routes to apply.
 
 On Linux the editor host embeds the VST3 `IPlugView` through X11 and supplies the SDK run-loop interface using GTK timers. Double-clicking system nodes has no editor action.
+The `./transmission` launcher selects GTK's X11 backend so native plugin editors
+can be embedded when the desktop session itself uses Wayland.
 
 To build the addon with VST3 node construction enabled:
 

@@ -9,15 +9,20 @@
 namespace transmission {
 
 struct JackConnectionManager::Impl {
-    jack_client_t* client = nullptr;
+    mutable jack_client_t* client = nullptr;
+    bool ensureClient() const {
+        if (client) return true;
+        jack_status_t status = JackFailure;
+        client = jack_client_open("transmission_ui", JackNoStartServer, &status);
+        return client != nullptr;
+    }
     ~Impl() {
         if (client) jack_client_close(client);
     }
 };
 
 JackConnectionManager::JackConnectionManager() : impl_(std::make_unique<Impl>()) {
-    jack_status_t status = JackFailure;
-    impl_->client = jack_client_open("transmission_ui", JackNoStartServer, &status);
+    impl_->ensureClient();
 }
 
 JackConnectionManager::~JackConnectionManager() = default;
@@ -34,16 +39,18 @@ static std::vector<std::string> listPorts(jack_client_t* client, unsigned flags)
 }
 
 std::vector<std::string> JackConnectionManager::inputSources() const {
-    return listPorts(impl_->client, JackPortIsOutput);
+    return impl_->ensureClient() ? listPorts(impl_->client, JackPortIsOutput)
+                                 : std::vector<std::string>{};
 }
 
 std::vector<std::string> JackConnectionManager::outputDestinations() const {
-    return listPorts(impl_->client, JackPortIsInput);
+    return impl_->ensureClient() ? listPorts(impl_->client, JackPortIsInput)
+                                 : std::vector<std::string>{};
 }
 
 static bool clearConnections(jack_client_t* client, jack_port_t* port, bool portIsInput,
                              std::string& error) {
-    const auto* current = jack_port_get_connections(port);
+    const auto* current = jack_port_get_all_connections(client, port);
     if (!current) return true;
     const auto portName = jack_port_name(port);
     for (std::size_t index = 0; current[index]; ++index) {
@@ -61,7 +68,7 @@ static bool clearConnections(jack_client_t* client, jack_port_t* port, bool port
 
 bool JackConnectionManager::connectInput(std::size_t channel, const std::string& source,
                                           std::string& error) {
-    if (!impl_->client) {
+    if (!impl_->ensureClient()) {
         error = "JACK is not available";
         return false;
     }
@@ -82,7 +89,7 @@ bool JackConnectionManager::connectInput(std::size_t channel, const std::string&
 
 bool JackConnectionManager::connectOutput(std::size_t channel, const std::string& destination,
                                            std::string& error) {
-    if (!impl_->client) {
+    if (!impl_->ensureClient()) {
         error = "JACK is not available";
         return false;
     }
@@ -101,7 +108,24 @@ bool JackConnectionManager::connectOutput(std::size_t channel, const std::string
     return true;
 }
 
-bool JackConnectionManager::available() const noexcept { return impl_ && impl_->client; }
+bool JackConnectionManager::deviceConfig(AudioDeviceConfig& config,
+                                         std::string& error) const {
+    if (!impl_ || !impl_->ensureClient()) {
+        error = "JACK server is not available";
+        return false;
+    }
+    config.blockSize = static_cast<std::size_t>(jack_get_buffer_size(impl_->client));
+    config.sampleRate = static_cast<double>(jack_get_sample_rate(impl_->client));
+    if (config.blockSize == 0 || config.sampleRate <= 0.0) {
+        error = "JACK returned an invalid sample rate or block size";
+        return false;
+    }
+    return true;
+}
+
+bool JackConnectionManager::available() const noexcept {
+    return impl_ && impl_->ensureClient();
+}
 
 } // namespace transmission
 
@@ -118,6 +142,10 @@ bool JackConnectionManager::connectInput(std::size_t, const std::string&, std::s
     return false;
 }
 bool JackConnectionManager::connectOutput(std::size_t, const std::string&, std::string& error) {
+    error = "JACK support is not enabled";
+    return false;
+}
+bool JackConnectionManager::deviceConfig(AudioDeviceConfig&, std::string& error) const {
     error = "JACK support is not enabled";
     return false;
 }

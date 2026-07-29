@@ -2,6 +2,7 @@
 
 #include "AudioProcessor.h"
 
+#include <array>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -18,6 +19,8 @@ class RoutedAudioGraph {
 public:
     bool addNode(std::string id, std::unique_ptr<AudioProcessor> processor);
     bool connect(const std::string& from, const std::string& to);
+    bool connectMidi(const std::string& from, const std::string& to);
+    bool setExternalMidiInput(const std::string& nodeId);
     bool setParameter(const std::string& nodeId, std::uint32_t parameterId,
                       double normalizedValue, std::string& error);
     bool enqueueParameter(const std::string& nodeId, std::uint32_t parameterId,
@@ -28,6 +31,7 @@ public:
     void processWithMidi(const float* const* inputs, float* const* outputs,
                          std::size_t channels, std::size_t frames,
                          const MidiEvent* events, std::size_t eventCount) noexcept;
+    void setProcessContext(const AudioProcessContext& context) noexcept;
 
     std::size_t nodeCount() const noexcept { return nodes_.size(); }
 
@@ -37,10 +41,16 @@ private:
         std::unique_ptr<AudioProcessor> processor;
         std::vector<std::size_t> incoming;
         std::vector<std::size_t> outgoing;
+        std::vector<std::size_t> midiIncoming;
+        std::vector<std::size_t> midiOutgoing;
         std::vector<float> input;
         std::vector<float> output;
         std::vector<const float*> inputPointers;
         std::vector<float*> outputPointers;
+        std::array<MidiEvent, maxMidiEventsPerBlock> midiInput{};
+        std::array<MidiEvent, maxMidiEventsPerBlock> midiOutput{};
+        std::size_t midiInputCount = 0;
+        bool receivesExternalMidi = false;
     };
 
     std::vector<Node> nodes_;

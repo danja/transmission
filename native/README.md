@@ -30,7 +30,7 @@ The resulting `transmission_vst3_inspect` executable accepts one `.vst3` bundle 
 The SDK fixture can be built and inspected with:
 
 ```sh
-cmake -S /chalet/VST_SDK/vst3sdk -B /tmp/transmission-vst3-sdk-build \
+cmake -S ~/VST_SDK/vst3sdk -B /tmp/transmission-vst3-sdk-build \
   -DCMAKE_BUILD_TYPE=Release \
   -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF \
   -DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=OFF \
@@ -67,6 +67,18 @@ native/build-vst3/transmission_vst3_engine_probe \
 ```
 
 It reports one processed block, zero underruns, and the processed output RMS.
+
+A transport-driven VST3 MIDI-generator/instrument chain can be verified
+deterministically with:
+
+```sh
+native/build-ui-jack-vst3/transmission_vst3_chain_probe \
+  ~/.vst3/drumgen.vst3 ~/.vst3/drumkit.vst3
+```
+
+The corresponding live JACK callback probe is
+`transmission_vst3_jack_chain_probe`; it requires a JACK server configured for
+48 kHz and 1024 frames.
 
 `TransportClock` supports beat-based tempo changes, start/stop, seeking, and looping. Its callback-facing advance result uses fixed-capacity storage; edit the tempo map only from the control side.
 

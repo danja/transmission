@@ -1,5 +1,7 @@
 #pragma once
 
+#include "AudioDevice.h"
+
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -20,6 +22,7 @@ public:
     std::vector<std::string> outputDestinations() const;
     bool connectInput(std::size_t channel, const std::string& source, std::string& error);
     bool connectOutput(std::size_t channel, const std::string& destination, std::string& error);
+    bool deviceConfig(AudioDeviceConfig& config, std::string& error) const;
     bool available() const noexcept;
 
 private:

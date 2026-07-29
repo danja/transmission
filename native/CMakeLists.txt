@@ -11,13 +11,15 @@ option(TRANSMISSION_WITH_VST3 "Build Steinberg SDK-backed VST3 hosting tools" OF
 option(TRANSMISSION_WITH_JACK "Build the JACK audio-device backend" OFF)
 option(TRANSMISSION_WITH_NAPI "Build the Node N-API control addon" OFF)
 option(TRANSMISSION_WITH_GTK_UI "Build the native GTK graph editor" OFF)
-set(VST3_SDK_ROOT "/chalet/VST_SDK/vst3sdk" CACHE PATH "Path to the Steinberg VST3 SDK")
+set(VST3_SDK_ROOT "$ENV{HOME}/VST_SDK/vst3sdk" CACHE PATH "Path to the Steinberg VST3 SDK")
 
 add_library(transmission_engine STATIC
   src/AudioEngine.cpp
   src/AudioGraph.cpp
   src/AudioProcessor.cpp
   src/FakeAudioDevice.cpp
+  src/GraphRuntimeCompiler.cpp
+  src/GraphRuntimeController.cpp
   src/PluginScanner.cpp
   src/RoutedAudioGraph.cpp
   src/TransportClock.cpp
@@ -77,6 +79,18 @@ if(TRANSMISSION_WITH_VST3)
   target_link_libraries(transmission_vst3_graph_probe PRIVATE transmission_vst3_inspector transmission_engine)
   add_executable(transmission_vst3_engine_probe src/vst3_engine_probe_main.cpp)
   target_link_libraries(transmission_vst3_engine_probe PRIVATE transmission_vst3_inspector transmission_engine)
+  add_executable(transmission_vst3_chain_probe src/vst3_chain_probe_main.cpp)
+  target_link_libraries(transmission_vst3_chain_probe PRIVATE transmission_vst3_inspector transmission_engine)
+  if(TRANSMISSION_WITH_JACK)
+    add_executable(transmission_vst3_jack_chain_probe
+      src/vst3_jack_chain_probe_main.cpp
+      src/JackConnectionManager.cpp
+    )
+    target_compile_definitions(transmission_vst3_jack_chain_probe
+      PRIVATE TRANSMISSION_UI_WITH_JACK=1
+    )
+    target_link_libraries(transmission_vst3_jack_chain_probe PRIVATE transmission_vst3_inspector transmission_engine)
+  endif()
 endif()
 
 if(TRANSMISSION_WITH_NAPI AND TRANSMISSION_WITH_VST3)
@@ -106,6 +120,12 @@ if(TRANSMISSION_BUILD_TESTS)
   add_executable(transmission_routed_audio_graph_test tests/RoutedAudioGraphTest.cpp)
   target_link_libraries(transmission_routed_audio_graph_test PRIVATE transmission_engine)
   add_test(NAME transmission_routed_audio_graph_test COMMAND transmission_routed_audio_graph_test)
+  add_executable(transmission_graph_runtime_compiler_test tests/GraphRuntimeCompilerTest.cpp)
+  target_link_libraries(transmission_graph_runtime_compiler_test PRIVATE transmission_engine)
+  add_test(NAME transmission_graph_runtime_compiler_test COMMAND transmission_graph_runtime_compiler_test)
+  add_executable(transmission_graph_runtime_controller_test tests/GraphRuntimeControllerTest.cpp)
+  target_link_libraries(transmission_graph_runtime_controller_test PRIVATE transmission_engine)
+  add_test(NAME transmission_graph_runtime_controller_test COMMAND transmission_graph_runtime_controller_test)
   add_executable(transmission_audio_device_test tests/AudioDeviceTest.cpp)
   target_link_libraries(transmission_audio_device_test PRIVATE transmission_engine)
   add_test(NAME transmission_audio_device_test COMMAND transmission_audio_device_test)
@@ -125,10 +145,9 @@ if(TRANSMISSION_WITH_GTK_UI)
   add_executable(transmission_graph_ui
     src/native_graph_ui_main.cpp
     src/JackConnectionManager.cpp
-    src/TransportClock.cpp
     src/Vst3EditorHost.cpp
   )
-  target_link_libraries(transmission_graph_ui PRIVATE PkgConfig::GTK3)
+  target_link_libraries(transmission_graph_ui PRIVATE PkgConfig::GTK3 transmission_engine)
   target_include_directories(transmission_graph_ui PRIVATE include)
   target_compile_options(transmission_graph_ui PRIVATE -Wall -Wextra -Wpedantic)
   if(TRANSMISSION_WITH_VST3)

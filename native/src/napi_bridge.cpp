@@ -155,7 +155,9 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
         napi_value node;
         napi_get_element(env, nodes, index, &node);
         std::string id;
+        std::string type;
         if (!getString(env, node, "id", id)) return fail(env, "Native graph node id is required");
+        getString(env, node, "type", type);
         std::unique_ptr<transmission::AudioProcessor> processor;
         napi_value settings;
         std::string pluginPath;
@@ -176,8 +178,10 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
         } else {
             processor = std::make_unique<transmission::PassThroughProcessor>();
         }
-        if (!routed->addNode(std::move(id), std::move(processor)))
+        if (!routed->addNode(id, std::move(processor)))
             return fail(env, "Unable to add native graph node");
+        if (type == "system-input" && !routed->setExternalMidiInput(id))
+            return fail(env, "Unable to configure native MIDI input endpoint");
     }
     std::uint32_t connectionCount = 0;
     napi_get_array_length(env, connections, &connectionCount);
@@ -189,7 +193,10 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
         std::string to;
         if (!getString(env, connection, "kind", kind) || !getString(env, connection, "from", from) ||
             !getString(env, connection, "to", to)) return fail(env, "Invalid native graph connection");
-        if (kind == "audio" && !routed->connect(from, to)) return fail(env, "Unable to connect native audio graph");
+        if (kind == "audio" && !routed->connect(from, to))
+            return fail(env, "Unable to connect native audio graph");
+        if (kind == "midi" && !routed->connectMidi(from, to))
+            return fail(env, "Unable to connect native MIDI graph");
     }
     if (!current->loadRuntimeGraph("{\"nativeBridge\":true}") ||
         !current->setRoutedAudioGraph(std::move(routed), engineChannels, engineFrames))

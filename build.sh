@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VST3_SDK_ROOT="${HOME}/VST_SDK/vst3sdk"
 cd "$ROOT_DIR"
 
 echo "Checking JavaScript sources"
@@ -25,6 +26,7 @@ cmake -S native -B native/build-ui-jack-vst3 \
   -DTRANSMISSION_WITH_GTK_UI=ON \
   -DTRANSMISSION_WITH_JACK=ON \
   -DTRANSMISSION_WITH_VST3=ON \
+  -DVST3_SDK_ROOT="$VST3_SDK_ROOT" \
   -DTRANSMISSION_BUILD_TESTS=OFF \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build native/build-ui-jack-vst3 --target transmission_graph_ui --parallel

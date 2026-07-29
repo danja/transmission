@@ -71,7 +71,6 @@ private:
     std::atomic<std::uint64_t> underruns_{0};
     std::atomic<std::uint64_t> midiEvents_{0};
     std::atomic<double> positionBeats_{0.0};
-    static constexpr std::size_t maxMidiEventsPerBlock = 256;
     std::array<MidiEvent, maxMidiEventsPerBlock> midiEventBuffer_{};
     std::size_t midiEventCount_ = 0;
     std::array<MidiEvent, maxMidiEventsPerBlock> midiControlQueue_{};

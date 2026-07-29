@@ -10,6 +10,12 @@
 
 namespace transmission {
 
+struct AudioProcessContext {
+    double projectTimeMusic = 0.0;
+    double tempo = 120.0;
+    bool playing = false;
+};
+
 /** Processing contract for the real-time thread. Implementations must not allocate. */
 class AudioProcessor {
 public:
@@ -34,12 +40,24 @@ public:
     }
     /** Apply queued parameter updates on the audio thread before processing. */
     virtual void applyPendingParameters() noexcept {}
+    virtual void setProcessContext(const AudioProcessContext& /*context*/) noexcept {}
+    virtual std::size_t takeOutputMidi(MidiEvent* /*events*/, std::size_t /*capacity*/) noexcept {
+        return 0;
+    }
 };
 
 class PassThroughProcessor final : public AudioProcessor {
 public:
     void process(const float* const* inputs, float* const* outputs,
                  std::size_t channels, std::size_t frames) noexcept override;
+    void processWithMidi(const float* const* inputs, float* const* outputs,
+                         std::size_t channels, std::size_t frames,
+                         const MidiEvent* events, std::size_t eventCount) noexcept override;
+    std::size_t takeOutputMidi(MidiEvent* events, std::size_t capacity) noexcept override;
+
+private:
+    const MidiEvent* midiInput_ = nullptr;
+    std::size_t midiInputCount_ = 0;
 };
 
 } // namespace transmission

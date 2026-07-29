@@ -99,6 +99,7 @@ struct GraphView {
     GtkWidget* playButton = nullptr;
     std::string filePath;
     std::string projectHelperPath;
+    std::string lastSavedSnapshot;
 };
 
 struct PluginDialogContext {
@@ -319,6 +320,32 @@ void drawPort(cairo_t* cr, double x, double y, bool output, PortKind kind) {
     cairo_stroke(cr);
 }
 
+std::string midiOutputLabel(const std::string& destination) {
+    return destination == "No connection" ? "MIDI Output (none)" : destination;
+}
+
+void drawNodeLabel(cairo_t* cr, const std::string& label, double x, double y) {
+    constexpr double availableWidth = nodeWidth - 30.0;
+    cairo_text_extents_t extents{};
+    cairo_text_extents(cr, label.c_str(), &extents);
+    if (extents.width <= availableWidth) {
+        cairo_move_to(cr, x, y);
+        cairo_show_text(cr, label.c_str());
+        return;
+    }
+    std::string shortened = label;
+    while (!shortened.empty()) {
+        const auto candidate = shortened + "...";
+        cairo_text_extents(cr, candidate.c_str(), &extents);
+        if (extents.width <= availableWidth) {
+            cairo_move_to(cr, x, y);
+            cairo_show_text(cr, candidate.c_str());
+            return;
+        }
+        shortened.pop_back();
+    }
+}
+
 void addPluginFromDialog(GtkDialog*, gint response, gpointer data) {
     auto* context = static_cast<PluginDialogContext*>(data);
     if (response == GTK_RESPONSE_ACCEPT) {
@@ -368,7 +395,10 @@ void addMidiNodeFromDialog(GtkDialog*, gint response, gpointer data) {
             stopRuntime(*context->view,
                         "Graph changed — press Play to compile and start audio");
             if (context->node < context->view->nodes.size()) {
-                context->view->nodes[context->node].externalPort = selected;
+                auto& node = context->view->nodes[context->node];
+                node.externalPort = selected;
+                if (node.kind == NodeKind::MidiOutput)
+                    node.label = midiOutputLabel(node.externalPort);
             } else {
                 auto& nextId = context->input ? context->view->nextMidiInputId
                                               : context->view->nextMidiOutputId;
@@ -378,7 +408,8 @@ void addMidiNodeFromDialog(GtkDialog*, gint response, gpointer data) {
                 const auto offset =
                     static_cast<double>(context->view->nodes.size() % 3) * 35.0;
                 context->view->nodes.push_back({
-                    id, context->input ? "MIDI Input" : "MIDI Output",
+                    id, context->input ? "MIDI Input"
+                                       : midiOutputLabel(selected),
                     context->input ? NodeKind::MidiInput : NodeKind::MidiOutput,
                     0, 0, context->input ? 0U : 1U, context->input ? 1U : 0U,
                     300.0 + offset, 300.0 + offset, "", selected});
@@ -910,8 +941,7 @@ gboolean drawGraph(GtkWidget*, cairo_t* cr, gpointer data) {
         cairo_set_source_rgb(cr, 0.92, 0.94, 0.98);
         cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
         cairo_set_font_size(cr, 16.0);
-        cairo_move_to(cr, node.x + 15.0, node.y + 31.0);
-        cairo_show_text(cr, node.label.c_str());
+        drawNodeLabel(cr, node.label, node.x + 15.0, node.y + 31.0);
         for (std::size_t port = 0; port < node.audioInputs; ++port)
             drawPort(cr, node.x, portY(node, PortKind::Audio, port, false),
                      false, PortKind::Audio);
@@ -1127,8 +1157,10 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
     for (const auto& source : project.nodes) {
         indices.emplace(source.id, nodes.size());
         const auto kind = static_cast<NodeKind>(static_cast<int>(source.kind));
+        const auto label = kind == NodeKind::MidiOutput
+            ? midiOutputLabel(source.externalPort) : source.label;
         nodes.push_back({
-            source.id, source.label, kind,
+            source.id, label, kind,
             source.audioInputs, source.audioOutputs, source.midiInputs, source.midiOutputs,
             source.x, source.y, source.pluginPath, source.externalPort});
     }
@@ -1231,20 +1263,22 @@ bool runProjectHelper(const GraphView& view, const char* command,
 }
 
 bool saveProject(GraphView& view, const std::string& path) {
+    const auto snapshot = transmission::encodeUiProject(captureProject(view));
     std::string output;
     std::string error;
-    if (!runProjectHelper(view, "save", path,
-                          transmission::encodeUiProject(captureProject(view)),
+    if (!runProjectHelper(view, "save", path, snapshot,
                           output, error)) {
         setStatus(view, "Unable to save project: " + error, true);
         return false;
     }
     view.filePath = path;
+    view.lastSavedSnapshot = snapshot;
     updateWindowTitle(view);
     return true;
 }
 
-void saveProjectAs(GraphView& view) {
+bool saveProjectAs(GraphView& view) {
+    bool saved = false;
     auto* dialog = gtk_file_chooser_dialog_new(
         "Save Transmission Project", GTK_WINDOW(view.window),
         GTK_FILE_CHOOSER_ACTION_SAVE, "_Cancel", GTK_RESPONSE_CANCEL,
@@ -1260,9 +1294,10 @@ void saveProjectAs(GraphView& view) {
         std::string path = selected ? selected : "";
         g_free(selected);
         if (!path.ends_with(".ttl")) path += ".ttl";
-        saveProject(view, path);
+        saved = saveProject(view, path);
     }
     gtk_widget_destroy(dialog);
+    return saved;
 }
 
 void newProjectActivated(GtkMenuItem*, gpointer data) {
@@ -1273,6 +1308,7 @@ void newProjectActivated(GtkMenuItem*, gpointer data) {
         return;
     }
     view.filePath.clear();
+    view.lastSavedSnapshot.clear();
     updateWindowTitle(view);
 }
 
@@ -1301,6 +1337,8 @@ void openProjectActivated(GtkMenuItem*, gpointer data) {
                 setStatus(view, "Unable to open project: " + error, true);
             } else {
                 view.filePath = path;
+                view.lastSavedSnapshot =
+                    transmission::encodeUiProject(captureProject(view));
                 updateWindowTitle(view);
             }
         }
@@ -1322,6 +1360,38 @@ void saveProjectAsActivated(GtkMenuItem*, gpointer data) {
 
 void quitActivated(GtkMenuItem*, gpointer data) {
     gtk_window_close(GTK_WINDOW(static_cast<GraphView*>(data)->window));
+}
+
+gboolean confirmClose(GtkWidget*, GdkEvent*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    const auto current = transmission::encodeUiProject(captureProject(view));
+    if (!view.lastSavedSnapshot.empty() && current == view.lastSavedSnapshot)
+        return FALSE;
+
+    const auto name = view.filePath.empty()
+        ? std::string("this project")
+        : std::filesystem::path(view.filePath).filename().string();
+    auto* dialog = gtk_message_dialog_new(
+        GTK_WINDOW(view.window),
+        static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
+        GTK_MESSAGE_WARNING, GTK_BUTTONS_NONE,
+        "Save changes to %s before closing?", name.c_str());
+    gtk_message_dialog_format_secondary_text(
+        GTK_MESSAGE_DIALOG(dialog),
+        "Unsaved changes will be lost if you close without saving.");
+    gtk_dialog_add_button(GTK_DIALOG(dialog), "_Cancel", GTK_RESPONSE_CANCEL);
+    gtk_dialog_add_button(GTK_DIALOG(dialog), "_Discard", GTK_RESPONSE_REJECT);
+    gtk_dialog_add_button(
+        GTK_DIALOG(dialog), view.filePath.empty() ? "_Save As…" : "_Save",
+        GTK_RESPONSE_ACCEPT);
+    gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
+    const auto response = gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+    if (response == GTK_RESPONSE_REJECT) return FALSE;
+    if (response != GTK_RESPONSE_ACCEPT) return TRUE;
+    const bool saved = view.filePath.empty()
+        ? saveProjectAs(view) : saveProject(view, view.filePath);
+    return saved ? FALSE : TRUE;
 }
 
 void activate(GtkApplication* application, gpointer) {
@@ -1458,6 +1528,7 @@ void activate(GtkApplication* application, gpointer) {
     gtk_box_pack_start(GTK_BOX(frame), canvas, TRUE, TRUE, 0);
     gtk_box_pack_start(GTK_BOX(frame), transportBar, FALSE, FALSE, 0);
     gtk_container_add(GTK_CONTAINER(window), frame);
+    g_signal_connect(window, "delete-event", G_CALLBACK(confirmClose), view);
     g_signal_connect(window, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) {
         auto* view = static_cast<GraphView*>(data);
         if (view->transportTimer) g_source_remove(view->transportTimer);

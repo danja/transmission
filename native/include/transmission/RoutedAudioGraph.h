@@ -2,13 +2,23 @@
 
 #include "AudioProcessor.h"
 
+#include <atomic>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace transmission {
+
+struct ProcessorTiming {
+    std::string nodeId;
+    std::uint64_t calls = 0;
+    double averageMicroseconds = 0.0;
+    double maximumMicroseconds = 0.0;
+};
 
 /**
  * Preallocated DAG runtime. Control-plane code creates nodes and connects
@@ -17,6 +27,12 @@ namespace transmission {
  */
 class RoutedAudioGraph {
 public:
+    RoutedAudioGraph() = default;
+    ~RoutedAudioGraph();
+
+    RoutedAudioGraph(const RoutedAudioGraph&) = delete;
+    RoutedAudioGraph& operator=(const RoutedAudioGraph&) = delete;
+
     bool addNode(std::string id, std::unique_ptr<AudioProcessor> processor,
                  std::size_t audioInputs = 0, std::size_t audioOutputs = 0);
     bool connect(const std::string& from, const std::string& to);
@@ -40,8 +56,15 @@ public:
     void setProcessContext(const AudioProcessContext& context) noexcept;
     std::size_t takeExternalMidiOutput(MidiEvent* events,
                                        std::size_t capacity) noexcept;
+    void setTimingEnabled(bool enabled) noexcept { timingEnabled_ = enabled; }
+    std::vector<ProcessorTiming> processorTimings() const;
+    bool configureProcessingThreads(std::size_t requestedThreads);
 
     std::size_t nodeCount() const noexcept { return nodes_.size(); }
+    std::size_t maximumParallelWidth() const noexcept;
+    std::size_t processingThreadCount() const noexcept {
+        return processingThreadCount_;
+    }
 
 private:
     struct AudioRoute {
@@ -52,8 +75,15 @@ private:
     };
 
     struct Node {
+        struct Timing {
+            std::atomic<std::uint64_t> calls{0};
+            std::atomic<std::uint64_t> totalNanoseconds{0};
+            std::atomic<std::uint64_t> maximumNanoseconds{0};
+        };
+
         std::string id;
         std::unique_ptr<AudioProcessor> processor;
+        std::unique_ptr<Timing> timing = std::make_unique<Timing>();
         std::vector<AudioRoute> incoming;
         std::vector<AudioRoute> outgoing;
         std::vector<std::size_t> midiIncoming;
@@ -65,21 +95,41 @@ private:
         std::array<MidiEvent, maxMidiEventsPerBlock> midiInput{};
         std::array<MidiEvent, maxMidiEventsPerBlock> midiOutput{};
         std::size_t midiInputCount = 0;
+        std::size_t midiOutputCount = 0;
         std::size_t externalMidiInputPort = static_cast<std::size_t>(-1);
         std::size_t externalMidiOutputPort = static_cast<std::size_t>(-1);
         std::size_t audioInputs = 0;
         std::size_t audioOutputs = 0;
+        std::size_t processingLane = 0;
         bool inheritDeviceChannels = false;
         bool externalAudioInput = false;
         bool externalAudioOutput = false;
     };
 
+    void stopProcessingThreads() noexcept;
+    void processingWorkerLoop(std::size_t lane) noexcept;
+    void processNode(std::size_t index) noexcept;
+    void routeNode(std::size_t index) noexcept;
+    void processLevel(const std::vector<std::size_t>& level) noexcept;
+
     std::vector<Node> nodes_;
     std::vector<std::size_t> executionOrder_;
+    std::vector<std::vector<std::size_t>> executionLevels_;
+    std::vector<std::thread> processingWorkers_;
+    std::atomic<bool> stopProcessingWorkers_{false};
+    std::atomic<std::uint64_t> processingGeneration_{0};
+    std::atomic<std::size_t> completedProcessingWorkers_{0};
+    const std::vector<std::size_t>* activeProcessingLevel_ = nullptr;
+    const float* const* currentInputs_ = nullptr;
+    std::size_t currentChannels_ = 0;
+    std::size_t currentFrames_ = 0;
+    bool currentExplicitAudioInputs_ = false;
     std::size_t preparedChannels_ = 0;
     std::size_t preparedFrames_ = 0;
+    std::size_t processingThreadCount_ = 1;
     std::array<MidiEvent, maxMidiEventsPerBlock> externalMidiOutput_{};
     std::size_t externalMidiOutputCount_ = 0;
+    bool timingEnabled_ = false;
 };
 
 } // namespace transmission

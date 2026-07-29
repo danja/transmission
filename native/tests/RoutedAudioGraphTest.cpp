@@ -1,8 +1,11 @@
 #include "transmission/RoutedAudioGraph.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
+#include <chrono>
 #include <memory>
+#include <thread>
 
 namespace {
 
@@ -24,6 +27,29 @@ public:
     }
 };
 
+class ConcurrentProcessor final : public transmission::AudioProcessor {
+public:
+    ConcurrentProcessor(std::atomic<int>& active,
+                        std::atomic<int>& maximum)
+        : active_(active), maximum_(maximum) {}
+
+    void process(const float* const* inputs, float* const* outputs,
+                 std::size_t channels, std::size_t frames) noexcept override {
+        const auto active = active_.fetch_add(1) + 1;
+        auto maximum = maximum_.load();
+        while (maximum < active &&
+               !maximum_.compare_exchange_weak(maximum, active)) {}
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        for (std::size_t channel = 0; channel < channels; ++channel)
+            std::copy_n(inputs[channel], frames, outputs[channel]);
+        active_.fetch_sub(1);
+    }
+
+private:
+    std::atomic<int>& active_;
+    std::atomic<int>& maximum_;
+};
+
 } // namespace
 
 int main() {
@@ -35,6 +61,7 @@ int main() {
     assert(graph.connect("source", "right"));
     assert(!graph.connect("source", "right"));
     assert(graph.prepare(1, 4));
+    graph.setTimingEnabled(true);
 
     constexpr float input[] = {0.25F, -0.5F, 0.75F, 1.0F};
     float output[] = {0.0F, 0.0F, 0.0F, 0.0F};
@@ -42,6 +69,30 @@ int main() {
     float* outputs[] = {output};
     graph.process(inputs, outputs, 1, 4);
     for (int index = 0; index < 4; ++index) assert(output[index] == input[index] * 2.0F);
+    const auto timings = graph.processorTimings();
+    assert(timings.size() == 3);
+    assert(std::all_of(timings.begin(), timings.end(),
+                       [](const auto& timing) {
+                           return timing.calls == 1 &&
+                                  timing.maximumMicroseconds >= 0.0;
+                       }));
+    assert(graph.maximumParallelWidth() == 2);
+    assert(graph.configureProcessingThreads(8));
+    assert(graph.processingThreadCount() == 2);
+    graph.process(inputs, outputs, 1, 4);
+
+    std::atomic<int> active{0};
+    std::atomic<int> maximum{0};
+    transmission::RoutedAudioGraph parallel;
+    assert(parallel.addNode(
+        "left", std::make_unique<ConcurrentProcessor>(active, maximum)));
+    assert(parallel.addNode(
+        "right", std::make_unique<ConcurrentProcessor>(active, maximum)));
+    assert(parallel.prepare(1, 4));
+    assert(parallel.maximumParallelWidth() == 2);
+    assert(parallel.configureProcessingThreads(2));
+    parallel.process(inputs, outputs, 1, 4);
+    assert(maximum.load() == 2);
 
     transmission::RoutedAudioGraph cycle;
     assert(cycle.addNode("a", std::make_unique<transmission::PassThroughProcessor>()));

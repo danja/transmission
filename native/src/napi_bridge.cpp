@@ -366,6 +366,12 @@ napi_value diagnostics(napi_env env, napi_callback_info info) {
     SET_DIAGNOSTIC("underruns", underruns);
     SET_DIAGNOSTIC("processedBlocks", processedBlocks);
     SET_DIAGNOSTIC("midiEvents", midiEvents);
+    SET_DIAGNOSTIC("renderLateBlocks", renderLateBlocks);
+    SET_DIAGNOSTIC("renderQueueDrops", renderQueueDrops);
+    SET_DIAGNOSTIC("renderAheadBlocks", renderAheadBlocks);
+    SET_DIAGNOSTIC("processingThreads", processingThreads);
+    SET_DIAGNOSTIC("averageRenderMicroseconds", averageRenderMicroseconds);
+    SET_DIAGNOSTIC("maximumRenderMicroseconds", maximumRenderMicroseconds);
     SET_DIAGNOSTIC("positionBeats", positionBeats);
 #undef SET_DIAGNOSTIC
     napi_value boolean;

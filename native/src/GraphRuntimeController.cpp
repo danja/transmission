@@ -5,7 +5,9 @@ namespace transmission {
 GraphRuntimeController::GraphRuntimeController(RuntimeProcessorFactory processorFactory)
     : compiler_(std::move(processorFactory)) {}
 
-GraphRuntimeController::~GraphRuntimeController() { stop(); }
+GraphRuntimeController::~GraphRuntimeController() {
+    if (running()) stop();
+}
 
 bool GraphRuntimeController::start(const RuntimeGraphSnapshot& snapshot,
                                    AudioDevice& device,
@@ -49,12 +51,24 @@ bool GraphRuntimeController::setParameter(const std::string& nodeId,
     return engine_.setParameter(nodeId, parameterId, normalizedValue, error);
 }
 
+bool GraphRuntimeController::setRenderAheadBlocks(std::size_t blocks) {
+    return engine_.setRenderAheadBlocks(blocks);
+}
+
+bool GraphRuntimeController::setProcessingThreadCount(std::size_t threads) {
+    return engine_.setProcessingThreadCount(threads);
+}
+
 bool GraphRuntimeController::running() const {
     return engine_.diagnostics().running;
 }
 
 Diagnostics GraphRuntimeController::diagnostics() const {
     return engine_.diagnostics();
+}
+
+std::vector<ProcessorTiming> GraphRuntimeController::processorTimings() const {
+    return engine_.processorTimings();
 }
 
 } // namespace transmission

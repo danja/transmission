@@ -89,7 +89,9 @@ bool JackConnectionManager::connectInput(std::size_t channel, const std::string&
         error = "JACK is not available";
         return false;
     }
-    const auto targetName = "transmission:in_" + std::to_string(channel + 1);
+    const auto targetName = resolveJackPortName(
+        "transmission:in_" + std::to_string(channel + 1),
+        listPorts(impl_->client, JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput));
     auto* target = jack_port_by_name(impl_->client, targetName.c_str());
     if (!target) {
         error = "Transmission JACK input port is not registered: " + targetName;
@@ -112,7 +114,9 @@ bool JackConnectionManager::connectOutput(std::size_t channel, const std::string
         error = "JACK is not available";
         return false;
     }
-    const auto sourceName = "transmission:out_" + std::to_string(channel + 1);
+    const auto sourceName = resolveJackPortName(
+        "transmission:out_" + std::to_string(channel + 1),
+        listPorts(impl_->client, JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput));
     auto* source = jack_port_by_name(impl_->client, sourceName.c_str());
     if (!source) {
         error = "Transmission JACK output port is not registered: " + sourceName;
@@ -136,7 +140,9 @@ bool JackConnectionManager::connectMidiInput(std::size_t port,
         error = "JACK is not available";
         return false;
     }
-    const auto targetName = "transmission:midi_in_" + std::to_string(port + 1);
+    const auto targetName = resolveJackPortName(
+        "transmission:midi_in_" + std::to_string(port + 1),
+        listPorts(impl_->client, JACK_DEFAULT_MIDI_TYPE, JackPortIsInput));
     auto* target = jack_port_by_name(impl_->client, targetName.c_str());
     if (!target) {
         error = "Transmission JACK MIDI input is not registered: " + targetName;
@@ -160,7 +166,9 @@ bool JackConnectionManager::connectMidiOutput(std::size_t port,
         error = "JACK is not available";
         return false;
     }
-    const auto sourceName = "transmission:midi_out_" + std::to_string(port + 1);
+    const auto sourceName = resolveJackPortName(
+        "transmission:midi_out_" + std::to_string(port + 1),
+        listPorts(impl_->client, JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput));
     auto* source = jack_port_by_name(impl_->client, sourceName.c_str());
     if (!source) {
         error = "Transmission JACK MIDI output is not registered: " + sourceName;

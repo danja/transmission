@@ -1,9 +1,13 @@
 #include "transmission/RoutedAudioGraph.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
+#include <thread>
 
 namespace transmission {
+
+RoutedAudioGraph::~RoutedAudioGraph() { stopProcessingThreads(); }
 
 bool RoutedAudioGraph::addNode(std::string id, std::unique_ptr<AudioProcessor> processor,
                                std::size_t audioInputs, std::size_t audioOutputs) {
@@ -136,6 +140,7 @@ bool RoutedAudioGraph::prepare(std::size_t channels, std::size_t frames) noexcep
     if (channels == 0 || frames == 0 || nodes_.empty()) return false;
     try {
         executionOrder_.clear();
+        executionLevels_.clear();
         std::vector<std::size_t> incoming(nodes_.size());
         std::vector<std::vector<std::size_t>> dependencies(nodes_.size());
         std::vector<std::size_t> ready;
@@ -165,19 +170,25 @@ bool RoutedAudioGraph::prepare(std::size_t channels, std::size_t frames) noexcep
         for (std::size_t index = 0; index < nodes_.size(); ++index)
             if (incoming[index] == 0) ready.push_back(index);
         while (!ready.empty()) {
-            const auto current = ready.front();
-            ready.erase(ready.begin());
-            executionOrder_.push_back(current);
-            for (const auto next : dependencies[current]) {
-                if (--incoming[next] == 0) ready.push_back(next);
+            executionLevels_.push_back(ready);
+            std::vector<std::size_t> nextLevel;
+            for (const auto current : ready) {
+                executionOrder_.push_back(current);
+                for (const auto next : dependencies[current]) {
+                    if (--incoming[next] == 0)
+                        nextLevel.push_back(next);
+                }
             }
+            ready = std::move(nextLevel);
         }
         if (executionOrder_.size() != nodes_.size()) {
             executionOrder_.clear();
+            executionLevels_.clear();
             return false;
         }
     } catch (...) {
         executionOrder_.clear();
+        executionLevels_.clear();
         for (auto& node : nodes_) {
             node.input.clear();
             node.output.clear();
@@ -219,51 +230,11 @@ void RoutedAudioGraph::processWithMidi(const float* const* inputs, float* const*
             }
         }
     }
-    for (const auto index : executionOrder_) {
-        auto& node = nodes_[index];
-        if (node.externalAudioInput || (!explicitAudioInputs && node.incoming.empty())) {
-            for (std::size_t channel = 0;
-                 channel < std::min(channels, node.audioInputs); ++channel)
-                std::memcpy(node.input.data() + channel * frames, inputs[channel], frames * sizeof(float));
-        }
-        node.processor->processWithMidi(
-            node.inputPointers.data(), node.audioInputs,
-            node.outputPointers.data(), node.audioOutputs, frames,
-            node.midiInput.data(), node.midiInputCount);
-        const auto midiOutputCount = node.processor->takeOutputMidi(
-            node.midiOutput.data(), node.midiOutput.size());
-        if (node.externalMidiOutputPort != static_cast<std::size_t>(-1)) {
-            const auto available = externalMidiOutput_.size() - externalMidiOutputCount_;
-            const auto copied = std::min(available, midiOutputCount);
-            for (std::size_t event = 0; event < copied; ++event) {
-                auto outputEvent = node.midiOutput[event];
-                outputEvent.port = node.externalMidiOutputPort;
-                externalMidiOutput_[externalMidiOutputCount_++] = outputEvent;
-            }
-        }
-        for (const auto destination : node.midiOutgoing) {
-            auto& target = nodes_[destination];
-            const auto available = target.midiInput.size() - target.midiInputCount;
-            const auto copied = std::min(available, midiOutputCount);
-            std::copy_n(node.midiOutput.begin(), copied,
-                        target.midiInput.begin() + static_cast<std::ptrdiff_t>(target.midiInputCount));
-            target.midiInputCount += copied;
-        }
-        for (const auto& route : node.outgoing) {
-            auto& destination = nodes_[route.node];
-            const auto routeCount = route.allChannels
-                ? std::min(node.audioOutputs, destination.audioInputs) : std::size_t{1};
-            for (std::size_t offset = 0; offset < routeCount; ++offset) {
-                const auto sourcePort = route.allChannels ? offset : route.fromPort;
-                const auto targetPort = route.allChannels ? offset : route.toPort;
-                if (sourcePort >= node.audioOutputs || targetPort >= destination.audioInputs)
-                    continue;
-                const auto* source = node.output.data() + sourcePort * frames;
-                auto* target = destination.input.data() + targetPort * frames;
-                for (std::size_t frame = 0; frame < frames; ++frame) target[frame] += source[frame];
-            }
-        }
-    }
+    currentInputs_ = inputs;
+    currentChannels_ = channels;
+    currentFrames_ = frames;
+    currentExplicitAudioInputs_ = explicitAudioInputs;
+    for (const auto& level : executionLevels_) processLevel(level);
     for (std::size_t channel = 0; channel < channels; ++channel)
         std::fill(outputs[channel], outputs[channel] + frames, 0.0F);
     for (const auto& node : nodes_) {
@@ -276,12 +247,204 @@ void RoutedAudioGraph::processWithMidi(const float* const* inputs, float* const*
     }
 }
 
+void RoutedAudioGraph::processNode(std::size_t index) noexcept {
+    auto& node = nodes_[index];
+    if (node.externalAudioInput ||
+        (!currentExplicitAudioInputs_ && node.incoming.empty())) {
+        for (std::size_t channel = 0;
+             channel < std::min(currentChannels_, node.audioInputs);
+             ++channel)
+            std::memcpy(
+                node.input.data() + channel * currentFrames_,
+                currentInputs_[channel],
+                currentFrames_ * sizeof(float));
+    }
+    if (timingEnabled_) {
+        const auto started = std::chrono::steady_clock::now();
+        node.processor->processWithMidi(
+            node.inputPointers.data(), node.audioInputs,
+            node.outputPointers.data(), node.audioOutputs, currentFrames_,
+            node.midiInput.data(), node.midiInputCount);
+        const auto elapsed = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - started)
+                .count());
+        node.timing->calls.fetch_add(1, std::memory_order_relaxed);
+        node.timing->totalNanoseconds.fetch_add(
+            elapsed, std::memory_order_relaxed);
+        auto maximum = node.timing->maximumNanoseconds.load(
+            std::memory_order_relaxed);
+        while (maximum < elapsed &&
+               !node.timing->maximumNanoseconds.compare_exchange_weak(
+                   maximum, elapsed, std::memory_order_relaxed,
+                   std::memory_order_relaxed)) {}
+    } else {
+        node.processor->processWithMidi(
+            node.inputPointers.data(), node.audioInputs,
+            node.outputPointers.data(), node.audioOutputs, currentFrames_,
+            node.midiInput.data(), node.midiInputCount);
+    }
+    node.midiOutputCount = node.processor->takeOutputMidi(
+        node.midiOutput.data(), node.midiOutput.size());
+}
+
+void RoutedAudioGraph::routeNode(std::size_t index) noexcept {
+    auto& node = nodes_[index];
+    if (node.externalMidiOutputPort != static_cast<std::size_t>(-1)) {
+        const auto available =
+            externalMidiOutput_.size() - externalMidiOutputCount_;
+        const auto copied = std::min(available, node.midiOutputCount);
+        for (std::size_t event = 0; event < copied; ++event) {
+            auto outputEvent = node.midiOutput[event];
+            outputEvent.port = node.externalMidiOutputPort;
+            externalMidiOutput_[externalMidiOutputCount_++] = outputEvent;
+        }
+    }
+    for (const auto destination : node.midiOutgoing) {
+        auto& target = nodes_[destination];
+        const auto available =
+            target.midiInput.size() - target.midiInputCount;
+        const auto copied =
+            std::min(available, node.midiOutputCount);
+        std::copy_n(
+            node.midiOutput.begin(), copied,
+            target.midiInput.begin() +
+                static_cast<std::ptrdiff_t>(target.midiInputCount));
+        target.midiInputCount += copied;
+    }
+    for (const auto& route : node.outgoing) {
+        auto& destination = nodes_[route.node];
+        const auto routeCount = route.allChannels
+            ? std::min(node.audioOutputs, destination.audioInputs)
+            : std::size_t{1};
+        for (std::size_t offset = 0; offset < routeCount; ++offset) {
+            const auto sourcePort =
+                route.allChannels ? offset : route.fromPort;
+            const auto targetPort =
+                route.allChannels ? offset : route.toPort;
+            if (sourcePort >= node.audioOutputs ||
+                targetPort >= destination.audioInputs)
+                continue;
+            const auto* source =
+                node.output.data() + sourcePort * currentFrames_;
+            auto* target =
+                destination.input.data() + targetPort * currentFrames_;
+            for (std::size_t frame = 0; frame < currentFrames_; ++frame)
+                target[frame] += source[frame];
+        }
+    }
+}
+
+void RoutedAudioGraph::processLevel(
+    const std::vector<std::size_t>& level) noexcept {
+    if (processingWorkers_.empty() || level.size() == 1) {
+        for (const auto index : level) processNode(index);
+    } else {
+        activeProcessingLevel_ = &level;
+        completedProcessingWorkers_.store(0, std::memory_order_relaxed);
+        processingGeneration_.fetch_add(1, std::memory_order_release);
+        for (const auto index : level)
+            if (nodes_[index].processingLane == 0)
+                processNode(index);
+        while (completedProcessingWorkers_.load(
+                   std::memory_order_acquire) <
+               processingWorkers_.size())
+            std::this_thread::yield();
+    }
+    for (const auto index : level) routeNode(index);
+}
+
+std::size_t RoutedAudioGraph::maximumParallelWidth() const noexcept {
+    std::size_t result = 1;
+    for (const auto& level : executionLevels_)
+        result = std::max(result, level.size());
+    return result;
+}
+
+bool RoutedAudioGraph::configureProcessingThreads(
+    std::size_t requestedThreads) {
+    stopProcessingThreads();
+    const auto effective = std::max<std::size_t>(
+        1, std::min(requestedThreads, maximumParallelWidth()));
+    processingThreadCount_ = effective;
+    processingGeneration_.store(0, std::memory_order_relaxed);
+    completedProcessingWorkers_.store(0, std::memory_order_relaxed);
+    activeProcessingLevel_ = nullptr;
+    for (const auto& level : executionLevels_)
+        for (std::size_t position = 0; position < level.size(); ++position)
+            nodes_[level[position]].processingLane =
+                position % effective;
+    stopProcessingWorkers_.store(false, std::memory_order_release);
+    try {
+        processingWorkers_.reserve(effective - 1);
+        for (std::size_t index = 1; index < effective; ++index)
+            processingWorkers_.emplace_back(
+                &RoutedAudioGraph::processingWorkerLoop, this, index);
+    } catch (...) {
+        stopProcessingThreads();
+        processingThreadCount_ = 1;
+        return false;
+    }
+    return true;
+}
+
+void RoutedAudioGraph::stopProcessingThreads() noexcept {
+    stopProcessingWorkers_.store(true, std::memory_order_release);
+    for (auto& worker : processingWorkers_)
+        if (worker.joinable()) worker.join();
+    processingWorkers_.clear();
+    processingThreadCount_ = 1;
+}
+
+void RoutedAudioGraph::processingWorkerLoop(std::size_t lane) noexcept {
+    std::uint64_t observedGeneration = 0;
+    while (!stopProcessingWorkers_.load(std::memory_order_acquire)) {
+        const auto generation =
+            processingGeneration_.load(std::memory_order_acquire);
+        if (generation == observedGeneration) {
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
+            continue;
+        }
+        observedGeneration = generation;
+        if (stopProcessingWorkers_.load(std::memory_order_acquire)) break;
+        const auto* level = activeProcessingLevel_;
+        if (level)
+            for (const auto index : *level)
+                if (nodes_[index].processingLane == lane)
+                    processNode(index);
+        completedProcessingWorkers_.fetch_add(
+            1, std::memory_order_release);
+    }
+}
+
 std::size_t RoutedAudioGraph::takeExternalMidiOutput(
     MidiEvent* events, std::size_t capacity) noexcept {
     const auto count = std::min(capacity, externalMidiOutputCount_);
     if (events) std::copy_n(externalMidiOutput_.begin(), count, events);
     externalMidiOutputCount_ = 0;
     return count;
+}
+
+std::vector<ProcessorTiming> RoutedAudioGraph::processorTimings() const {
+    std::vector<ProcessorTiming> result;
+    result.reserve(nodes_.size());
+    for (const auto& node : nodes_) {
+        const auto calls =
+            node.timing->calls.load(std::memory_order_acquire);
+        const auto total =
+            node.timing->totalNanoseconds.load(std::memory_order_acquire);
+        const auto maximum =
+            node.timing->maximumNanoseconds.load(std::memory_order_acquire);
+        result.push_back({
+            node.id,
+            calls,
+            calls == 0
+                ? 0.0
+                : static_cast<double>(total) /
+                      static_cast<double>(calls) / 1000.0,
+            static_cast<double>(maximum) / 1000.0});
+    }
+    return result;
 }
 
 void RoutedAudioGraph::setProcessContext(const AudioProcessContext& context) noexcept {

@@ -192,6 +192,35 @@ is separate future work: it must query each VST3 processor's declared latency,
 calculate the maximum latency to each merge, and insert preallocated delay lines
 on shorter signal paths.
 
+The GTK runtime also supports bounded render-ahead buffering independently of
+the JACK period. The JACK callback copies complete blocks through preallocated
+single-producer/single-consumer queues; a render coordinator owns graph
+processing, and fixed worker threads execute independent nodes in the same
+dependency level concurrently. Routes are merged in deterministic graph order
+after each level. Plugins remain assigned to stable worker lanes between
+blocks, avoiding accidental thread migration. Output is tagged by transport
+sequence and released after the selected Off, 50, 100, or 200 ms delay, so
+every graph path receives the same latency. The default is 200 ms.
+
+Processing thread count is independently selectable in Settings → Audio.
+Automatic mode derives its ceiling from `std::thread::hardware_concurrency()`
+and then caps it at the widest executable level in the current graph. It does
+not assume four cores and therefore scales down or up with the host machine and
+the actual graph. A manual setting remains available for plugins or systems
+that behave better with fewer threads. Parallel processing is enabled only
+with render ahead; direct callback processing remains single-threaded.
+Queue overflow, missed output deadlines, actual processing-thread count,
+average render time, maximum render time, and per-node timings are exposed as
+diagnostics.
+
+Render ahead protects against transient scheduling and plugin CPU spikes, while
+level scheduling reduces the critical path when the graph contains independent
+branches. Neither can make a graph whose critical path exceeds real time
+sustainable; queue drops, late-block diagnostics, and per-node timings make
+that condition visible. The callback performs no allocation, logging,
+filesystem access, JavaScript calls, plugin processing, timing calls, or
+locking for this mode.
+
 ## Assumptions
 
 - Linux and VST3 are the v1 target.

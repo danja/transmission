@@ -52,12 +52,16 @@ int main() {
          {"parameter", "output", transmission::RuntimeConnectionKind::Audio},
          {"input", "output", transmission::RuntimeConnectionKind::Midi}}};
     std::string error;
+    assert(runtime.setRenderAheadBlocks(0));
+    assert(runtime.setProcessingThreadCount(0));
     assert(runtime.start(snapshot, device, config, {}, error));
+    assert(!runtime.setRenderAheadBlocks(1));
+    assert(!runtime.setProcessingThreadCount(1));
     assert(runtime.setParameter("parameter", 17, 0.625, error));
     assert(parameterProcessor && parameterProcessor->lastId == 17);
     assert(parameterProcessor->lastValue == 0.625);
     const float input[] = {0.25F, 0.5F, 0.75F, 1.0F};
-    float output[] = {};
+    float output[4] = {};
     const float* inputs[] = {input};
     float* outputs[] = {output};
     assert(device.render(inputs, outputs));

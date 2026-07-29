@@ -3,6 +3,7 @@
 #include "transmission/JackConnectionManager.h"
 #include "transmission/Vst3Processor.h"
 
+#include <cmath>
 #include <chrono>
 #include <iostream>
 #include <memory>
@@ -66,11 +67,22 @@ int main(int argc, char** argv) {
         {{"input", "generator", EdgeKind::Midi},
          {"generator", "instrument", EdgeKind::Midi},
          {"instrument", "output", EdgeKind::Audio}}};
+    const auto renderAheadBlocks = static_cast<std::size_t>(
+        std::ceil(0.2 * deviceConfig.sampleRate /
+                  static_cast<double>(deviceConfig.blockSize)));
+    if (!runtime.setRenderAheadBlocks(renderAheadBlocks) ||
+        !runtime.setProcessingThreadCount(0)) {
+        std::cerr << "unable to configure automatic 200 ms render ahead\n";
+        return 1;
+    }
     if (!runtime.start(snapshot, device, deviceConfig, {}, error)) {
         if (!device.lastError().empty()) error = device.lastError();
         std::cerr << error << '\n';
         return 1;
     }
+    // PipeWire's JACK compatibility layer can publish newly activated ports
+    // asynchronously to the connection-manager client.
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     if (!connections.connectOutput(0, "system:playback_1", error) ||
         !connections.connectOutput(1, "system:playback_2", error)) {
         std::cerr << error << '\n';
@@ -80,6 +92,14 @@ int main(int argc, char** argv) {
     const auto diagnostics = runtime.diagnostics();
     runtime.stop();
     std::cout << "processedBlocks=" << diagnostics.processedBlocks
-              << "\nunderruns=" << diagnostics.underruns << '\n';
-    return diagnostics.processedBlocks > 0 && diagnostics.underruns == 0 ? 0 : 1;
+              << "\nunderruns=" << diagnostics.underruns
+              << "\nrenderLateBlocks=" << diagnostics.renderLateBlocks
+              << "\nprocessingThreads=" << diagnostics.processingThreads
+              << "\nmaximumRenderMicroseconds="
+              << diagnostics.maximumRenderMicroseconds << '\n';
+    return diagnostics.processedBlocks > 0 &&
+                   diagnostics.underruns == 0 &&
+                   diagnostics.renderLateBlocks == 0
+               ? 0
+               : 1;
 }

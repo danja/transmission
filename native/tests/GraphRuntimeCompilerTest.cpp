@@ -106,7 +106,7 @@ int main() {
     assert(capture->lastParameterValue == 0.75);
     assert(graph->prepare(config.channels, config.blockSize));
     const float input[] = {0.25F, 0.5F, 0.75F, 1.0F};
-    float output[] = {};
+    float output[4] = {};
     const float* inputs[] = {input};
     float* outputs[] = {output};
     graph->processWithMidi(inputs, outputs, 1, 4, nullptr, 0);

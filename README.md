@@ -1,12 +1,14 @@
 # Transmission
 
-Modular Linux VST3 transmission host.
+Transmission is being designed to be a generative music workstation.
 
-This is primarily intended for generative plugins such as those of [Downspout](https://danja.github.io/downspout/)
+It is actually a modular Linux VST3 transmission host primarily intended to use generative plugins such as those of [Downspout](https://danja.github.io/downspout/)
 
 The project is split between a Node.js control plane and a C++ real-time engine. RDF/Turtle projects are parsed into a typed graph, compiled and then supplied to the native engine through a control-rate bridge.
 
 ## Implemented foundation
+
+It draws on an existing project : [Transmissions](https://github.com/danja/transmissions) which is a pipeline processing framework I put together largely for text processing. However for audio it needed to be realtime and native. 
 
 - RDF/Turtle graph parsing, validation, compilation, and persistence
 - Modular plugin registry and VST3 bundle discovery
@@ -64,7 +66,7 @@ cmake --build native/build-ui --target transmission_graph_ui
 native/build-ui/transmission_graph_ui
 ```
 
-The native canvas renders typed audio and MIDI topology, compiles execution data through a control-thread graph compiler, starts the VST3 graph on JACK from the Play button, preserves and applies external system-port choices, and reports runtime failures in the window. VST3 MIDI output is routed through bounded native buffers, so generator-to-instrument chains execute without callback allocation. It also discovers bundles from `~/.vst3`, opens native plugin editors, provides node context menus, supports dragging nodes, creates type-compatible arcs, and provides JACK/PipeWire period and xrun diagnostics under Settings → Audio. Period requests are verified against the value exposed to JACK clients; if PipeWire acknowledges a request without adopting it, Transmission restores the previous working period and reports the mismatch instead of starting a silent client.
+The native canvas renders typed audio and MIDI topology, compiles execution data through a control-thread graph compiler, starts the VST3 graph on JACK from the Play button, preserves and applies external system-port choices, and reports runtime failures in the window. VST3 MIDI output is routed through bounded native buffers, so generator-to-instrument chains execute without callback allocation. It also discovers bundles from `~/.vst3`, opens native plugin editors, provides node context menus, supports dragging nodes, creates type-compatible arcs, and provides JACK/PipeWire period, render-ahead, and xrun diagnostics under Settings → Audio. Render ahead uses a preallocated lock-free queue and dedicated graph worker with selectable Off/1/2/4-block latency; two blocks is the default. Period requests are verified against the value exposed to JACK clients; if PipeWire acknowledges a request without adopting it, Transmission restores the previous working period and reports the mismatch instead of starting a silent client.
 
 Right-clicking the canvas also offers Add MIDI Input and Add MIDI Output.
 Each action lists the compatible JACK MIDI ports, creates a typed graph

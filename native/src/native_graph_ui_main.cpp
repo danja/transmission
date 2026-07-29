@@ -20,6 +20,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -110,6 +111,8 @@ struct GraphView {
     std::string projectHelperPath;
     std::string lastSavedSnapshot;
     std::size_t requestedBufferSize = 0;
+    std::size_t renderAheadMilliseconds = 200;
+    std::size_t processingThreads = 0;
 };
 
 struct PluginDialogContext {
@@ -846,6 +849,20 @@ void playStopClicked(GtkButton*, gpointer data) {
         updateTransportDisplay(view);
         return;
     }
+    const auto renderAheadBlocks =
+        view.renderAheadMilliseconds == 0
+        ? std::size_t{0}
+        : static_cast<std::size_t>(std::ceil(
+              static_cast<double>(view.renderAheadMilliseconds) *
+              deviceConfig.sampleRate /
+              (1000.0 * static_cast<double>(deviceConfig.blockSize))));
+    if (!view.runtime->setRenderAheadBlocks(renderAheadBlocks) ||
+        !view.runtime->setProcessingThreadCount(
+            view.processingThreads)) {
+        setStatus(view, "Unable to configure render-ahead buffering", true);
+        updateTransportDisplay(view);
+        return;
+    }
     transmission::RuntimeTransportConfig transportConfig;
     transportConfig.tempo = gtk_spin_button_get_value(view.tempo);
     transportConfig.loopEnabled = view.loop && gtk_toggle_button_get_active(view.loop);
@@ -900,29 +917,81 @@ void audioSettingsActivated(GtkMenuItem*, gpointer data) {
     gtk_box_pack_start(GTK_BOX(content), currentLabel, FALSE, FALSE, 0);
 
     auto* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-    auto* label = gtk_label_new("Processing buffer");
-    auto* selector = GTK_COMBO_BOX_TEXT(gtk_combo_box_text_new());
+    auto* label = gtk_label_new("JACK/PipeWire period");
+    auto* periodSelector = GTK_COMBO_BOX_TEXT(gtk_combo_box_text_new());
     constexpr std::array<std::size_t, 6> sizes{
         0, 256, 512, 1024, 2048, 4096};
-    gtk_combo_box_text_append_text(selector, "Use current server setting");
+    gtk_combo_box_text_append_text(
+        periodSelector, "Use current server setting");
     for (std::size_t index = 1; index < sizes.size(); ++index)
         gtk_combo_box_text_append_text(
-            selector,
+            periodSelector,
             (std::to_string(sizes[index]) + " frames").c_str());
     const auto selected = std::find(
         sizes.begin(), sizes.end(), view.requestedBufferSize);
     gtk_combo_box_set_active(
-        GTK_COMBO_BOX(selector),
+        GTK_COMBO_BOX(periodSelector),
         selected == sizes.end()
             ? 0 : static_cast<gint>(selected - sizes.begin()));
     gtk_box_pack_start(GTK_BOX(row), label, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(row), GTK_WIDGET(selector), FALSE, FALSE, 0);
+    gtk_box_pack_start(
+        GTK_BOX(row), GTK_WIDGET(periodSelector), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(content), row, FALSE, FALSE, 0);
 
+    auto* renderRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    auto* renderLabel = gtk_label_new("Render ahead");
+    auto* renderSelector = GTK_COMBO_BOX_TEXT(gtk_combo_box_text_new());
+    constexpr std::array<std::size_t, 4> renderDurations{0, 50, 100, 200};
+    gtk_combo_box_text_append_text(renderSelector, "Off");
+    gtk_combo_box_text_append_text(renderSelector, "50 ms");
+    gtk_combo_box_text_append_text(renderSelector, "100 ms");
+    gtk_combo_box_text_append_text(renderSelector, "200 ms (recommended)");
+    const auto renderSelected = std::find(
+        renderDurations.begin(), renderDurations.end(),
+        view.renderAheadMilliseconds);
+    gtk_combo_box_set_active(
+        GTK_COMBO_BOX(renderSelector),
+        renderSelected == renderDurations.end()
+            ? 0
+            : static_cast<gint>(
+                  renderSelected - renderDurations.begin()));
+    gtk_box_pack_start(
+        GTK_BOX(renderRow), renderLabel, FALSE, FALSE, 0);
+    gtk_box_pack_start(
+        GTK_BOX(renderRow), GTK_WIDGET(renderSelector), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(content), renderRow, FALSE, FALSE, 0);
+
+    auto* threadRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    auto* threadLabel = gtk_label_new("Processing threads");
+    auto* threadSelector = GTK_COMBO_BOX_TEXT(gtk_combo_box_text_new());
+    const auto hardwareThreads =
+        std::max(1U, std::thread::hardware_concurrency());
+    gtk_combo_box_text_append_text(
+        threadSelector,
+        ("Automatic (up to " + std::to_string(hardwareThreads) + ")").c_str());
+    for (std::size_t threads = 1; threads <= hardwareThreads; ++threads)
+        gtk_combo_box_text_append_text(
+            threadSelector,
+            (std::to_string(threads) +
+             (threads == 1 ? " thread" : " threads")).c_str());
+    const auto selectedThreads =
+        view.processingThreads <= hardwareThreads
+        ? static_cast<gint>(view.processingThreads)
+        : 0;
+    gtk_combo_box_set_active(
+        GTK_COMBO_BOX(threadSelector), selectedThreads);
+    gtk_box_pack_start(
+        GTK_BOX(threadRow), threadLabel, FALSE, FALSE, 0);
+    gtk_box_pack_start(
+        GTK_BOX(threadRow), GTK_WIDGET(threadSelector), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(content), threadRow, FALSE, FALSE, 0);
+
     auto* explanation = gtk_label_new(
-        "A larger period gives the complete plugin graph more time to finish "
-        "each block, at the cost of higher monitoring and MIDI latency. This "
-        "requests a global JACK/PipeWire period change when Play is pressed.");
+        "Render ahead delays all paths equally and processes independent graph "
+        "branches concurrently. Automatic threading uses the machine's "
+        "available hardware but never creates more processing threads than "
+        "the graph can use. The added audio and MIDI latency protects against "
+        "CPU and scheduling spikes without changing the global audio server.");
     gtk_label_set_xalign(GTK_LABEL(explanation), 0.0F);
     gtk_label_set_line_wrap(GTK_LABEL(explanation), TRUE);
     gtk_widget_set_size_request(explanation, 460, -1);
@@ -931,9 +1000,39 @@ void audioSettingsActivated(GtkMenuItem*, gpointer data) {
 #if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
     if (view.runtime) {
         const auto diagnostics = view.runtime->diagnostics();
-        const auto diagnosticText =
+        auto diagnosticText =
             "Audio xruns/underruns since application start: " +
-            std::to_string(diagnostics.underruns);
+            std::to_string(diagnostics.underruns) +
+            "\nLate render blocks: " +
+            std::to_string(diagnostics.renderLateBlocks) +
+            "; queue drops: " +
+            std::to_string(diagnostics.renderQueueDrops) +
+            "\nGraph processing threads: " +
+            std::to_string(diagnostics.processingThreads) +
+            "; render-ahead blocks: " +
+            std::to_string(diagnostics.renderAheadBlocks) +
+            "\nWorker render time: average " +
+            std::to_string(static_cast<int>(
+                diagnostics.averageRenderMicroseconds)) +
+            " µs; maximum " +
+            std::to_string(static_cast<int>(
+                diagnostics.maximumRenderMicroseconds)) + " µs";
+        const auto processorTimings = view.runtime->processorTimings();
+        const auto slowest = std::max_element(
+            processorTimings.begin(), processorTimings.end(),
+            [](const auto& left, const auto& right) {
+                return left.maximumMicroseconds <
+                       right.maximumMicroseconds;
+            });
+        if (slowest != processorTimings.end() && slowest->calls != 0)
+            diagnosticText +=
+                "\nSlowest node: " + slowest->nodeId +
+                " (average " +
+                std::to_string(static_cast<int>(
+                    slowest->averageMicroseconds)) +
+                " µs; maximum " +
+                std::to_string(static_cast<int>(
+                    slowest->maximumMicroseconds)) + " µs)";
         auto* diagnosticLabel = gtk_label_new(diagnosticText.c_str());
         gtk_label_set_xalign(GTK_LABEL(diagnosticLabel), 0.0F);
         gtk_box_pack_start(
@@ -944,13 +1043,28 @@ void audioSettingsActivated(GtkMenuItem*, gpointer data) {
     gtk_widget_show_all(dialog);
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
         const auto active =
-            gtk_combo_box_get_active(GTK_COMBO_BOX(selector));
-        if (active >= 0 && static_cast<std::size_t>(active) < sizes.size()) {
+            gtk_combo_box_get_active(GTK_COMBO_BOX(periodSelector));
+        const auto renderActive =
+            gtk_combo_box_get_active(GTK_COMBO_BOX(renderSelector));
+        const auto threadActive =
+            gtk_combo_box_get_active(GTK_COMBO_BOX(threadSelector));
+        if (active >= 0 &&
+            static_cast<std::size_t>(active) < sizes.size() &&
+            renderActive >= 0 &&
+            static_cast<std::size_t>(renderActive) <
+                renderDurations.size() &&
+            threadActive >= 0 &&
+            static_cast<std::size_t>(threadActive) <=
+                hardwareThreads) {
             if (runtimeRunning(view))
                 stopRuntime(view,
                             "Audio settings changed — press Play to restart");
             view.requestedBufferSize =
                 sizes[static_cast<std::size_t>(active)];
+            view.renderAheadMilliseconds =
+                renderDurations[static_cast<std::size_t>(renderActive)];
+            view.processingThreads =
+                static_cast<std::size_t>(threadActive);
             updateTransportDisplay(view);
         }
     }

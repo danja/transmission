@@ -4,6 +4,8 @@
 #include "transmission/FakeAudioDevice.h"
 
 #include <cassert>
+#include <chrono>
+#include <thread>
 
 int main() {
     transmission::AudioEngine engine;
@@ -45,5 +47,38 @@ int main() {
     engine.handleXrun();
     assert(engine.diagnostics().underruns == 1);
     engine.stop();
+
+    transmission::AudioEngine buffered;
+    transmission::FakeAudioDevice bufferedDevice;
+    assert(buffered.loadRuntimeGraph(R"({"version":1})"));
+    assert(!buffered.setRenderAheadBlocks(49));
+    assert(buffered.setRenderAheadBlocks(1));
+    assert(buffered.setProcessingThreadCount(2));
+    assert(buffered.configureDevice(bufferedDevice, {1, 4, 48000.0}));
+    auto bufferedGraph = std::make_unique<transmission::AudioGraph>();
+    bufferedGraph->addProcessor(
+        std::make_unique<transmission::PassThroughProcessor>());
+    assert(buffered.setAudioGraph(std::move(bufferedGraph), 1, 4));
+    assert(buffered.start());
+    assert(!buffered.setRenderAheadBlocks(2));
+    assert(!buffered.setProcessingThreadCount(1));
+    float delayedOutput[] = {9.0F, 9.0F, 9.0F, 9.0F};
+    float* delayedOutputs[] = {delayedOutput};
+    assert(bufferedDevice.render(inputs, delayedOutputs));
+    assert(delayedOutput[0] == 0.0F && delayedOutput[3] == 0.0F);
+    for (int attempt = 0;
+         attempt < 100 && buffered.diagnostics().processedBlocks == 0;
+         ++attempt)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    assert(buffered.diagnostics().processedBlocks == 1);
+    const float silence[] = {0.0F, 0.0F, 0.0F, 0.0F};
+    const float* silentInputs[] = {silence};
+    assert(bufferedDevice.render(silentInputs, delayedOutputs));
+    assert(delayedOutput[0] == input[0] && delayedOutput[3] == input[3]);
+    const auto bufferedDiagnostics = buffered.diagnostics();
+    assert(bufferedDiagnostics.renderAheadBlocks == 1);
+    assert(bufferedDiagnostics.renderLateBlocks == 0);
+    assert(bufferedDiagnostics.maximumRenderMicroseconds >= 0.0);
+    buffered.stop();
     return 0;
 }

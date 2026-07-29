@@ -10,12 +10,38 @@
 #include <thread>
 
 int main(int argc, char** argv) {
-    if (argc != 3) {
+    if (argc != 3 && argc != 4) {
         std::cerr << "Usage: transmission_vst3_jack_chain_probe "
-                     "<MIDI-generator.vst3> <instrument.vst3>\n";
+                     "<MIDI-generator.vst3> <instrument.vst3> "
+                     "[requested-frames]\n";
         return 2;
     }
-    const transmission::AudioDeviceConfig deviceConfig{2, 1024, 48000.0, false, 1};
+    transmission::JackConnectionManager connections;
+    std::string error;
+    if (argc == 4) {
+        std::size_t requestedFrames = 0;
+        try {
+            requestedFrames = std::stoul(argv[3]);
+        } catch (...) {
+            std::cerr << "requested-frames must be a positive integer\n";
+            return 2;
+        }
+        if (!connections.setBufferSize(requestedFrames, error)) {
+            std::cerr << error << '\n';
+            return 1;
+        }
+        if (!error.empty()) {
+            std::cout << "periodWarning=" << error << '\n';
+            error.clear();
+        }
+    }
+    transmission::AudioDeviceConfig deviceConfig;
+    deviceConfig.channels = 2;
+    deviceConfig.midiInputs = 1;
+    if (!connections.deviceConfig(deviceConfig, error)) {
+        std::cerr << error << '\n';
+        return 1;
+    }
     transmission::JackAudioDevice device;
     transmission::GraphRuntimeController runtime(
         [](const transmission::RuntimeGraphNode& node,
@@ -24,29 +50,27 @@ int main(int argc, char** argv) {
             if (node.kind != transmission::RuntimeNodeKind::Plugin)
                 return std::make_unique<transmission::PassThroughProcessor>();
             auto processor = std::make_unique<transmission::Vst3Processor>();
-            if (!processor->initialize(node.pluginPath, config.channels,
-                                       config.blockSize, config.sampleRate, error))
+            if (!processor->initialize(node.pluginPath, node.audioInputs,
+                                       node.audioOutputs, config.blockSize,
+                                       config.sampleRate, error))
                 return nullptr;
             return processor;
         });
     using NodeKind = transmission::RuntimeNodeKind;
     using EdgeKind = transmission::RuntimeConnectionKind;
     const transmission::RuntimeGraphSnapshot snapshot{
-        {{"input", NodeKind::SystemInput, ""},
-         {"generator", NodeKind::Plugin, argv[1]},
-         {"instrument", NodeKind::Plugin, argv[2]},
-         {"output", NodeKind::SystemOutput, ""}},
+        {{"input", NodeKind::SystemInput, "", 0, 2, 2},
+         {"generator", NodeKind::Plugin, argv[1], 0, 0, 2},
+         {"instrument", NodeKind::Plugin, argv[2], 0, 0, 2},
+         {"output", NodeKind::SystemOutput, "", 0, 2, 2}},
         {{"input", "generator", EdgeKind::Midi},
          {"generator", "instrument", EdgeKind::Midi},
-         {"generator", "instrument", EdgeKind::Audio},
          {"instrument", "output", EdgeKind::Audio}}};
-    std::string error;
     if (!runtime.start(snapshot, device, deviceConfig, {}, error)) {
         if (!device.lastError().empty()) error = device.lastError();
         std::cerr << error << '\n';
         return 1;
     }
-    transmission::JackConnectionManager connections;
     if (!connections.connectOutput(0, "system:playback_1", error) ||
         !connections.connectOutput(1, "system:playback_2", error)) {
         std::cerr << error << '\n';

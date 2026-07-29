@@ -32,6 +32,7 @@ public:
     virtual void process(const float* const* inputs, float* const* outputs,
                          std::size_t channels, std::size_t frames) noexcept = 0;
     virtual void handleMidi(const MidiEvent& /*event*/) noexcept {}
+    virtual void handleXrun() noexcept {}
     virtual std::size_t takeOutputMidi(MidiEvent* /*events*/,
                                        std::size_t /*capacity*/) noexcept { return 0; }
 };

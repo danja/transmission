@@ -42,6 +42,8 @@ int main() {
     noteOn.data = {0x90, 60, 100};
     engine.handleMidi(noteOn);
     assert(engine.diagnostics().midiEvents == 1);
+    engine.handleXrun();
+    assert(engine.diagnostics().underruns == 1);
     engine.stop();
     return 0;
 }

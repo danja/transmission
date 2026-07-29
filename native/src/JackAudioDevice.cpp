@@ -81,6 +81,17 @@ bool JackAudioDevice::configure(const AudioDeviceConfig& config) {
         closeClient();
         return false;
     }
+    if (jack_set_buffer_size_callback(
+            client_, &JackAudioDevice::bufferSizeThunk, this) != 0) {
+        lastError_ = "unable to install JACK buffer-size callback";
+        closeClient();
+        return false;
+    }
+    if (jack_set_xrun_callback(client_, &JackAudioDevice::xrunThunk, this) != 0) {
+        lastError_ = "unable to install JACK xrun callback";
+        closeClient();
+        return false;
+    }
     configured_ = true;
     if (config.autoConnect && !connectPhysicalPorts()) {
         closeClient();
@@ -137,6 +148,24 @@ void JackAudioDevice::stop() noexcept {
 
 int JackAudioDevice::processThunk(unsigned frames, void* opaque) noexcept {
     return static_cast<JackAudioDevice*>(opaque)->process(frames);
+}
+
+int JackAudioDevice::bufferSizeThunk(unsigned frames, void* opaque) noexcept {
+    auto& device = *static_cast<JackAudioDevice*>(opaque);
+    if (frames != device.config_.blockSize) {
+        if (auto* callback = device.callback_.load(std::memory_order_acquire);
+            callback && device.running_.load(std::memory_order_acquire))
+            callback->handleXrun();
+    }
+    return 0;
+}
+
+int JackAudioDevice::xrunThunk(void* opaque) noexcept {
+    auto& device = *static_cast<JackAudioDevice*>(opaque);
+    if (auto* callback = device.callback_.load(std::memory_order_acquire);
+        callback && device.running_.load(std::memory_order_acquire))
+        callback->handleXrun();
+    return 0;
 }
 
 int JackAudioDevice::process(unsigned frames) noexcept {

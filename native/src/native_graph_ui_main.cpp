@@ -22,6 +22,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 #include <unistd.h>
 
@@ -108,6 +109,7 @@ struct GraphView {
     std::string filePath;
     std::string projectHelperPath;
     std::string lastSavedSnapshot;
+    std::size_t requestedBufferSize = 0;
 };
 
 struct PluginDialogContext {
@@ -825,6 +827,20 @@ void playStopClicked(GtkButton*, gpointer data) {
             return node.kind == NodeKind::MidiOutput;
         }));
     std::string error;
+    std::string bufferWarning;
+    if (view.requestedBufferSize != 0) {
+        if (!view.jackConnections->setBufferSize(
+                view.requestedBufferSize, error)) {
+            setStatus(view, error, true);
+            updateTransportDisplay(view);
+            return;
+        }
+        if (!error.empty()) {
+            bufferWarning = std::move(error);
+            error.clear();
+            view.requestedBufferSize = 0;
+        }
+    }
     if (!view.jackConnections->deviceConfig(deviceConfig, error)) {
         setStatus(view, error, true);
         updateTransportDisplay(view);
@@ -846,10 +862,99 @@ void playStopClicked(GtkButton*, gpointer data) {
     }
     scheduleExternalConnections(view);
     startTransportTimer(view);
+    if (!bufferWarning.empty())
+        setStatus(view, "Audio started, but " + bufferWarning, true);
 #else
     setStatus(view, "This UI build requires both JACK and VST3 support", true);
 #endif
     updateTransportDisplay(view);
+}
+
+void audioSettingsActivated(GtkMenuItem*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    auto* dialog = gtk_dialog_new_with_buttons(
+        "Audio Settings", GTK_WINDOW(view.window),
+        static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL |
+                                   GTK_DIALOG_DESTROY_WITH_PARENT),
+        "_Cancel", GTK_RESPONSE_CANCEL, "_Apply", GTK_RESPONSE_ACCEPT,
+        nullptr);
+    auto* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+    gtk_box_set_spacing(GTK_BOX(content), 10);
+
+    transmission::AudioDeviceConfig current;
+    std::string configError;
+    const bool haveCurrent =
+        view.jackConnections &&
+        view.jackConnections->deviceConfig(current, configError);
+    const auto currentText = haveCurrent
+        ? "Current JACK/PipeWire period: " +
+              std::to_string(current.blockSize) + " frames (" +
+              std::to_string(static_cast<int>(
+                  1000.0 * static_cast<double>(current.blockSize) /
+                  current.sampleRate)) + " ms at " +
+              std::to_string(static_cast<int>(current.sampleRate)) + " Hz)"
+        : "Current JACK/PipeWire period is unavailable.";
+    auto* currentLabel = gtk_label_new(currentText.c_str());
+    gtk_label_set_xalign(GTK_LABEL(currentLabel), 0.0F);
+    gtk_box_pack_start(GTK_BOX(content), currentLabel, FALSE, FALSE, 0);
+
+    auto* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    auto* label = gtk_label_new("Processing buffer");
+    auto* selector = GTK_COMBO_BOX_TEXT(gtk_combo_box_text_new());
+    constexpr std::array<std::size_t, 6> sizes{
+        0, 256, 512, 1024, 2048, 4096};
+    gtk_combo_box_text_append_text(selector, "Use current server setting");
+    for (std::size_t index = 1; index < sizes.size(); ++index)
+        gtk_combo_box_text_append_text(
+            selector,
+            (std::to_string(sizes[index]) + " frames").c_str());
+    const auto selected = std::find(
+        sizes.begin(), sizes.end(), view.requestedBufferSize);
+    gtk_combo_box_set_active(
+        GTK_COMBO_BOX(selector),
+        selected == sizes.end()
+            ? 0 : static_cast<gint>(selected - sizes.begin()));
+    gtk_box_pack_start(GTK_BOX(row), label, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(row), GTK_WIDGET(selector), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(content), row, FALSE, FALSE, 0);
+
+    auto* explanation = gtk_label_new(
+        "A larger period gives the complete plugin graph more time to finish "
+        "each block, at the cost of higher monitoring and MIDI latency. This "
+        "requests a global JACK/PipeWire period change when Play is pressed.");
+    gtk_label_set_xalign(GTK_LABEL(explanation), 0.0F);
+    gtk_label_set_line_wrap(GTK_LABEL(explanation), TRUE);
+    gtk_widget_set_size_request(explanation, 460, -1);
+    gtk_box_pack_start(GTK_BOX(content), explanation, FALSE, FALSE, 0);
+
+#if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
+    if (view.runtime) {
+        const auto diagnostics = view.runtime->diagnostics();
+        const auto diagnosticText =
+            "Audio xruns/underruns since application start: " +
+            std::to_string(diagnostics.underruns);
+        auto* diagnosticLabel = gtk_label_new(diagnosticText.c_str());
+        gtk_label_set_xalign(GTK_LABEL(diagnosticLabel), 0.0F);
+        gtk_box_pack_start(
+            GTK_BOX(content), diagnosticLabel, FALSE, FALSE, 0);
+    }
+#endif
+
+    gtk_widget_show_all(dialog);
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        const auto active =
+            gtk_combo_box_get_active(GTK_COMBO_BOX(selector));
+        if (active >= 0 && static_cast<std::size_t>(active) < sizes.size()) {
+            if (runtimeRunning(view))
+                stopRuntime(view,
+                            "Audio settings changed — press Play to restart");
+            view.requestedBufferSize =
+                sizes[static_cast<std::size_t>(active)];
+            updateTransportDisplay(view);
+        }
+    }
+    gtk_widget_destroy(dialog);
 }
 
 void tempoChanged(GtkSpinButton* spin, gpointer data) {
@@ -1556,6 +1661,15 @@ void activate(GtkApplication* application, gpointer) {
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), quitItem);
     gtk_menu_item_set_submenu(GTK_MENU_ITEM(fileItem), fileMenu);
     gtk_menu_shell_append(GTK_MENU_SHELL(menuBar), fileItem);
+    auto* settingsItem = gtk_menu_item_new_with_mnemonic("_Settings");
+    auto* settingsMenu = gtk_menu_new();
+    auto* audioSettingsItem =
+        gtk_menu_item_new_with_mnemonic("_Audio…");
+    gtk_menu_shell_append(
+        GTK_MENU_SHELL(settingsMenu), audioSettingsItem);
+    gtk_menu_item_set_submenu(
+        GTK_MENU_ITEM(settingsItem), settingsMenu);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menuBar), settingsItem);
     gtk_box_pack_start(GTK_BOX(frame), menuBar, FALSE, FALSE, 0);
 
     auto* accelerators = gtk_accel_group_new();
@@ -1625,6 +1739,8 @@ void activate(GtkApplication* application, gpointer) {
     g_signal_connect(openItem, "activate", G_CALLBACK(openProjectActivated), view);
     g_signal_connect(saveItem, "activate", G_CALLBACK(saveProjectActivated), view);
     g_signal_connect(saveAsItem, "activate", G_CALLBACK(saveProjectAsActivated), view);
+    g_signal_connect(audioSettingsItem, "activate",
+                     G_CALLBACK(audioSettingsActivated), view);
     g_signal_connect(quitItem, "activate", G_CALLBACK(quitActivated), view);
     gtk_widget_set_hexpand(canvas, TRUE);
     gtk_widget_set_vexpand(canvas, TRUE);

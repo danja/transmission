@@ -177,6 +177,10 @@ void AudioEngine::handleMidi(const MidiEvent& event) noexcept {
         midiEventBuffer_[midiEventCount_++] = event;
 }
 
+void AudioEngine::handleXrun() noexcept {
+    underruns_.fetch_add(1, std::memory_order_relaxed);
+}
+
 std::size_t AudioEngine::takeOutputMidi(MidiEvent* events,
                                         std::size_t capacity) noexcept {
     const auto count = std::min(capacity, midiOutputCount_);

@@ -172,6 +172,26 @@ Full component-state synchronization and persistence of editor parameter values
 in Turtle remain separate work; this path handles ordinary parameter edits, not
 opaque plugin state or preset files.
 
+## Audio deadline buffering and latency
+
+Status: the GTK host now provides Settings → Audio with JACK/PipeWire period
+choices from 256 to 4096 frames, plus the current period, its approximate
+duration, and accumulated xrun/underrun diagnostics. The selected period is
+requested on the control thread before the processing client is configured.
+JACK xrun notifications increment the engine's lock-free diagnostic counter.
+Period changes are transactional: Transmission verifies the period exposed to
+JACK clients after a request and restores the previous value if PipeWire
+acknowledges the request without adopting a matching JACK quantum. The JACK
+device also subscribes to later buffer-size notifications before activation.
+This prevents a mismatched forced quantum from silently stopping callbacks.
+
+This buffer applies to the complete graph. Branches with different node counts
+still process the same block and therefore need no per-path buffering merely
+because their CPU execution lengths differ. Automatic plugin delay compensation
+is separate future work: it must query each VST3 processor's declared latency,
+calculate the maximum latency to each merge, and insert preallocated delay lines
+on shorter signal paths.
+
 ## Assumptions
 
 - Linux and VST3 are the v1 target.

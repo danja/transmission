@@ -64,7 +64,7 @@ cmake --build native/build-ui --target transmission_graph_ui
 native/build-ui/transmission_graph_ui
 ```
 
-The native canvas renders typed audio and MIDI topology, compiles execution data through a control-thread graph compiler, starts the VST3 graph on JACK from the Play button, preserves and applies external system-port choices, and reports runtime failures in the window. VST3 MIDI output is routed through bounded native buffers, so generator-to-instrument chains execute without callback allocation. It also discovers bundles from `~/.vst3`, opens native plugin editors, provides node context menus, supports dragging nodes, and creates type-compatible arcs.
+The native canvas renders typed audio and MIDI topology, compiles execution data through a control-thread graph compiler, starts the VST3 graph on JACK from the Play button, preserves and applies external system-port choices, and reports runtime failures in the window. VST3 MIDI output is routed through bounded native buffers, so generator-to-instrument chains execute without callback allocation. It also discovers bundles from `~/.vst3`, opens native plugin editors, provides node context menus, supports dragging nodes, creates type-compatible arcs, and provides JACK/PipeWire period and xrun diagnostics under Settings → Audio. Period requests are verified against the value exposed to JACK clients; if PipeWire acknowledges a request without adopting it, Transmission restores the previous working period and reports the mismatch instead of starting a silent client.
 
 Right-clicking the canvas also offers Add MIDI Input and Add MIDI Output.
 Each action lists the compatible JACK MIDI ports, creates a typed graph

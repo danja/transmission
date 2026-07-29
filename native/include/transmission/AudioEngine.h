@@ -54,6 +54,7 @@ public:
     void process(const float* const* inputs, float* const* outputs,
                  std::size_t channels, std::size_t frames) noexcept override;
     void handleMidi(const MidiEvent& event) noexcept override;
+    void handleXrun() noexcept override;
     std::size_t takeOutputMidi(MidiEvent* events,
                                std::size_t capacity) noexcept override;
     bool enqueueMidi(const MidiEvent& event) noexcept;

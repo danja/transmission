@@ -33,6 +33,8 @@ public:
 
 private:
     static int processThunk(unsigned frames, void* opaque) noexcept;
+    static int bufferSizeThunk(unsigned frames, void* opaque) noexcept;
+    static int xrunThunk(void* opaque) noexcept;
     int process(unsigned frames) noexcept;
     void closeClient() noexcept;
 

@@ -27,6 +27,7 @@ public:
     bool connectMidiInput(std::size_t port, const std::string& source, std::string& error);
     bool connectMidiOutput(std::size_t port, const std::string& destination, std::string& error);
     bool deviceConfig(AudioDeviceConfig& config, std::string& error) const;
+    bool setBufferSize(std::size_t frames, std::string& error);
     bool available() const noexcept;
 
 private:

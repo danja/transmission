@@ -6,6 +6,7 @@
 #include <jack/jack.h>
 
 #include <algorithm>
+#include <limits>
 
 namespace transmission {
 
@@ -191,6 +192,46 @@ bool JackConnectionManager::deviceConfig(AudioDeviceConfig& config,
     return true;
 }
 
+bool JackConnectionManager::setBufferSize(std::size_t frames,
+                                          std::string& error) {
+    if (!impl_ || !impl_->ensureClient()) {
+        error = "JACK server is not available";
+        return false;
+    }
+    if (frames == 0 || (frames & (frames - 1)) != 0 ||
+        frames > std::numeric_limits<jack_nframes_t>::max()) {
+        error = "JACK buffer size must be a positive power of two";
+        return false;
+    }
+    const auto previous = jack_get_buffer_size(impl_->client);
+    const auto requestResult = jack_set_buffer_size(
+        impl_->client, static_cast<jack_nframes_t>(frames));
+    const auto adopted = jack_get_buffer_size(impl_->client);
+    if (requestResult == 0 &&
+        adopted == static_cast<jack_nframes_t>(frames)) {
+        error.clear();
+        return true;
+    }
+    const bool restored =
+        previous != 0 &&
+        jack_set_buffer_size(impl_->client, previous) == 0 &&
+        jack_get_buffer_size(impl_->client) == previous;
+    if (requestResult != 0)
+        error = "JACK rejected the requested " + std::to_string(frames) +
+                "-frame period";
+    else
+        error = "JACK/PipeWire kept a " + std::to_string(adopted) +
+                "-frame period instead of the requested " +
+                std::to_string(frames) + " frames";
+    if (restored) {
+        error += "; audio will use the restored " +
+                 std::to_string(previous) + "-frame period";
+        return true;
+    }
+    error += "; restart the audio server before trying again";
+    return false;
+}
+
 bool JackConnectionManager::available() const noexcept {
     return impl_ && impl_->ensureClient();
 }
@@ -226,6 +267,10 @@ bool JackConnectionManager::connectMidiOutput(std::size_t, const std::string&,
     return false;
 }
 bool JackConnectionManager::deviceConfig(AudioDeviceConfig&, std::string& error) const {
+    error = "JACK support is not enabled";
+    return false;
+}
+bool JackConnectionManager::setBufferSize(std::size_t, std::string& error) {
     error = "JACK support is not enabled";
     return false;
 }

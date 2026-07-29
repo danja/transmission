@@ -1,4 +1,5 @@
 #include "transmission/JackConnectionManager.h"
+#include "transmission/JackPortIdentity.h"
 
 #ifdef TRANSMISSION_UI_WITH_JACK
 
@@ -80,7 +81,9 @@ bool JackConnectionManager::connectInput(std::size_t channel, const std::string&
     }
     if (!clearConnections(impl_->client, target, true, error)) return false;
     if (source == "No connection") return true;
-    if (jack_connect(impl_->client, source.c_str(), targetName.c_str()) != 0) {
+    const auto resolved = resolveJackPortName(
+        source, listPorts(impl_->client, JackPortIsOutput));
+    if (jack_connect(impl_->client, resolved.c_str(), targetName.c_str()) != 0) {
         error = "unable to connect JACK source to " + targetName;
         return false;
     }
@@ -101,7 +104,9 @@ bool JackConnectionManager::connectOutput(std::size_t channel, const std::string
     }
     if (!clearConnections(impl_->client, source, false, error)) return false;
     if (destination == "No connection") return true;
-    if (jack_connect(impl_->client, sourceName.c_str(), destination.c_str()) != 0) {
+    const auto resolved = resolveJackPortName(
+        destination, listPorts(impl_->client, JackPortIsInput));
+    if (jack_connect(impl_->client, sourceName.c_str(), resolved.c_str()) != 0) {
         error = "unable to connect " + sourceName + " to JACK destination";
         return false;
     }

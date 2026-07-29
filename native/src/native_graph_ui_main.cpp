@@ -24,8 +24,7 @@
 
 namespace {
 constexpr double nodeWidth = 190.0;
-constexpr double nodeHeight = 92.0;
-constexpr double portSpacing = 24.0;
+constexpr double nodeHeight = 70.0;
 
 struct Node {
     std::string id;
@@ -77,6 +76,10 @@ struct GraphView {
     std::unique_ptr<transmission::GraphRuntimeController> runtime;
 #endif
     guint transportTimer = 0;
+    guint externalConnectionTimer = 0;
+    unsigned externalConnectionAttempts = 0;
+    std::array<bool, 2> pendingInputConnections{};
+    std::array<bool, 2> pendingOutputConnections{};
     GtkSpinButton* tempo = nullptr;
     GtkSpinButton* loopBars = nullptr;
     GtkToggleButton* loop = nullptr;
@@ -131,6 +134,13 @@ bool runtimeRunning(const GraphView& view) {
 }
 
 void stopRuntime(GraphView& view, const char* status = nullptr) {
+    if (view.externalConnectionTimer) {
+        g_source_remove(view.externalConnectionTimer);
+        view.externalConnectionTimer = 0;
+    }
+    view.externalConnectionAttempts = 0;
+    view.pendingInputConnections.fill(false);
+    view.pendingOutputConnections.fill(false);
 #if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
     if (view.runtime) view.runtime->stop();
 #endif
@@ -176,10 +186,6 @@ Node* nodeAt(GraphView& view, double x, double y) {
     return nullptr;
 }
 
-double portY(const Node& node, std::size_t port) {
-    return node.y + nodeHeight / 2.0 + (static_cast<double>(port) - 0.5) * portSpacing;
-}
-
 struct PortHit {
     std::size_t node = static_cast<std::size_t>(-1);
     std::size_t port = 0;
@@ -187,8 +193,13 @@ struct PortHit {
     PortKind kind = PortKind::Audio;
 };
 
-double midiPortY(const Node& node, std::size_t port) {
-    return node.y + nodeHeight - 14.0 - static_cast<double>(port) * portSpacing;
+double portY(const Node& node, PortKind kind, std::size_t port, bool output) {
+    const auto audioPorts = output ? node.audioOutputs : node.audioInputs;
+    const auto midiPorts = output ? node.midiOutputs : node.midiInputs;
+    const auto total = audioPorts + midiPorts;
+    const auto index = kind == PortKind::Audio ? port : audioPorts + port;
+    return node.y + nodeHeight * static_cast<double>(index + 1) /
+                        static_cast<double>(total + 1);
 }
 
 PortHit portAt(const GraphView& view, double x, double y) {
@@ -196,19 +207,23 @@ PortHit portAt(const GraphView& view, double x, double y) {
     for (std::size_t index = 0; index < view.nodes.size(); ++index) {
         const auto& node = view.nodes[index];
         for (std::size_t port = 0; port < node.audioInputs; ++port) {
-            if (std::hypot(x - node.x, y - portY(node, port)) <= radius)
+            if (std::hypot(x - node.x,
+                           y - portY(node, PortKind::Audio, port, false)) <= radius)
                 return {index, port, false, PortKind::Audio};
         }
         for (std::size_t port = 0; port < node.audioOutputs; ++port) {
-            if (std::hypot(x - (node.x + nodeWidth), y - portY(node, port)) <= radius)
+            if (std::hypot(x - (node.x + nodeWidth),
+                           y - portY(node, PortKind::Audio, port, true)) <= radius)
                 return {index, port, true, PortKind::Audio};
         }
         for (std::size_t port = 0; port < node.midiInputs; ++port) {
-            if (std::hypot(x - node.x, y - midiPortY(node, port)) <= radius)
+            if (std::hypot(x - node.x,
+                           y - portY(node, PortKind::Midi, port, false)) <= radius)
                 return {index, port, false, PortKind::Midi};
         }
         for (std::size_t port = 0; port < node.midiOutputs; ++port) {
-            if (std::hypot(x - (node.x + nodeWidth), y - midiPortY(node, port)) <= radius)
+            if (std::hypot(x - (node.x + nodeWidth),
+                           y - portY(node, PortKind::Midi, port, true)) <= radius)
                 return {index, port, true, PortKind::Midi};
         }
     }
@@ -234,11 +249,9 @@ std::size_t edgeAt(const GraphView& view, double x, double y) {
         const auto& from = view.nodes[edge.from];
         const auto& to = view.nodes[edge.to];
         const double x1 = from.x + nodeWidth;
-        const double y1 = edge.kind == PortKind::Midi ? midiPortY(from, edge.fromPort)
-                                                       : portY(from, edge.fromPort);
+        const double y1 = portY(from, edge.kind, edge.fromPort, true);
         const double x2 = to.x;
-        const double y2 = edge.kind == PortKind::Midi ? midiPortY(to, edge.toPort)
-                                                       : portY(to, edge.toPort);
+        const double y2 = portY(to, edge.kind, edge.toPort, false);
         const double control = std::max(40.0, (x2 - x1) * 0.45);
         const double c1x = x1 + control;
         const double c1y = y1;
@@ -318,6 +331,17 @@ void showPluginDialog(GtkWidget* canvas, GraphView& view) {
     gtk_widget_show_all(dialog);
 }
 
+bool systemChannelUsed(const GraphView& view, bool input, std::size_t channel) {
+    return std::any_of(view.edges.begin(), view.edges.end(), [&](const auto& edge) {
+        if (edge.kind != PortKind::Audio ||
+            edge.from >= view.nodes.size() || edge.to >= view.nodes.size())
+            return false;
+        return input
+            ? view.nodes[edge.from].id == "system-input" && edge.fromPort == channel
+            : view.nodes[edge.to].id == "system-output" && edge.toPort == channel;
+    });
+}
+
 bool applyExternalConnections(GraphView& view, std::string& error) {
     if (!view.jackConnections || !view.jackConnections->available()) {
         error = "JACK server is not available";
@@ -330,18 +354,81 @@ bool applyExternalConnections(GraphView& view, std::string& error) {
         applied = false;
     };
     for (std::size_t index = 0; index < view.systemInputConnections.size(); ++index) {
+        if (!systemChannelUsed(view, true, index)) continue;
         std::string routeError;
         if (!view.jackConnections->connectInput(index, view.systemInputConnections[index],
                                                 routeError))
             appendError("input " + std::to_string(index + 1) + ": " + routeError);
     }
     for (std::size_t index = 0; index < view.systemOutputConnections.size(); ++index) {
+        if (!systemChannelUsed(view, false, index)) continue;
         std::string routeError;
         if (!view.jackConnections->connectOutput(index, view.systemOutputConnections[index],
                                                  routeError))
             appendError("output " + std::to_string(index + 1) + ": " + routeError);
     }
     return applied;
+}
+
+gboolean retryExternalConnections(gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    if (!runtimeRunning(view)) {
+        view.externalConnectionTimer = 0;
+        view.externalConnectionAttempts = 0;
+        return G_SOURCE_REMOVE;
+    }
+    std::string error;
+    const auto appendError = [&](const std::string& message) {
+        if (!error.empty()) error += "; ";
+        error += message;
+    };
+    for (std::size_t index = 0; index < view.pendingInputConnections.size(); ++index) {
+        if (!view.pendingInputConnections[index]) continue;
+        std::string routeError;
+        if (view.jackConnections->connectInput(
+                index, view.systemInputConnections[index], routeError))
+            view.pendingInputConnections[index] = false;
+        else
+            appendError("input " + std::to_string(index + 1) + ": " + routeError);
+    }
+    for (std::size_t index = 0; index < view.pendingOutputConnections.size(); ++index) {
+        if (!view.pendingOutputConnections[index]) continue;
+        std::string routeError;
+        if (view.jackConnections->connectOutput(
+                index, view.systemOutputConnections[index], routeError))
+            view.pendingOutputConnections[index] = false;
+        else
+            appendError("output " + std::to_string(index + 1) + ": " + routeError);
+    }
+    const auto pending =
+        std::any_of(view.pendingInputConnections.begin(),
+                    view.pendingInputConnections.end(), [](bool value) { return value; }) ||
+        std::any_of(view.pendingOutputConnections.begin(),
+                    view.pendingOutputConnections.end(), [](bool value) { return value; });
+    if (!pending) {
+        view.externalConnectionTimer = 0;
+        view.externalConnectionAttempts = 0;
+        return G_SOURCE_REMOVE;
+    }
+    ++view.externalConnectionAttempts;
+    if (view.externalConnectionAttempts >= 20) {
+        view.externalConnectionTimer = 0;
+        view.externalConnectionAttempts = 0;
+        setStatus(view, "Audio is running, but JACK routing failed: " + error, true);
+        return G_SOURCE_REMOVE;
+    }
+    return G_SOURCE_CONTINUE;
+}
+
+void scheduleExternalConnections(GraphView& view) {
+    if (view.externalConnectionTimer)
+        g_source_remove(view.externalConnectionTimer);
+    view.externalConnectionAttempts = 0;
+    for (std::size_t index = 0; index < view.pendingInputConnections.size(); ++index)
+        view.pendingInputConnections[index] = systemChannelUsed(view, true, index);
+    for (std::size_t index = 0; index < view.pendingOutputConnections.size(); ++index)
+        view.pendingOutputConnections[index] = systemChannelUsed(view, false, index);
+    view.externalConnectionTimer = g_timeout_add(50, retryExternalConnections, &view);
 }
 
 void systemDialogResponse(GtkDialog*, gint response, gpointer data) {
@@ -356,6 +443,13 @@ void systemDialogResponse(GtkDialog*, gint response, gpointer data) {
             }
         }
         if (runtimeRunning(*context->view)) {
+            if (context->view->externalConnectionTimer) {
+                g_source_remove(context->view->externalConnectionTimer);
+                context->view->externalConnectionTimer = 0;
+                context->view->externalConnectionAttempts = 0;
+                context->view->pendingInputConnections.fill(false);
+                context->view->pendingOutputConnections.fill(false);
+            }
             std::string error;
             if (!applyExternalConnections(*context->view, error))
                 setStatus(*context->view, error, true);
@@ -423,8 +517,12 @@ void showSystemDialog(GtkWidget* canvas, GraphView& view, bool input) {
 
 void updateTransportDisplay(GraphView& view) {
     const auto running = runtimeRunning(view);
-    if (view.playButton)
-        gtk_button_set_label(GTK_BUTTON(view.playButton), running ? "Stop" : "Play");
+    if (view.playButton) {
+        const auto* desired = running ? "Stop" : "Play";
+        const auto* current = gtk_button_get_label(GTK_BUTTON(view.playButton));
+        if (!current || std::string(current) != desired)
+            gtk_button_set_label(GTK_BUTTON(view.playButton), desired);
+    }
 }
 
 gboolean transportTick(gpointer data) {
@@ -474,10 +572,7 @@ void playStopClicked(GtkButton*, gpointer data) {
         updateTransportDisplay(view);
         return;
     }
-    if (!applyExternalConnections(view, error))
-        setStatus(view, "Audio is running, but JACK routing failed: " + error, true);
-    else
-        setStatus(view, "Audio running through JACK");
+    scheduleExternalConnections(view);
     startTransportTimer(view);
 #else
     setStatus(view, "This UI build requires both JACK and VST3 support", true);
@@ -575,10 +670,8 @@ gboolean drawGraph(GtkWidget*, cairo_t* cr, gpointer data) {
     for (const auto& edge : view.edges) {
         const auto& from = view.nodes[edge.from];
         const auto& to = view.nodes[edge.to];
-        const double fromY = edge.kind == PortKind::Midi ? midiPortY(from, edge.fromPort)
-                                                          : portY(from, edge.fromPort);
-        const double toY = edge.kind == PortKind::Midi ? midiPortY(to, edge.toPort)
-                                                        : portY(to, edge.toPort);
+        const double fromY = portY(from, edge.kind, edge.fromPort, true);
+        const double toY = portY(to, edge.kind, edge.toPort, false);
         if (edge.kind == PortKind::Midi)
             cairo_set_source_rgb(cr, 0.86, 0.34, 0.76);
         else
@@ -592,8 +685,7 @@ gboolean drawGraph(GtkWidget*, cairo_t* cr, gpointer data) {
                              view.connectingKind == PortKind::Midi ? 0.48 : 0.80,
                              view.connectingKind == PortKind::Midi ? 0.84 : 0.94);
         cairo_set_line_width(cr, 2.0);
-        const auto y = view.connectingKind == PortKind::Midi ? midiPortY(from, view.connectingPort)
-                                                               : portY(from, view.connectingPort);
+        const auto y = portY(from, view.connectingKind, view.connectingPort, true);
         drawArrow(cr, from.x + nodeWidth, y,
                   view.pointerX, view.pointerY);
     }
@@ -612,20 +704,18 @@ gboolean drawGraph(GtkWidget*, cairo_t* cr, gpointer data) {
         cairo_set_font_size(cr, 16.0);
         cairo_move_to(cr, node.x + 15.0, node.y + 31.0);
         cairo_show_text(cr, node.label.c_str());
-        cairo_set_font_size(cr, 11.0);
-        cairo_set_source_rgb(cr, 0.70, 0.75, 0.82);
-        cairo_move_to(cr, node.x + 15.0, node.y + 68.0);
-        cairo_show_text(cr, node.id == "system-input" ? "audio + MIDI outputs"
-                                                        : node.id == "system-output" ? "audio + MIDI inputs"
-                                                                                       : "audio + MIDI processor");
         for (std::size_t port = 0; port < node.audioInputs; ++port)
-            drawPort(cr, node.x, portY(node, port), false, PortKind::Audio);
+            drawPort(cr, node.x, portY(node, PortKind::Audio, port, false),
+                     false, PortKind::Audio);
         for (std::size_t port = 0; port < node.audioOutputs; ++port)
-            drawPort(cr, node.x + nodeWidth, portY(node, port), true, PortKind::Audio);
+            drawPort(cr, node.x + nodeWidth,
+                     portY(node, PortKind::Audio, port, true), true, PortKind::Audio);
         for (std::size_t port = 0; port < node.midiInputs; ++port)
-            drawPort(cr, node.x, midiPortY(node, port), false, PortKind::Midi);
+            drawPort(cr, node.x, portY(node, PortKind::Midi, port, false),
+                     false, PortKind::Midi);
         for (std::size_t port = 0; port < node.midiOutputs; ++port)
-            drawPort(cr, node.x + nodeWidth, midiPortY(node, port), true, PortKind::Midi);
+            drawPort(cr, node.x + nodeWidth,
+                     portY(node, PortKind::Midi, port, true), true, PortKind::Midi);
     }
     return FALSE;
 }
@@ -1087,8 +1177,10 @@ void activate(GtkApplication* application, gpointer) {
     GtkWidget* transportBar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_widget_set_margin_start(transportBar, 8);
     gtk_widget_set_margin_end(transportBar, 8);
+    gtk_widget_set_margin_top(transportBar, 8);
     gtk_widget_set_margin_bottom(transportBar, 8);
     auto* playButton = gtk_button_new_with_label("Play");
+    gtk_widget_set_size_request(playButton, 70, -1);
     auto* resetButton = gtk_button_new_with_label("Reset");
     gtk_box_pack_start(GTK_BOX(transportBar), playButton, FALSE, FALSE, 4);
     gtk_box_pack_start(GTK_BOX(transportBar), resetButton, FALSE, FALSE, 4);
@@ -1109,8 +1201,6 @@ void activate(GtkApplication* application, gpointer) {
     gtk_spin_button_set_value(loopBars, 4.0);
     gtk_spin_button_set_numeric(loopBars, TRUE);
     gtk_box_pack_start(GTK_BOX(transportBar), GTK_WIDGET(loopBars), FALSE, FALSE, 4);
-    gtk_box_pack_start(GTK_BOX(frame), transportBar, FALSE, FALSE, 0);
-
     view->tempo = tempo;
     view->loopBars = loopBars;
     view->loop = GTK_TOGGLE_BUTTON(loop);
@@ -1146,10 +1236,13 @@ void activate(GtkApplication* application, gpointer) {
     g_signal_connect(canvas, "motion-notify-event", G_CALLBACK(motion), view);
     g_signal_connect(canvas, "button-release-event", G_CALLBACK(buttonRelease), view);
     gtk_box_pack_start(GTK_BOX(frame), canvas, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(frame), transportBar, FALSE, FALSE, 0);
     gtk_container_add(GTK_CONTAINER(window), frame);
     g_signal_connect(window, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) {
         auto* view = static_cast<GraphView*>(data);
         if (view->transportTimer) g_source_remove(view->transportTimer);
+        if (view->externalConnectionTimer)
+            g_source_remove(view->externalConnectionTimer);
         delete view;
     }), view);
     gtk_widget_show_all(window);

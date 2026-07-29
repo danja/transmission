@@ -20,6 +20,7 @@ add_library(transmission_engine STATIC
   src/FakeAudioDevice.cpp
   src/GraphRuntimeCompiler.cpp
   src/GraphRuntimeController.cpp
+  src/JackPortIdentity.cpp
   src/PluginScanner.cpp
   src/RoutedAudioGraph.cpp
   src/TransportClock.cpp
@@ -130,6 +131,9 @@ if(TRANSMISSION_BUILD_TESTS)
   add_executable(transmission_ui_project_codec_test tests/UiProjectCodecTest.cpp)
   target_link_libraries(transmission_ui_project_codec_test PRIVATE transmission_engine)
   add_test(NAME transmission_ui_project_codec_test COMMAND transmission_ui_project_codec_test)
+  add_executable(transmission_jack_port_identity_test tests/JackPortIdentityTest.cpp)
+  target_link_libraries(transmission_jack_port_identity_test PRIVATE transmission_engine)
+  add_test(NAME transmission_jack_port_identity_test COMMAND transmission_jack_port_identity_test)
   add_executable(transmission_audio_device_test tests/AudioDeviceTest.cpp)
   target_link_libraries(transmission_audio_device_test PRIVATE transmission_engine)
   add_test(NAME transmission_audio_device_test COMMAND transmission_audio_device_test)

@@ -10,4 +10,5 @@ if [[ ! -x "$APP" ]]; then
 fi
 
 export GDK_BACKEND=x11
+export TRANSMISSION_ROOT="$ROOT_DIR"
 exec "$APP" "$@"

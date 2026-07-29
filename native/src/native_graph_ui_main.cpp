@@ -1,9 +1,11 @@
 #include <gtk/gtk.h>
+#include <glib/gstdio.h>
 #include <cairo.h>
 #include "transmission/AudioProcessor.h"
 #include "transmission/GraphRuntimeController.h"
 #include "transmission/JackConnectionManager.h"
 #include "transmission/JackAudioDevice.h"
+#include "transmission/UiProjectCodec.h"
 #include "transmission/Vst3EditorHost.h"
 #include "transmission/Vst3Processor.h"
 
@@ -15,7 +17,10 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
+#include <unistd.h>
 
 namespace {
 constexpr double nodeWidth = 190.0;
@@ -75,9 +80,11 @@ struct GraphView {
     GtkSpinButton* tempo = nullptr;
     GtkSpinButton* loopBars = nullptr;
     GtkToggleButton* loop = nullptr;
+    GtkWidget* window = nullptr;
+    GtkWidget* canvas = nullptr;
     GtkWidget* playButton = nullptr;
-    GtkWidget* positionLabel = nullptr;
-    GtkWidget* statusLabel = nullptr;
+    std::string filePath;
+    std::string projectHelperPath;
 };
 
 struct PluginDialogContext {
@@ -101,13 +108,17 @@ struct NodeMenuContext {
 };
 
 void setStatus(GraphView& view, const std::string& message, bool error = false) {
-    if (!view.statusLabel) return;
-    gtk_label_set_text(GTK_LABEL(view.statusLabel), message.c_str());
-    auto* style = gtk_widget_get_style_context(view.statusLabel);
-    if (error)
-        gtk_style_context_add_class(style, "error");
-    else
-        gtk_style_context_remove_class(style, "error");
+    if (!error || !view.window) return;
+    auto* dialog = gtk_message_dialog_new(
+        GTK_WINDOW(view.window),
+        static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
+        GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s", message.c_str());
+    g_signal_connect(dialog, "response",
+                     G_CALLBACK(+[](GtkDialog* current, gint, gpointer) {
+                         gtk_widget_destroy(GTK_WIDGET(current));
+                     }),
+                     nullptr);
+    gtk_widget_show(dialog);
 }
 
 bool runtimeRunning(const GraphView& view) {
@@ -149,6 +160,12 @@ transmission::RuntimeGraphSnapshot runtimeSnapshot(const GraphView& view) {
                 : transmission::RuntimeConnectionKind::Midi});
     }
     return snapshot;
+}
+
+void cancelPointerInteraction(GtkWidget* canvas, GraphView& view) {
+    view.dragging = static_cast<std::size_t>(-1);
+    view.connectingFrom = static_cast<std::size_t>(-1);
+    gtk_widget_queue_draw(canvas);
 }
 
 Node* nodeAt(GraphView& view, double x, double y) {
@@ -408,16 +425,6 @@ void updateTransportDisplay(GraphView& view) {
     const auto running = runtimeRunning(view);
     if (view.playButton)
         gtk_button_set_label(GTK_BUTTON(view.playButton), running ? "Stop" : "Play");
-    if (view.positionLabel) {
-        double position = 0.0;
-#if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
-        if (view.runtime) position = view.runtime->diagnostics().positionBeats;
-#endif
-        char text[96];
-        g_snprintf(text, sizeof(text), "%s  •  beat %.2f", running ? "Playing" : "Stopped",
-                   position);
-        gtk_label_set_text(GTK_LABEL(view.positionLabel), text);
-    }
 }
 
 gboolean transportTick(gpointer data) {
@@ -644,11 +651,13 @@ gboolean buttonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
     if (event->type == GDK_2BUTTON_PRESS) {
         if (auto* node = nodeAt(view, event->x, event->y);
             node && !node->pluginPath.empty() && view.editorHost) {
+            cancelPointerInteraction(widget, view);
             view.editorHost->open(node->pluginPath, node->label);
             return TRUE;
         }
         if (auto* node = nodeAt(view, event->x, event->y);
             node && node->system) {
+            cancelPointerInteraction(widget, view);
             showSystemDialog(widget, view, node->id == "system-input");
             return TRUE;
         }
@@ -713,6 +722,301 @@ gboolean buttonRelease(GtkWidget* widget, GdkEventButton* event, gpointer data) 
     return TRUE;
 }
 
+void updateWindowTitle(GraphView& view) {
+    std::string title = "Transmission — Graph";
+    if (!view.filePath.empty())
+        title = "Transmission — " + std::filesystem::path(view.filePath).filename().string();
+    gtk_window_set_title(GTK_WINDOW(view.window), title.c_str());
+}
+
+transmission::UiProject captureProject(const GraphView& view) {
+    transmission::UiProject project;
+    project.nodes.reserve(view.nodes.size());
+    for (const auto& node : view.nodes) {
+        auto kind = node.pluginPath.empty()
+            ? transmission::UiProjectNodeKind::PassThrough
+            : transmission::UiProjectNodeKind::Plugin;
+        if (node.id == "system-input")
+            kind = transmission::UiProjectNodeKind::SystemInput;
+        else if (node.id == "system-output")
+            kind = transmission::UiProjectNodeKind::SystemOutput;
+        project.nodes.push_back({
+            node.id, node.label, kind,
+            node.audioInputs, node.audioOutputs, node.midiInputs, node.midiOutputs,
+            node.x, node.y, node.pluginPath});
+    }
+    project.connections.reserve(view.edges.size());
+    for (const auto& edge : view.edges) {
+        if (edge.from >= view.nodes.size() || edge.to >= view.nodes.size()) continue;
+        project.connections.push_back({
+            view.nodes[edge.from].id, view.nodes[edge.to].id,
+            edge.kind == PortKind::Audio
+                ? transmission::UiProjectConnectionKind::Audio
+                : transmission::UiProjectConnectionKind::Midi,
+            edge.fromPort, edge.toPort});
+    }
+    project.systemInputConnections = view.systemInputConnections;
+    project.systemOutputConnections = view.systemOutputConnections;
+    project.tempo = gtk_spin_button_get_value(view.tempo);
+    project.loopBars = gtk_spin_button_get_value(view.loopBars);
+    project.loopEnabled = gtk_toggle_button_get_active(view.loop);
+    return project;
+}
+
+transmission::UiProject defaultProject() {
+    transmission::UiProject project;
+    project.nodes = {
+        {"system-input", "System Input", transmission::UiProjectNodeKind::SystemInput,
+         0, 2, 0, 1, 60.0, 150.0, ""},
+        {"gain", "AGain / VST3", transmission::UiProjectNodeKind::PassThrough,
+         2, 2, 1, 1, 340.0, 150.0, ""},
+        {"system-output", "System Output", transmission::UiProjectNodeKind::SystemOutput,
+         2, 0, 1, 0, 580.0, 150.0, ""}
+    };
+    project.connections = {
+        {"system-input", "gain", transmission::UiProjectConnectionKind::Audio, 0, 0},
+        {"gain", "system-output", transmission::UiProjectConnectionKind::Audio, 0, 0},
+        {"system-input", "gain", transmission::UiProjectConnectionKind::Midi, 0, 0},
+        {"gain", "system-output", transmission::UiProjectConnectionKind::Midi, 0, 0}
+    };
+    return project;
+}
+
+bool validateProject(const transmission::UiProject& project, std::string& error) {
+    if (project.nodes.empty()) {
+        error = "The project contains no nodes";
+        return false;
+    }
+    std::unordered_map<std::string, const transmission::UiProjectNode*> nodes;
+    for (const auto& node : project.nodes) {
+        if (node.id.empty() || !nodes.emplace(node.id, &node).second) {
+            error = "The project contains an empty or duplicate node identifier";
+            return false;
+        }
+    }
+    for (const auto& connection : project.connections) {
+        const auto from = nodes.find(connection.from);
+        const auto to = nodes.find(connection.to);
+        if (from == nodes.end() || to == nodes.end()) {
+            error = "A project connection refers to a missing node";
+            return false;
+        }
+        const bool audio =
+            connection.kind == transmission::UiProjectConnectionKind::Audio;
+        const auto outputCount =
+            audio ? from->second->audioOutputs : from->second->midiOutputs;
+        const auto inputCount =
+            audio ? to->second->audioInputs : to->second->midiInputs;
+        if (connection.fromPort >= outputCount || connection.toPort >= inputCount) {
+            error = "A project connection refers to a missing port";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool applyProject(GraphView& view, const transmission::UiProject& project,
+                  std::string& error) {
+    if (!validateProject(project, error)) return false;
+    std::unordered_map<std::string, std::size_t> indices;
+    std::vector<Node> nodes;
+    nodes.reserve(project.nodes.size());
+    for (const auto& source : project.nodes) {
+        indices.emplace(source.id, nodes.size());
+        const bool system =
+            source.kind == transmission::UiProjectNodeKind::SystemInput ||
+            source.kind == transmission::UiProjectNodeKind::SystemOutput;
+        nodes.push_back({
+            source.id, source.label, system,
+            source.audioInputs, source.audioOutputs, source.midiInputs, source.midiOutputs,
+            source.x, source.y, source.pluginPath});
+    }
+    std::vector<Edge> edges;
+    edges.reserve(project.connections.size());
+    for (const auto& source : project.connections) {
+        edges.push_back({
+            indices.at(source.from), indices.at(source.to), source.fromPort, source.toPort,
+            source.kind == transmission::UiProjectConnectionKind::Audio
+                ? PortKind::Audio : PortKind::Midi});
+    }
+
+    stopRuntime(view);
+    view.nodes = std::move(nodes);
+    view.edges = std::move(edges);
+    view.systemInputConnections = project.systemInputConnections;
+    view.systemOutputConnections = project.systemOutputConnections;
+    view.dragging = static_cast<std::size_t>(-1);
+    view.connectingFrom = static_cast<std::size_t>(-1);
+    view.nextPluginId = 1;
+    std::unordered_set<std::string> identifiers;
+    for (const auto& node : view.nodes) identifiers.insert(node.id);
+    while (identifiers.contains("plugin-" + std::to_string(view.nextPluginId)))
+        ++view.nextPluginId;
+    gtk_spin_button_set_value(view.tempo, project.tempo);
+    gtk_spin_button_set_value(view.loopBars, project.loopBars);
+    gtk_toggle_button_set_active(view.loop, project.loopEnabled);
+    updateTransportDisplay(view);
+    gtk_widget_queue_draw(view.canvas);
+    return true;
+}
+
+bool runProjectHelper(const GraphView& view, const char* command,
+                      const std::string& path, const std::string& input,
+                      std::string& output, std::string& error) {
+    gchar* interchangePath = nullptr;
+    if (!input.empty()) {
+        GError* temporaryError = nullptr;
+        const auto descriptor =
+            g_file_open_tmp("transmission-project-XXXXXX", &interchangePath, &temporaryError);
+        if (descriptor < 0) {
+            error = temporaryError ? temporaryError->message
+                                   : "Unable to create project interchange file";
+            g_clear_error(&temporaryError);
+            return false;
+        }
+        close(descriptor);
+        if (!g_file_set_contents(interchangePath, input.data(),
+                                 static_cast<gssize>(input.size()), &temporaryError)) {
+            error = temporaryError ? temporaryError->message
+                                   : "Unable to write project interchange file";
+            g_clear_error(&temporaryError);
+            g_unlink(interchangePath);
+            g_free(interchangePath);
+            return false;
+        }
+    }
+    GError* subprocessError = nullptr;
+    auto* process = g_subprocess_new(
+        static_cast<GSubprocessFlags>(G_SUBPROCESS_FLAGS_STDOUT_PIPE |
+                                      G_SUBPROCESS_FLAGS_STDERR_PIPE),
+        &subprocessError, "node", view.projectHelperPath.c_str(), command,
+        path.c_str(), interchangePath, nullptr);
+    if (!process) {
+        error = subprocessError ? subprocessError->message : "Unable to start project helper";
+        g_clear_error(&subprocessError);
+        if (interchangePath) {
+            g_unlink(interchangePath);
+            g_free(interchangePath);
+        }
+        return false;
+    }
+    gchar* standardOutput = nullptr;
+    gchar* standardError = nullptr;
+    const gboolean communicated = g_subprocess_communicate_utf8(
+        process, nullptr, nullptr, &standardOutput, &standardError, &subprocessError);
+    if (standardOutput) output = standardOutput;
+    if (!communicated || !g_subprocess_get_successful(process)) {
+        error = standardError && *standardError
+            ? standardError
+            : subprocessError ? subprocessError->message : "Project helper failed";
+        while (!error.empty() && (error.back() == '\n' || error.back() == '\r'))
+            error.pop_back();
+    }
+    g_free(standardOutput);
+    g_free(standardError);
+    g_clear_error(&subprocessError);
+    g_object_unref(process);
+    if (interchangePath) {
+        g_unlink(interchangePath);
+        g_free(interchangePath);
+    }
+    return communicated && error.empty();
+}
+
+bool saveProject(GraphView& view, const std::string& path) {
+    std::string output;
+    std::string error;
+    if (!runProjectHelper(view, "save", path,
+                          transmission::encodeUiProject(captureProject(view)),
+                          output, error)) {
+        setStatus(view, "Unable to save project: " + error, true);
+        return false;
+    }
+    view.filePath = path;
+    updateWindowTitle(view);
+    return true;
+}
+
+void saveProjectAs(GraphView& view) {
+    auto* dialog = gtk_file_chooser_dialog_new(
+        "Save Transmission Project", GTK_WINDOW(view.window),
+        GTK_FILE_CHOOSER_ACTION_SAVE, "_Cancel", GTK_RESPONSE_CANCEL,
+        "_Save", GTK_RESPONSE_ACCEPT, nullptr);
+    gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(dialog), TRUE);
+    gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), "transmission.ttl");
+    auto* filter = gtk_file_filter_new();
+    gtk_file_filter_set_name(filter, "RDF Turtle projects (*.ttl)");
+    gtk_file_filter_add_pattern(filter, "*.ttl");
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), filter);
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        gchar* selected = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+        std::string path = selected ? selected : "";
+        g_free(selected);
+        if (!path.ends_with(".ttl")) path += ".ttl";
+        saveProject(view, path);
+    }
+    gtk_widget_destroy(dialog);
+}
+
+void newProjectActivated(GtkMenuItem*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    std::string error;
+    if (!applyProject(view, defaultProject(), error)) {
+        setStatus(view, error, true);
+        return;
+    }
+    view.filePath.clear();
+    updateWindowTitle(view);
+}
+
+void openProjectActivated(GtkMenuItem*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    auto* dialog = gtk_file_chooser_dialog_new(
+        "Open Transmission Project", GTK_WINDOW(view.window),
+        GTK_FILE_CHOOSER_ACTION_OPEN, "_Cancel", GTK_RESPONSE_CANCEL,
+        "_Open", GTK_RESPONSE_ACCEPT, nullptr);
+    auto* filter = gtk_file_filter_new();
+    gtk_file_filter_set_name(filter, "RDF Turtle projects (*.ttl)");
+    gtk_file_filter_add_pattern(filter, "*.ttl");
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), filter);
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        gchar* selected = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+        const std::string path = selected ? selected : "";
+        g_free(selected);
+        std::string interchange;
+        std::string error;
+        if (!runProjectHelper(view, "load", path, "", interchange, error)) {
+            setStatus(view, "Unable to open project: " + error, true);
+        } else {
+            transmission::UiProject project;
+            if (!transmission::decodeUiProject(interchange, project, error) ||
+                !applyProject(view, project, error)) {
+                setStatus(view, "Unable to open project: " + error, true);
+            } else {
+                view.filePath = path;
+                updateWindowTitle(view);
+            }
+        }
+    }
+    gtk_widget_destroy(dialog);
+}
+
+void saveProjectActivated(GtkMenuItem*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    if (view.filePath.empty())
+        saveProjectAs(view);
+    else
+        saveProject(view, view.filePath);
+}
+
+void saveProjectAsActivated(GtkMenuItem*, gpointer data) {
+    saveProjectAs(*static_cast<GraphView*>(data));
+}
+
+void quitActivated(GtkMenuItem*, gpointer data) {
+    gtk_window_close(GTK_WINDOW(static_cast<GraphView*>(data)->window));
+}
+
 void activate(GtkApplication* application, gpointer) {
     auto* view = new GraphView();
     view->jackConnections = std::make_unique<transmission::JackConnectionManager>();
@@ -746,12 +1050,39 @@ void activate(GtkApplication* application, gpointer) {
     gtk_window_set_default_size(GTK_WINDOW(window), 900, 520);
 
     GtkWidget* frame = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    GtkWidget* title = gtk_label_new("  Transmission   •   right-click the graph background to add a VST3 plugin, or a connection to remove it");
-    gtk_widget_set_halign(title, GTK_ALIGN_START);
-    gtk_widget_set_margin_top(title, 12);
-    gtk_widget_set_margin_bottom(title, 12);
-    gtk_widget_set_margin_start(title, 8);
-    gtk_box_pack_start(GTK_BOX(frame), title, FALSE, FALSE, 0);
+    auto* menuBar = gtk_menu_bar_new();
+    auto* fileItem = gtk_menu_item_new_with_mnemonic("_File");
+    auto* fileMenu = gtk_menu_new();
+    auto* newItem = gtk_menu_item_new_with_mnemonic("_New");
+    auto* openItem = gtk_menu_item_new_with_mnemonic("_Open…");
+    auto* saveItem = gtk_menu_item_new_with_mnemonic("_Save");
+    auto* saveAsItem = gtk_menu_item_new_with_mnemonic("Save _As…");
+    auto* separator = gtk_separator_menu_item_new();
+    auto* quitItem = gtk_menu_item_new_with_mnemonic("_Quit");
+    gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), newItem);
+    gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), openItem);
+    gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), saveItem);
+    gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), saveAsItem);
+    gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), separator);
+    gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), quitItem);
+    gtk_menu_item_set_submenu(GTK_MENU_ITEM(fileItem), fileMenu);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menuBar), fileItem);
+    gtk_box_pack_start(GTK_BOX(frame), menuBar, FALSE, FALSE, 0);
+
+    auto* accelerators = gtk_accel_group_new();
+    gtk_window_add_accel_group(GTK_WINDOW(window), accelerators);
+    gtk_widget_add_accelerator(newItem, "activate", accelerators, GDK_KEY_n,
+                               GDK_CONTROL_MASK, GTK_ACCEL_VISIBLE);
+    gtk_widget_add_accelerator(openItem, "activate", accelerators, GDK_KEY_o,
+                               GDK_CONTROL_MASK, GTK_ACCEL_VISIBLE);
+    gtk_widget_add_accelerator(saveItem, "activate", accelerators, GDK_KEY_s,
+                               GDK_CONTROL_MASK, GTK_ACCEL_VISIBLE);
+    gtk_widget_add_accelerator(
+        saveAsItem, "activate", accelerators, GDK_KEY_s,
+        static_cast<GdkModifierType>(GDK_CONTROL_MASK | GDK_SHIFT_MASK),
+        GTK_ACCEL_VISIBLE);
+    gtk_widget_add_accelerator(quitItem, "activate", accelerators, GDK_KEY_q,
+                               GDK_CONTROL_MASK, GTK_ACCEL_VISIBLE);
 
     GtkWidget* transportBar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_widget_set_margin_start(transportBar, 8);
@@ -778,31 +1109,34 @@ void activate(GtkApplication* application, gpointer) {
     gtk_spin_button_set_value(loopBars, 4.0);
     gtk_spin_button_set_numeric(loopBars, TRUE);
     gtk_box_pack_start(GTK_BOX(transportBar), GTK_WIDGET(loopBars), FALSE, FALSE, 4);
-    auto* positionLabel = gtk_label_new("Stopped  •  beat 0.00");
-    gtk_widget_set_margin_start(positionLabel, 16);
-    gtk_box_pack_start(GTK_BOX(transportBar), positionLabel, FALSE, FALSE, 4);
     gtk_box_pack_start(GTK_BOX(frame), transportBar, FALSE, FALSE, 0);
-    auto* statusLabel = gtk_label_new(
-        "Stopped — edit the graph and press Play to compile and start JACK audio");
-    gtk_widget_set_halign(statusLabel, GTK_ALIGN_START);
-    gtk_widget_set_margin_start(statusLabel, 12);
-    gtk_widget_set_margin_bottom(statusLabel, 8);
-    gtk_box_pack_start(GTK_BOX(frame), statusLabel, FALSE, FALSE, 0);
 
     view->tempo = tempo;
     view->loopBars = loopBars;
     view->loop = GTK_TOGGLE_BUTTON(loop);
+    view->window = window;
     view->playButton = playButton;
-    view->positionLabel = positionLabel;
-    view->statusLabel = statusLabel;
+
+    GtkWidget* canvas = gtk_drawing_area_new();
+    view->canvas = canvas;
+    if (const char* root = std::getenv("TRANSMISSION_ROOT"))
+        view->projectHelperPath =
+            (std::filesystem::path(root) / "scripts/native-ui-project.js").string();
+    else
+        view->projectHelperPath =
+            (std::filesystem::current_path() / "scripts/native-ui-project.js").string();
+
     loopChanged(nullptr, view);
     g_signal_connect(playButton, "clicked", G_CALLBACK(playStopClicked), view);
     g_signal_connect(resetButton, "clicked", G_CALLBACK(resetTransportClicked), view);
     g_signal_connect(tempo, "value-changed", G_CALLBACK(tempoChanged), view);
     g_signal_connect(loop, "toggled", G_CALLBACK(loopChanged), view);
     g_signal_connect(loopBars, "value-changed", G_CALLBACK(loopChanged), view);
-
-    GtkWidget* canvas = gtk_drawing_area_new();
+    g_signal_connect(newItem, "activate", G_CALLBACK(newProjectActivated), view);
+    g_signal_connect(openItem, "activate", G_CALLBACK(openProjectActivated), view);
+    g_signal_connect(saveItem, "activate", G_CALLBACK(saveProjectActivated), view);
+    g_signal_connect(saveAsItem, "activate", G_CALLBACK(saveProjectAsActivated), view);
+    g_signal_connect(quitItem, "activate", G_CALLBACK(quitActivated), view);
     gtk_widget_set_hexpand(canvas, TRUE);
     gtk_widget_set_vexpand(canvas, TRUE);
     gtk_widget_set_size_request(canvas, 800, 400);

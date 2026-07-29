@@ -62,7 +62,16 @@ cmake --build native/build-ui --target transmission_graph_ui
 native/build-ui/transmission_graph_ui
 ```
 
-The native canvas renders typed audio and MIDI topology, compiles execution data through a control-thread graph compiler, starts the VST3 graph on JACK from the Play button, displays engine transport diagnostics, preserves and applies external system-port choices, and reports runtime failures in the window. VST3 MIDI output is routed through bounded native buffers, so generator-to-instrument chains execute without callback allocation. It also discovers bundles from `~/.vst3`, opens native plugin editors, provides node context menus, supports dragging nodes, and creates type-compatible arcs. Persisted project loading and native/Node synchronization remain future UI slices.
+The native canvas renders typed audio and MIDI topology, compiles execution data through a control-thread graph compiler, starts the VST3 graph on JACK from the Play button, preserves and applies external system-port choices, and reports runtime failures in the window. VST3 MIDI output is routed through bounded native buffers, so generator-to-instrument chains execute without callback allocation. It also discovers bundles from `~/.vst3`, opens native plugin editors, provides node context menus, supports dragging nodes, and creates type-compatible arcs.
+
+The File menu provides New, Open, Save, Save As, and Quit, with the usual
+keyboard shortcuts. Transmission projects use RDF Turtle (`.ttl`) as their
+canonical format. Saving and loading preserve plugin bundle paths, typed graph
+connections and ports, editor positions, tempo/loop settings, and requested
+JACK input/output connections. GTK exchanges a small validated snapshot with
+the existing Node project session, which performs RDF parsing and atomic file
+writes on the control thread; the native audio callback never parses RDF or
+accesses the filesystem.
 
 Build the VST3-enabled UI to open native plugin editors by double-clicking plugin nodes:
 

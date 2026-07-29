@@ -23,6 +23,7 @@ add_library(transmission_engine STATIC
   src/PluginScanner.cpp
   src/RoutedAudioGraph.cpp
   src/TransportClock.cpp
+  src/UiProjectCodec.cpp
 )
 target_include_directories(transmission_engine
   PUBLIC include
@@ -126,6 +127,9 @@ if(TRANSMISSION_BUILD_TESTS)
   add_executable(transmission_graph_runtime_controller_test tests/GraphRuntimeControllerTest.cpp)
   target_link_libraries(transmission_graph_runtime_controller_test PRIVATE transmission_engine)
   add_test(NAME transmission_graph_runtime_controller_test COMMAND transmission_graph_runtime_controller_test)
+  add_executable(transmission_ui_project_codec_test tests/UiProjectCodecTest.cpp)
+  target_link_libraries(transmission_ui_project_codec_test PRIVATE transmission_engine)
+  add_test(NAME transmission_ui_project_codec_test COMMAND transmission_ui_project_codec_test)
   add_executable(transmission_audio_device_test tests/AudioDeviceTest.cpp)
   target_link_libraries(transmission_audio_device_test PRIVATE transmission_engine)
   add_test(NAME transmission_audio_device_test COMMAND transmission_audio_device_test)

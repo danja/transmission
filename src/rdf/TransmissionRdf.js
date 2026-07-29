@@ -32,18 +32,36 @@ export function graphFromDataset(dataset, transmissionId) {
         midiInputs: numeric(first(dataset, node, ns.trn.midiInputs)),
         midiOutputs: numeric(first(dataset, node, ns.trn.midiOutputs))
       },
-      settings: settingsObject(dataset, first(dataset, node, ns.trn.settings))
+      settings: settingsObject(dataset, first(dataset, node, ns.trn.settings)),
+      metadata: {
+        x: numeric(first(dataset, node, ns.trn.editorX)),
+        y: numeric(first(dataset, node, ns.trn.editorY))
+      }
     }))
 
+  const connectionHead = first(dataset, subject, ns.trn.connections)
+  const connections = connectionHead
+    ? list(dataset, connectionHead).map(connection => ({
+        from: first(dataset, connection, ns.trn.from)?.value,
+        to: first(dataset, connection, ns.trn.to)?.value,
+        kind: first(dataset, connection, ns.trn.kind)?.value,
+        fromPort: numeric(first(dataset, connection, ns.trn.fromPort)),
+        toPort: numeric(first(dataset, connection, ns.trn.toPort))
+      }))
+    : nodes.slice(0, -1).map((node, index) => ({
+        from: node.id,
+        to: nodes[index + 1].id,
+        kind: 'audio'
+      }))
   return new Graph({
     id: transmissionId,
     label: first(dataset, subject, ns.rdfs.label)?.value ?? '',
     nodes,
-    connections: nodes.slice(0, -1).map((node, index) => ({
-      from: node.id,
-      to: nodes[index + 1].id,
-      kind: 'audio'
-    }))
+    connections,
+    metadata: {
+      systemInputConnections: literalList(dataset, first(dataset, subject, ns.trn.systemInputConnections)),
+      systemOutputConnections: literalList(dataset, first(dataset, subject, ns.trn.systemOutputConnections))
+    }
   })
 }
 
@@ -84,7 +102,19 @@ export function serializeGraph(graph, transport = null) {
     lines.push(`    :loopEnd ${transport.loop.endBeat} ;`)
     lines.push(`    :loopEnabled ${transport.loop.enabled !== false} ;`)
   }
-  lines.push(`    :pipe ( ${[...graph.nodes.keys()].map(id => nodeNames.get(id)).join(' ')} ) .`, '')
+  const inputConnections = graph.metadata?.systemInputConnections ?? []
+  const outputConnections = graph.metadata?.systemOutputConnections ?? []
+  if (inputConnections.length)
+    lines.push(`    :systemInputConnections ( ${inputConnections.map(literal).join(' ')} ) ;`)
+  if (outputConnections.length)
+    lines.push(`    :systemOutputConnections ( ${outputConnections.map(literal).join(' ')} ) ;`)
+  lines.push(`    :pipe ( ${[...graph.nodes.keys()].map(id => nodeNames.get(id)).join(' ')} ) ;`)
+  const connections = graph.connections.map(connection =>
+    `[ :from ${nodeNames.get(connection.from) ?? term(connection.from, base)} ; ` +
+    `:to ${nodeNames.get(connection.to) ?? term(connection.to, base)} ; ` +
+    `:kind ${literal(connection.kind)} ; :fromPort ${connection.fromPort ?? 0} ; ` +
+    `:toPort ${connection.toPort ?? 0} ]`)
+  lines.push(`    :connections ( ${connections.join(' ')} ) .`, '')
   for (const node of graph.nodes.values()) {
     lines.push(`${nodeNames.get(node.id)} a ${term(node.type, base)} ;`)
     if (node.label) lines.push(`    <http://www.w3.org/2000/01/rdf-schema#label> ${literal(node.label)} ;`)
@@ -93,15 +123,24 @@ export function serializeGraph(graph, transport = null) {
       [':midiInputs', node.ports.midiInputs], [':midiOutputs', node.ports.midiOutputs]
     ].filter(([, value]) => value > 0)
     for (const [predicate, value] of portValues) lines.push(`    ${predicate} ${value} ;`)
+    if (Number.isFinite(node.metadata?.x)) lines.push(`    :editorX ${node.metadata.x} ;`)
+    if (Number.isFinite(node.metadata?.y)) lines.push(`    :editorY ${node.metadata.y} ;`)
     const settings = Object.entries(node.settings ?? {})
-    for (const [key, values] of settings) {
-      const items = Array.isArray(values) ? values : [values]
-      lines.push(`    ${term(key, base)} ${items.map(value => literal(value)).join(', ')} ;`)
+    if (settings.length) {
+      const properties = settings.map(([key, values]) => {
+        const items = Array.isArray(values) ? values : [values]
+        return `${term(key, base)} ${items.map(value => literal(value)).join(', ')}`
+      })
+      lines.push(`    :settings [ ${properties.join(' ; ')} ] ;`)
     }
     lines[lines.length - 1] = lines[lines.length - 1].replace(/ ;$/, ' .')
     lines.push('')
   }
   return `${lines.join('\n').trim()}\n`
+}
+
+function literalList(dataset, head) {
+  return head ? list(dataset, head).map(term => term.value) : []
 }
 
 function terms(dataset, subject, predicate) {
@@ -149,6 +188,7 @@ function compact(value, base) {
 }
 
 function term(value, base) {
+  if (!value.includes(':')) return `:${value}`
   return value.startsWith(base) ? `:${value.slice(base.length)}` : `<${value}>`
 }
 

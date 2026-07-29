@@ -1,0 +1,47 @@
+@prefix : <http://purl.org/stuff/transmissions/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+:main a :Transmission ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Transmission" ;
+    :tempoMap ( [ :atBeat 0 ; :bpm 120 ] ) ;
+    :loopStart 0 ;
+    :loopEnd 16 ;
+    :loopEnabled false ;
+    :systemInputConnections ( "system:capture_1" "system:capture_2" ) ;
+    :systemOutputConnections ( "UMC404HD 192k-44:playback_AUX0" "UMC404HD 192k-44:playback_AUX1" ) ;
+    :pipe ( :system-input :system-output :plugin-1 :plugin-2 ) ;
+    :connections ( [ :from :plugin-1 ; :to :plugin-2 ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-2 ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-2 ; :to :system-output ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] ) .
+
+:system-input a :AudioInput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Input" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 60 ;
+    :editorY 150 .
+
+:system-output a :AudioOutput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Output" ;
+    :audioInputs 2 ;
+    :midiInputs 1 ;
+    :editorX 580 ;
+    :editorY 150 .
+
+:plugin-1 a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "drumgen" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 119 ;
+    :editorY 289 ;
+    :settings [ :pluginPath "/home/danny/.vst3/drumgen.vst3" ] .
+
+:plugin-2 a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "drumkit" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 376 ;
+    :editorY 286 ;
+    :settings [ :pluginPath "/home/danny/.vst3/drumkit.vst3" ] .

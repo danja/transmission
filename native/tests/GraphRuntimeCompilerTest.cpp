@@ -39,7 +39,16 @@ public:
         process(inputs, outputs, channels, frames);
     }
 
+    bool setParameter(std::uint32_t parameterId, double normalizedValue,
+                      std::string&) override {
+        lastParameterId = parameterId;
+        lastParameterValue = normalizedValue;
+        return true;
+    }
+
     std::size_t received = 0;
+    std::uint32_t lastParameterId = 0;
+    double lastParameterValue = 0.0;
 };
 
 transmission::RuntimeGraphSnapshot validSnapshot() {
@@ -89,8 +98,12 @@ int main() {
         });
     const transmission::AudioDeviceConfig config{1, 4, 48000.0, false, 1};
     std::string error;
-    auto graph = compiler.compile(validSnapshot(), config, error);
+    auto parameterized = validSnapshot();
+    parameterized.nodes[2].parameters.push_back({42, 0.75});
+    auto graph = compiler.compile(parameterized, config, error);
     assert(graph);
+    assert(capture && capture->lastParameterId == 42);
+    assert(capture->lastParameterValue == 0.75);
     assert(graph->prepare(config.channels, config.blockSize));
     const float input[] = {0.25F, 0.5F, 0.75F, 1.0F};
     float output[] = {};

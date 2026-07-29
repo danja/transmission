@@ -1,0 +1,119 @@
+@prefix : <http://purl.org/stuff/transmissions/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+:main a :Transmission ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Transmission" ;
+    :tempoMap ( [ :atBeat 0 ; :bpm 120 ] ) ;
+    :loopStart 0 ;
+    :loopEnd 16 ;
+    :loopEnabled false ;
+    :systemInputConnections ( "system:capture_1" "system:capture_2" ) ;
+    :systemOutputConnections ( "UMC404HD 192k-44:playback_AUX0" "UMC404HD 192k-44:playback_AUX1" ) ;
+    :pipe ( :system-input :system-output :plugin-1 :plugin-2 :plugin-3 :plugin-4 :plugin-5 :plugin-6 :plugin-7 :plugin-8 :plugin-9 :plugin-10 :plugin-11 ) ;
+    :connections ( [ :from :plugin-1 ; :to :plugin-2 ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-2 ; :to :plugin-3 ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-2 ; :to :plugin-3 ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :plugin-3 ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-3 ; :to :system-output ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :plugin-4 ; :to :plugin-5 ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-5 ; :to :plugin-3 ; :kind "audio" ; :fromPort 0 ; :toPort 2 ] [ :from :plugin-5 ; :to :plugin-3 ; :kind "audio" ; :fromPort 1 ; :toPort 3 ] [ :from :plugin-4 ; :to :plugin-7 ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-7 ; :to :plugin-8 ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-7 ; :to :plugin-6 ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-8 ; :to :plugin-3 ; :kind "audio" ; :fromPort 0 ; :toPort 4 ] [ :from :plugin-1 ; :to :plugin-4 ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-6 ; :to :plugin-9 ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-7 ; :to :plugin-10 ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-10 ; :to :plugin-11 ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-11 ; :to :plugin-3 ; :kind "audio" ; :fromPort 0 ; :toPort 5 ] [ :from :plugin-9 ; :to :plugin-3 ; :kind "audio" ; :fromPort 0 ; :toPort 6 ] [ :from :plugin-9 ; :to :plugin-3 ; :kind "audio" ; :fromPort 1 ; :toPort 7 ] ) .
+
+:system-input a :AudioInput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Input" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 20 ;
+    :editorY 70 .
+
+:system-output a :AudioOutput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Output" ;
+    :audioInputs 2 ;
+    :midiInputs 1 ;
+    :editorX 1605 ;
+    :editorY 125 .
+
+:plugin-1 a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "DrumGen" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 34 ;
+    :editorY 166 ;
+    :settings [ :pluginPath "/home/danny/.vst3/drumgen.vst3" ] .
+
+:plugin-2 a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "DrumKit" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 969 ;
+    :editorY 112 ;
+    :settings [ :pluginPath "/home/danny/.vst3/drumkit.vst3" ] .
+
+:plugin-3 a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "T-Mix" ;
+    :audioInputs 8 ;
+    :audioOutputs 2 ;
+    :editorX 1352 ;
+    :editorY 119 ;
+    :settings [ :pluginPath "/home/danny/.vst3/t_mix.vst3" ] .
+
+:plugin-4 a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "BassGen" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 276 ;
+    :editorY 240 ;
+    :settings [ :pluginPath "/home/danny/.vst3/bassgen.vst3" ] .
+
+:plugin-5 a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Basilico" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 974 ;
+    :editorY 211 ;
+    :settings [ :pluginPath "/home/danny/.vst3/basilico.vst3" ] .
+
+:plugin-6 a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Cadence" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 704 ;
+    :editorY 576 ;
+    :settings [ :pluginPath "/home/danny/.vst3/cadence.vst3" ] .
+
+:plugin-7 a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "MelGen" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 528 ;
+    :editorY 321 ;
+    :settings [ :pluginPath "/home/danny/.vst3/melgen.vst3" ] .
+
+:plugin-8 a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Canticle" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 965 ;
+    :editorY 319 ;
+    :settings [ :pluginPath "/home/danny/.vst3/canticle.vst3" ] .
+
+:plugin-9 a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Floozy" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 976 ;
+    :editorY 582 ;
+    :settings [ :pluginPath "/home/danny/.vst3/floozy.vst3" ] .
+
+:plugin-10 a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Counterpointer" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 758 ;
+    :editorY 441 ;
+    :settings [ :pluginPath "/home/danny/.vst3/counterpointer.vst3" ] .
+
+:plugin-11 a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Canticle" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 1002 ;
+    :editorY 420 ;
+    :settings [ :pluginPath "/home/danny/.vst3/canticle.vst3" ] .

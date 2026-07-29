@@ -13,9 +13,11 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -78,6 +80,8 @@ struct GraphView {
     double pointerX = 0.0;
     double pointerY = 0.0;
     std::vector<std::string> pluginPaths;
+    std::unordered_map<
+        std::string, std::unordered_map<std::uint32_t, double>> parameterValues;
     std::size_t nextPluginId = 1;
     std::size_t nextMidiInputId = 1;
     std::size_t nextMidiOutputId = 1;
@@ -193,7 +197,14 @@ transmission::RuntimeGraphSnapshot runtimeSnapshot(const GraphView& view) {
             externalMidiPort = midiOutputPort++;
         snapshot.nodes.push_back({
             node.id, kind, node.pluginPath, externalMidiPort,
-            node.audioInputs, node.audioOutputs});
+            node.audioInputs, node.audioOutputs, {}});
+        const auto parameters = view.parameterValues.find(node.id);
+        if (parameters != view.parameterValues.end()) {
+            auto& runtimeParameters = snapshot.nodes.back().parameters;
+            runtimeParameters.reserve(parameters->second.size());
+            for (const auto& [id, value] : parameters->second)
+                runtimeParameters.push_back({id, value});
+        }
     }
     snapshot.connections.reserve(view.edges.size());
     for (const auto& edge : view.edges) {
@@ -866,6 +877,25 @@ void destroyNodeMenuContext(GtkWidget*, gpointer data) {
     delete static_cast<NodeMenuContext*>(data);
 }
 
+void openPluginEditor(GraphView& view, const Node& node) {
+    if (!view.editorHost || node.pluginPath.empty()) return;
+    const auto nodeId = node.id;
+    view.editorHost->open(
+        node.pluginPath, node.label,
+        [&view, nodeId](std::uint32_t parameterId, double normalizedValue) {
+            view.parameterValues[nodeId][parameterId] = normalizedValue;
+#if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
+            if (runtimeRunning(view) && view.runtime) {
+                std::string error;
+                if (!view.runtime->setParameter(
+                        nodeId, parameterId, normalizedValue, error))
+                    std::cerr << "VST3 editor parameter forwarding failed for "
+                              << nodeId << ": " << error << "\n";
+            }
+#endif
+        });
+}
+
 void editNodeFromMenu(GtkMenuItem*, gpointer data) {
     auto* context = static_cast<NodeMenuContext*>(data);
     if (context->node >= context->view->nodes.size()) return;
@@ -877,7 +907,7 @@ void editNodeFromMenu(GtkMenuItem*, gpointer data) {
         showMidiDialog(context->canvas, *context->view,
                        node.kind == NodeKind::MidiInput, context->node);
     } else if (!node.pluginPath.empty() && context->view->editorHost) {
-        context->view->editorHost->open(node.pluginPath, node.label);
+        openPluginEditor(*context->view, node);
     }
 }
 
@@ -886,6 +916,7 @@ void removeNodeFromMenu(GtkMenuItem*, gpointer data) {
     auto& view = *context->view;
     if (context->node >= view.nodes.size()) return;
     stopRuntime(view, "Graph changed — press Play to compile and start audio");
+    view.parameterValues.erase(view.nodes[context->node].id);
     view.edges.erase(std::remove_if(view.edges.begin(), view.edges.end(), [&](const auto& edge) {
         return edge.from == context->node || edge.to == context->node;
     }), view.edges.end());
@@ -1033,7 +1064,7 @@ gboolean buttonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
         if (auto* node = nodeAt(view, event->x, event->y);
             node && !node->pluginPath.empty() && view.editorHost) {
             cancelPointerInteraction(widget, view);
-            view.editorHost->open(node->pluginPath, node->label);
+            openPluginEditor(view, *node);
             return TRUE;
         }
         if (auto* node = nodeAt(view, event->x, event->y);
@@ -1252,6 +1283,7 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
     stopRuntime(view);
     view.nodes = std::move(nodes);
     view.edges = std::move(edges);
+    view.parameterValues.clear();
     view.systemInputConnections = normalized.systemInputConnections;
     view.systemOutputConnections = normalized.systemOutputConnections;
     view.dragging = static_cast<std::size_t>(-1);

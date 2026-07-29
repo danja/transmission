@@ -23,6 +23,8 @@ public:
                const RuntimeTransportConfig& transportConfig,
                std::string& error);
     void stop() noexcept;
+    bool setParameter(const std::string& nodeId, std::uint32_t parameterId,
+                      double normalizedValue, std::string& error);
     bool running() const;
     Diagnostics diagnostics() const;
 

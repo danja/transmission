@@ -4,6 +4,7 @@
 #include "RoutedAudioGraph.h"
 
 #include <functional>
+#include <cstdint>
 #include <memory>
 #include <limits>
 #include <string>
@@ -16,6 +17,11 @@ enum class RuntimeNodeKind {
 };
 enum class RuntimeConnectionKind { Audio, Midi };
 
+struct RuntimeParameterValue {
+    std::uint32_t id = 0;
+    double normalizedValue = 0.0;
+};
+
 struct RuntimeGraphNode {
     std::string id;
     RuntimeNodeKind kind = RuntimeNodeKind::Plugin;
@@ -23,6 +29,7 @@ struct RuntimeGraphNode {
     std::size_t externalMidiPort = 0;
     std::size_t audioInputs = 0;
     std::size_t audioOutputs = 0;
+    std::vector<RuntimeParameterValue> parameters;
 };
 
 struct RuntimeGraphConnection {

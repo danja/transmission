@@ -48,16 +48,61 @@ private:
     std::unordered_map<Steinberg::Linux::ITimerHandler*, guint> timers_;
 };
 
+class ComponentHandler final : public Steinberg::Vst::IComponentHandler {
+public:
+    explicit ComponentHandler(Vst3EditorHost::Impl* owner) : owner_(owner) {}
+
+    Steinberg::tresult PLUGIN_API queryInterface(const Steinberg::TUID iid,
+                                                  void** object) override;
+    Steinberg::uint32 PLUGIN_API addRef() override { return 1; }
+    Steinberg::uint32 PLUGIN_API release() override { return 1; }
+    Steinberg::tresult PLUGIN_API beginEdit(
+        Steinberg::Vst::ParamID) override {
+        return Steinberg::kResultTrue;
+    }
+    Steinberg::tresult PLUGIN_API performEdit(
+        Steinberg::Vst::ParamID id,
+        Steinberg::Vst::ParamValue valueNormalized) override;
+    Steinberg::tresult PLUGIN_API endEdit(
+        Steinberg::Vst::ParamID) override {
+        return Steinberg::kResultTrue;
+    }
+    Steinberg::tresult PLUGIN_API restartComponent(
+        Steinberg::int32 flags) override;
+
+private:
+    Vst3EditorHost::Impl* owner_;
+};
+
 struct Vst3EditorHost::Impl {
     VST3::Hosting::Module::Ptr module;
     Steinberg::Vst::HostApplication hostApplication;
     std::unique_ptr<Steinberg::Vst::PlugProvider> provider;
     Steinberg::IPtr<Steinberg::Vst::IEditController> controller;
+    std::unique_ptr<ComponentHandler> componentHandler;
     Steinberg::IPtr<Steinberg::IPlugView> view;
     std::unique_ptr<EditorFrame> frame;
     GtkWidget* window = nullptr;
     GtkWidget* socket = nullptr;
     bool closing = false;
+    ParameterEditCallback parameterEdit;
+
+    void forwardParameter(Steinberg::Vst::ParamID id,
+                          Steinberg::Vst::ParamValue value) {
+        if (parameterEdit)
+            parameterEdit(static_cast<std::uint32_t>(id), value);
+    }
+
+    void forwardAllParameters() {
+        if (!controller || !parameterEdit) return;
+        const auto count = controller->getParameterCount();
+        for (Steinberg::int32 index = 0; index < count; ++index) {
+            Steinberg::Vst::ParameterInfo info{};
+            if (controller->getParameterInfo(index, info) != Steinberg::kResultTrue)
+                continue;
+            forwardParameter(info.id, controller->getParamNormalized(info.id));
+        }
+    }
 
     void destroyWindow() noexcept {
         if (window && !closing) {
@@ -69,6 +114,36 @@ struct Vst3EditorHost::Impl {
         }
     }
 };
+
+Steinberg::tresult PLUGIN_API ComponentHandler::queryInterface(
+    const Steinberg::TUID iid, void** object) {
+    if (!object) return Steinberg::kInvalidArgument;
+    if (Steinberg::FUnknownPrivate::iidEqual(
+            iid, Steinberg::Vst::IComponentHandler::iid) ||
+        Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::FUnknown::iid)) {
+        *object = static_cast<Steinberg::Vst::IComponentHandler*>(this);
+        addRef();
+        return Steinberg::kResultTrue;
+    }
+    *object = nullptr;
+    return Steinberg::kNoInterface;
+}
+
+Steinberg::tresult PLUGIN_API ComponentHandler::performEdit(
+    Steinberg::Vst::ParamID id,
+    Steinberg::Vst::ParamValue valueNormalized) {
+    if (!owner_) return Steinberg::kResultFalse;
+    owner_->forwardParameter(id, valueNormalized);
+    return Steinberg::kResultTrue;
+}
+
+Steinberg::tresult PLUGIN_API ComponentHandler::restartComponent(
+    Steinberg::int32 flags) {
+    if (!owner_) return Steinberg::kResultFalse;
+    if ((flags & Steinberg::Vst::kParamValuesChanged) != 0)
+        owner_->forwardAllParameters();
+    return Steinberg::kResultTrue;
+}
 
 Steinberg::tresult PLUGIN_API EditorFrame::queryInterface(const Steinberg::TUID iid,
                                                            void** object) {
@@ -130,7 +205,9 @@ Steinberg::tresult PLUGIN_API EditorFrame::resizeView(Steinberg::IPlugView*,
 Vst3EditorHost::Vst3EditorHost() : impl_(std::make_unique<Impl>()) {}
 Vst3EditorHost::~Vst3EditorHost() { close(); }
 
-bool Vst3EditorHost::open(const std::string& modulePath, const std::string& title) {
+bool Vst3EditorHost::open(const std::string& modulePath,
+                          const std::string& title,
+                          ParameterEditCallback parameterEdit) {
     close();
     const auto fail = [&](const char* message) {
         std::cerr << "VST3 editor: " << message << " (" << modulePath << ")\n";
@@ -160,6 +237,11 @@ bool Vst3EditorHost::open(const std::string& modulePath, const std::string& titl
     if (!impl_->provider->initialize()) return fail("plugin initialization failed");
     impl_->controller = impl_->provider->getController();
     if (!impl_->controller) return fail("plugin has no edit controller");
+    impl_->parameterEdit = std::move(parameterEdit);
+    impl_->componentHandler = std::make_unique<ComponentHandler>(impl_.get());
+    if (impl_->controller->setComponentHandler(
+            impl_->componentHandler.get()) != Steinberg::kResultTrue)
+        return fail("plugin rejected the component handler");
     impl_->view = impl_->controller->createView(Steinberg::Vst::ViewType::kEditor);
     if (!impl_->view) return fail("plugin does not provide an editor view");
     Steinberg::ViewRect size{};
@@ -192,7 +274,10 @@ void Vst3EditorHost::close() noexcept {
     }
     impl_->view = nullptr;
     impl_->frame.reset();
+    if (impl_->controller) impl_->controller->setComponentHandler(nullptr);
+    impl_->componentHandler.reset();
     impl_->controller = nullptr;
+    impl_->parameterEdit = {};
     impl_->destroyWindow();
     impl_->provider.reset();
     impl_->module.reset();
@@ -208,7 +293,8 @@ namespace transmission {
 struct Vst3EditorHost::Impl {};
 Vst3EditorHost::Vst3EditorHost() : impl_(std::make_unique<Impl>()) {}
 Vst3EditorHost::~Vst3EditorHost() = default;
-bool Vst3EditorHost::open(const std::string&, const std::string&) { return false; }
+bool Vst3EditorHost::open(const std::string&, const std::string&,
+                          ParameterEditCallback) { return false; }
 void Vst3EditorHost::close() noexcept {}
 bool Vst3EditorHost::open() const noexcept { return false; }
 } // namespace transmission

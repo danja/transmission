@@ -2,7 +2,7 @@
 
 ## Current implementation status
 
-The repository now contains the modular Node/C++ foundation, typed graph compiler, RDF/Turtle round trips, project sessions, plugin registry and bundle discovery, allocation-free native audio device abstractions, transport with tempo maps and looping, linear and routed DAG graph execution, SDK-backed VST3 metadata inspection, deterministic offline instance processing, an optional JACK device adapter with rate/period negotiation, physical-port routing, MIDI input forwarding, `AudioEngine` device/graph lifecycle wiring, VST3 input and output note-event conversion, an optional N-API control addon, compiled-graph-to-native routed node construction, bounded real-time VST3 parameter queuing, a Node-controlled JACK configuration path, and a native GTK live graph host with embedded VST3 editors and persistent JACK external-port settings. The VST3 path has been verified against the SDK’s real `again-sample-accurate.vst3` bundle and against a transport-driven `drumgen.vst3 -> drumkit.vst3` chain in both deterministic offline processing and a live dummy-JACK callback. The remaining major runtime work is processor factory coverage beyond pass-through/VST3, broader MIDI mapping/SysEx, persisted project/UI synchronization, plugin state synchronization between processing and editor instances, and plugin browser metadata.
+The repository now contains the modular Node/C++ foundation, typed graph compiler, RDF/Turtle round trips, project sessions, plugin registry and bundle discovery, allocation-free native audio device abstractions, transport with tempo maps and looping, linear and routed DAG graph execution, SDK-backed VST3 metadata inspection, deterministic offline instance processing, an optional JACK device adapter with rate/period negotiation, physical-port routing, MIDI input forwarding, `AudioEngine` device/graph lifecycle wiring, VST3 input and output note-event conversion, an optional N-API control addon, compiled-graph-to-native routed node construction, bounded real-time VST3 parameter queuing, a Node-controlled JACK configuration path, and a native GTK live graph host with embedded VST3 editors and persistent JACK external-port settings. The VST3 path has been verified against the SDK’s real `again-sample-accurate.vst3` bundle and against a transport-driven `drumgen.vst3 -> drumkit.vst3` chain in both deterministic offline processing and a live dummy-JACK callback. The remaining major runtime work is processor factory coverage beyond pass-through/VST3, broader MIDI mapping/SysEx, persisted project/UI synchronization, full plugin-state synchronization between processing and editor instances, and plugin browser metadata.
 
 ## Summary
 
@@ -157,6 +157,20 @@ were already part of the Turtle model. On load, plugin nodes are re-inspected
 before validation so older hardcoded stereo metadata is reconciled with the
 installed bundle. A saved cable whose index no longer exists after a plugin
 upgrade is rejected as a missing port instead of being silently redirected.
+
+## Native editor parameter forwarding
+
+Status: implemented for normalized VST3 parameters. The separately hosted
+native editor installs an `IComponentHandler` and forwards `performEdit`
+notifications to the matching graph node. While audio is running, edits enter
+the processor's fixed-capacity parameter queue and are applied at the next
+block. The GTK model also retains the latest edited values and supplies them
+when the graph is compiled again, covering edits made before Play and runtime
+rebuilds.
+
+Full component-state synchronization and persistence of editor parameter values
+in Turtle remain separate work; this path handles ordinary parameter edits, not
+opaque plugin state or preset files.
 
 ## Assumptions
 

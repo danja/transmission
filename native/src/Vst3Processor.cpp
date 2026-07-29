@@ -27,8 +27,8 @@ struct Vst3Processor::Impl {
     Steinberg::Vst::HostProcessData processData;
     Steinberg::Vst::EventList inputEvents{256};
     Steinberg::Vst::EventList outputEvents{256};
-    Steinberg::Vst::ParameterChanges parameterChanges{32};
-    Steinberg::Vst::ParameterChanges outputParameterChanges{32};
+    Steinberg::Vst::ParameterChanges parameterChanges{256};
+    Steinberg::Vst::ParameterChanges outputParameterChanges{256};
     Steinberg::Vst::ProcessContext processContext{};
     std::string name;
     std::size_t inputChannels = 0;
@@ -40,7 +40,7 @@ struct Vst3Processor::Impl {
     bool processing = false;
     bool hasAudioInput = false;
     bool hasParameterChanges = false;
-    static constexpr std::size_t maxPendingParameters = 32;
+    static constexpr std::size_t maxPendingParameters = 256;
     // 0 = free, 1 = producer writing, 2 = ready for the audio thread.
     std::array<std::atomic<std::uint8_t>, maxPendingParameters> pendingParameterSlots{};
     std::array<std::atomic<std::uint32_t>, maxPendingParameters> pendingParameterIds{};

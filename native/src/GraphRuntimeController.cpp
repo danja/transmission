@@ -42,6 +42,13 @@ bool GraphRuntimeController::start(const RuntimeGraphSnapshot& snapshot,
 
 void GraphRuntimeController::stop() noexcept { engine_.stop(); }
 
+bool GraphRuntimeController::setParameter(const std::string& nodeId,
+                                          std::uint32_t parameterId,
+                                          double normalizedValue,
+                                          std::string& error) {
+    return engine_.setParameter(nodeId, parameterId, normalizedValue, error);
+}
+
 bool GraphRuntimeController::running() const {
     return engine_.diagnostics().running;
 }

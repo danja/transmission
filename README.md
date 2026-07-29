@@ -2,6 +2,8 @@
 
 Modular Linux VST3 transmission host.
 
+This is primarily intended for generative plugins such as those of [Downspout](https://danja.github.io/downspout/)
+
 The project is split between a Node.js control plane and a C++ real-time engine. RDF/Turtle projects are parsed into a typed graph, compiled and then supplied to the native engine through a control-rate bridge.
 
 ## Implemented foundation

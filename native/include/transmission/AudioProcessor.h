@@ -60,4 +60,20 @@ private:
     std::size_t midiInputCount_ = 0;
 };
 
+/** MIDI-only endpoint that forwards bounded events and always emits silent audio. */
+class MidiEndpointProcessor final : public AudioProcessor {
+public:
+    void process(const float* const* inputs, float* const* outputs,
+                 std::size_t channels, std::size_t frames) noexcept override;
+    void processWithMidi(const float* const* inputs, float* const* outputs,
+                         std::size_t channels, std::size_t frames,
+                         const MidiEvent* events, std::size_t eventCount) noexcept override;
+    std::size_t takeOutputMidi(MidiEvent* events,
+                               std::size_t capacity) noexcept override;
+
+private:
+    const MidiEvent* midiInput_ = nullptr;
+    std::size_t midiInputCount_ = 0;
+};
+
 } // namespace transmission

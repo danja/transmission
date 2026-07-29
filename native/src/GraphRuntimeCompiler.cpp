@@ -80,9 +80,15 @@ std::unique_ptr<RoutedAudioGraph> GraphRuntimeCompiler::compile(
             error = "unable to add runtime graph node: " + node.id;
             return nullptr;
         }
-        if (node.kind == RuntimeNodeKind::SystemInput &&
-            !graph->setExternalMidiInput(node.id)) {
+        if ((node.kind == RuntimeNodeKind::SystemInput ||
+             node.kind == RuntimeNodeKind::MidiInput) &&
+            !graph->setExternalMidiInput(node.id, node.externalMidiPort)) {
             error = "unable to configure the runtime MIDI input endpoint";
+            return nullptr;
+        }
+        if (node.kind == RuntimeNodeKind::MidiOutput &&
+            !graph->setExternalMidiOutput(node.id, node.externalMidiPort)) {
+            error = "unable to configure the runtime MIDI output endpoint";
             return nullptr;
         }
     }

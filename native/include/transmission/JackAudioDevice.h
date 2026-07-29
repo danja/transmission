@@ -41,8 +41,10 @@ private:
     std::vector<_jack_port*> inputPorts_;
     std::vector<_jack_port*> outputPorts_;
     std::vector<_jack_port*> midiInputPorts_;
+    std::vector<_jack_port*> midiOutputPorts_;
     std::vector<const float*> inputPointers_;
     std::vector<float*> outputPointers_;
+    std::array<MidiEvent, maxMidiEventsPerBlock> midiOutputEvents_{};
     std::atomic<AudioCallback*> callback_{nullptr};
     std::atomic<bool> running_{false};
     std::string lastError_;

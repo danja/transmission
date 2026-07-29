@@ -64,6 +64,11 @@ native/build-ui/transmission_graph_ui
 
 The native canvas renders typed audio and MIDI topology, compiles execution data through a control-thread graph compiler, starts the VST3 graph on JACK from the Play button, preserves and applies external system-port choices, and reports runtime failures in the window. VST3 MIDI output is routed through bounded native buffers, so generator-to-instrument chains execute without callback allocation. It also discovers bundles from `~/.vst3`, opens native plugin editors, provides node context menus, supports dragging nodes, and creates type-compatible arcs.
 
+Right-clicking the canvas also offers Add MIDI Input and Add MIDI Output.
+Each action lists the compatible JACK MIDI ports, creates a typed graph
+endpoint, and persists the selected external port. MIDI endpoints use dedicated
+bounded JACK buffers and never contribute audio to the graph.
+
 The File menu provides New, Open, Save, Save As, and Quit, with the usual
 keyboard shortcuts. Transmission projects use RDF Turtle (`.ttl`) as their
 canonical format. Saving and loading preserve plugin bundle paths, typed graph

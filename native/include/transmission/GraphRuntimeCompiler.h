@@ -10,13 +10,16 @@
 
 namespace transmission {
 
-enum class RuntimeNodeKind { SystemInput, SystemOutput, PassThrough, Plugin };
+enum class RuntimeNodeKind {
+    SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput
+};
 enum class RuntimeConnectionKind { Audio, Midi };
 
 struct RuntimeGraphNode {
     std::string id;
     RuntimeNodeKind kind = RuntimeNodeKind::Plugin;
     std::string pluginPath;
+    std::size_t externalMidiPort = 0;
 };
 
 struct RuntimeGraphConnection {

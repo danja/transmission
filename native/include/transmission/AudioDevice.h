@@ -16,10 +16,12 @@ struct AudioDeviceConfig {
     double sampleRate = 48000.0;
     bool autoConnect = false;
     std::size_t midiInputs = 1;
+    std::size_t midiOutputs = 0;
 };
 
 struct MidiEvent {
     std::size_t frameOffset = 0;
+    std::size_t port = 0;
     std::uint8_t size = 0;
     std::array<std::uint8_t, 3> data{};
 };
@@ -30,6 +32,8 @@ public:
     virtual void process(const float* const* inputs, float* const* outputs,
                          std::size_t channels, std::size_t frames) noexcept = 0;
     virtual void handleMidi(const MidiEvent& /*event*/) noexcept {}
+    virtual std::size_t takeOutputMidi(MidiEvent* /*events*/,
+                                       std::size_t /*capacity*/) noexcept { return 0; }
 };
 
 /** Device lifecycle abstraction; concrete JACK/PipeWire code stays behind it. */

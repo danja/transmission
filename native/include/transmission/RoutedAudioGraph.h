@@ -20,7 +20,8 @@ public:
     bool addNode(std::string id, std::unique_ptr<AudioProcessor> processor);
     bool connect(const std::string& from, const std::string& to);
     bool connectMidi(const std::string& from, const std::string& to);
-    bool setExternalMidiInput(const std::string& nodeId);
+    bool setExternalMidiInput(const std::string& nodeId, std::size_t port);
+    bool setExternalMidiOutput(const std::string& nodeId, std::size_t port);
     bool setParameter(const std::string& nodeId, std::uint32_t parameterId,
                       double normalizedValue, std::string& error);
     bool enqueueParameter(const std::string& nodeId, std::uint32_t parameterId,
@@ -32,6 +33,8 @@ public:
                          std::size_t channels, std::size_t frames,
                          const MidiEvent* events, std::size_t eventCount) noexcept;
     void setProcessContext(const AudioProcessContext& context) noexcept;
+    std::size_t takeExternalMidiOutput(MidiEvent* events,
+                                       std::size_t capacity) noexcept;
 
     std::size_t nodeCount() const noexcept { return nodes_.size(); }
 
@@ -50,13 +53,16 @@ private:
         std::array<MidiEvent, maxMidiEventsPerBlock> midiInput{};
         std::array<MidiEvent, maxMidiEventsPerBlock> midiOutput{};
         std::size_t midiInputCount = 0;
-        bool receivesExternalMidi = false;
+        std::size_t externalMidiInputPort = static_cast<std::size_t>(-1);
+        std::size_t externalMidiOutputPort = static_cast<std::size_t>(-1);
     };
 
     std::vector<Node> nodes_;
     std::vector<std::size_t> executionOrder_;
     std::size_t preparedChannels_ = 0;
     std::size_t preparedFrames_ = 0;
+    std::array<MidiEvent, maxMidiEventsPerBlock> externalMidiOutput_{};
+    std::size_t externalMidiOutputCount_ = 0;
 };
 
 } // namespace transmission

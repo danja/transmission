@@ -54,6 +54,8 @@ public:
     void process(const float* const* inputs, float* const* outputs,
                  std::size_t channels, std::size_t frames) noexcept override;
     void handleMidi(const MidiEvent& event) noexcept override;
+    std::size_t takeOutputMidi(MidiEvent* events,
+                               std::size_t capacity) noexcept override;
     bool enqueueMidi(const MidiEvent& event) noexcept;
 
 private:
@@ -73,6 +75,8 @@ private:
     std::atomic<double> positionBeats_{0.0};
     std::array<MidiEvent, maxMidiEventsPerBlock> midiEventBuffer_{};
     std::size_t midiEventCount_ = 0;
+    std::array<MidiEvent, maxMidiEventsPerBlock> midiOutputBuffer_{};
+    std::size_t midiOutputCount_ = 0;
     std::array<MidiEvent, maxMidiEventsPerBlock> midiControlQueue_{};
     std::atomic<std::size_t> midiQueueRead_{0};
     std::atomic<std::size_t> midiQueueWrite_{0};

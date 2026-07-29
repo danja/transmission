@@ -90,19 +90,22 @@ function decodeProject(text) {
     } else if (fields[0] === 'NODE' && fields.length === 11) {
       const kind = integer(fields[3])
       const id = hexDecode(fields[1])
-      if (kind < 0 || kind > 3 || !id) invalid()
-      const pluginPath = hexDecode(fields[10])
+      if (kind < 0 || kind > 5 || !id) invalid()
+      const resource = hexDecode(fields[10])
+      const type = ['AudioInput', 'AudioOutput', 'PassThrough', 'VST3Plugin', 'MidiInput', 'MidiOutput'][kind]
       project.nodes.push({
         id: fullId(id),
         label: hexDecode(fields[2]),
-        type: `${BASE}${['AudioInput', 'AudioOutput', 'PassThrough', 'VST3Plugin'][kind]}`,
+        type: `${BASE}${type}`,
         ports: {
           audioInputs: integer(fields[4]),
           audioOutputs: integer(fields[5]),
           midiInputs: integer(fields[6]),
           midiOutputs: integer(fields[7])
         },
-        settings: pluginPath ? { pluginPath } : {},
+        settings: resource
+          ? { [kind >= 4 ? 'externalPort' : 'pluginPath']: resource }
+          : {},
         metadata: { x: finiteNumber(fields[8]), y: finiteNumber(fields[9]) }
       })
     } else if (fields[0] === 'EDGE' && fields.length === 6) {
@@ -139,15 +142,18 @@ function encodeProject(session) {
   }
   for (const node of graph.nodes.values()) {
     const type = shortId(node.type)
-    const kind = { AudioInput: 0, AudioOutput: 1, PassThrough: 2, VST3Plugin: 3 }[type]
+    const kind = {
+      AudioInput: 0, AudioOutput: 1, PassThrough: 2,
+      VST3Plugin: 3, MidiInput: 4, MidiOutput: 5
+    }[type]
     if (kind === undefined) throw new Error(`Unsupported native UI node type: ${node.type}`)
-    const pluginPath = firstSetting(node.settings, 'pluginPath')
+    const resource = firstSetting(node.settings, kind >= 4 ? 'externalPort' : 'pluginPath')
     lines.push([
       'NODE', hexEncode(shortId(node.id)), hexEncode(node.label), kind,
       node.ports.audioInputs, node.ports.audioOutputs,
       node.ports.midiInputs, node.ports.midiOutputs,
       finiteNumber(node.metadata.x ?? 0), finiteNumber(node.metadata.y ?? 0),
-      hexEncode(pluginPath)
+      hexEncode(resource)
     ].join('\t'))
   }
   for (const connection of graph.connections) {

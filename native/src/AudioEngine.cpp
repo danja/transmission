@@ -137,6 +137,7 @@ Diagnostics AudioEngine::diagnostics() const {
 
 void AudioEngine::process(const float* const* inputs, float* const* outputs,
                           std::size_t channels, std::size_t frames) noexcept {
+    midiOutputCount_ = 0;
     if (!outputs || channels == 0 || frames == 0) {
         underruns_.fetch_add(1, std::memory_order_relaxed);
         return;
@@ -158,6 +159,8 @@ void AudioEngine::process(const float* const* inputs, float* const* outputs,
     } else if (routedAudioGraph_ && inputs && channels == graphChannels_ && frames == graphFrames_) {
         routedAudioGraph_->processWithMidi(inputs, outputs, channels, frames,
                                            midiEventBuffer_.data(), midiEventCount_);
+        midiOutputCount_ = routedAudioGraph_->takeExternalMidiOutput(
+            midiOutputBuffer_.data(), midiOutputBuffer_.size());
     } else {
         for (std::size_t channel = 0; channel < channels; ++channel) {
             if (outputs[channel]) std::fill(outputs[channel], outputs[channel] + frames, 0.0F);
@@ -172,6 +175,14 @@ void AudioEngine::handleMidi(const MidiEvent& event) noexcept {
     midiEvents_.fetch_add(1, std::memory_order_relaxed);
     if (midiEventCount_ < maxMidiEventsPerBlock)
         midiEventBuffer_[midiEventCount_++] = event;
+}
+
+std::size_t AudioEngine::takeOutputMidi(MidiEvent* events,
+                                        std::size_t capacity) noexcept {
+    const auto count = std::min(capacity, midiOutputCount_);
+    if (events) std::copy_n(midiOutputBuffer_.begin(), count, events);
+    midiOutputCount_ = 0;
+    return count;
 }
 
 bool AudioEngine::enqueueMidi(const MidiEvent& event) noexcept {

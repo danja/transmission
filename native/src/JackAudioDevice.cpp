@@ -34,6 +34,7 @@ bool JackAudioDevice::configure(const AudioDeviceConfig& config) {
         inputPorts_.resize(config.channels);
         outputPorts_.resize(config.channels);
         midiInputPorts_.resize(config.midiInputs);
+        midiOutputPorts_.resize(config.midiOutputs);
         inputPointers_.resize(config.channels);
         outputPointers_.resize(config.channels);
     } catch (...) {
@@ -60,6 +61,17 @@ bool JackAudioDevice::configure(const AudioDeviceConfig& config) {
                                                     JACK_DEFAULT_MIDI_TYPE, JackPortIsInput, 0);
         if (!midiInputPorts_[port]) {
             lastError_ = "unable to register JACK MIDI input ports";
+            closeClient();
+            return false;
+        }
+    }
+    for (std::size_t port = 0; port < config.midiOutputs; ++port) {
+        const auto name = "midi_out_" + std::to_string(port + 1);
+        midiOutputPorts_[port] = jack_port_register(client_, name.c_str(),
+                                                     JACK_DEFAULT_MIDI_TYPE,
+                                                     JackPortIsOutput, 0);
+        if (!midiOutputPorts_[port]) {
+            lastError_ = "unable to register JACK MIDI output ports";
             closeClient();
             return false;
         }
@@ -140,8 +152,8 @@ int JackAudioDevice::process(unsigned frames) noexcept {
             jack_port_get_buffer(outputPorts_[channel], frames));
         if (!inputPointers_[channel] || !outputPointers_[channel]) return 0;
     }
-    for (auto* port : midiInputPorts_) {
-        auto* midiBuffer = jack_port_get_buffer(port, frames);
+    for (std::size_t port = 0; port < midiInputPorts_.size(); ++port) {
+        auto* midiBuffer = jack_port_get_buffer(midiInputPorts_[port], frames);
         if (!midiBuffer) continue;
         const auto eventCount = jack_midi_get_event_count(midiBuffer);
         for (uint32_t index = 0; index < eventCount; ++index) {
@@ -150,13 +162,31 @@ int JackAudioDevice::process(unsigned frames) noexcept {
                 event.size == 0 || event.size > 3) continue;
             MidiEvent midi;
             midi.frameOffset = event.time < frames ? event.time : frames - 1;
+            midi.port = port;
             midi.size = static_cast<std::uint8_t>(event.size);
             std::copy_n(event.buffer, event.size, midi.data.begin());
             callback->handleMidi(midi);
         }
     }
+    for (auto* port : midiOutputPorts_) {
+        auto* midiBuffer = jack_port_get_buffer(port, frames);
+        if (midiBuffer) jack_midi_clear_buffer(midiBuffer);
+    }
     callback->process(inputPointers_.data(), outputPointers_.data(),
                       config_.channels, frames);
+    const auto outputEventCount = callback->takeOutputMidi(
+        midiOutputEvents_.data(), midiOutputEvents_.size());
+    for (std::size_t index = 0; index < outputEventCount; ++index) {
+        const auto& event = midiOutputEvents_[index];
+        if (event.port >= midiOutputPorts_.size() || event.size == 0 ||
+            event.size > event.data.size())
+            continue;
+        auto* midiBuffer = jack_port_get_buffer(midiOutputPorts_[event.port], frames);
+        if (!midiBuffer) continue;
+        jack_midi_event_write(
+            midiBuffer, std::min<std::size_t>(event.frameOffset, frames - 1),
+            event.data.data(), event.size);
+    }
     return 0;
 }
 
@@ -169,6 +199,7 @@ void JackAudioDevice::closeClient() noexcept {
     inputPorts_.clear();
     outputPorts_.clear();
     midiInputPorts_.clear();
+    midiOutputPorts_.clear();
     inputPointers_.clear();
     outputPointers_.clear();
     configured_ = false;

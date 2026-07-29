@@ -28,9 +28,10 @@ JackConnectionManager::JackConnectionManager() : impl_(std::make_unique<Impl>())
 
 JackConnectionManager::~JackConnectionManager() = default;
 
-static std::vector<std::string> listPorts(jack_client_t* client, unsigned flags) {
+static std::vector<std::string> listPorts(jack_client_t* client, const char* type,
+                                          unsigned flags) {
     if (!client) return {};
-    const auto* ports = jack_get_ports(client, nullptr, JACK_DEFAULT_AUDIO_TYPE, flags);
+    const auto* ports = jack_get_ports(client, nullptr, type, flags);
     if (!ports) return {};
     std::vector<std::string> result;
     for (std::size_t index = 0; ports[index]; ++index) result.emplace_back(ports[index]);
@@ -40,12 +41,26 @@ static std::vector<std::string> listPorts(jack_client_t* client, unsigned flags)
 }
 
 std::vector<std::string> JackConnectionManager::inputSources() const {
-    return impl_->ensureClient() ? listPorts(impl_->client, JackPortIsOutput)
+    return impl_->ensureClient() ? listPorts(impl_->client, JACK_DEFAULT_AUDIO_TYPE,
+                                             JackPortIsOutput)
                                  : std::vector<std::string>{};
 }
 
 std::vector<std::string> JackConnectionManager::outputDestinations() const {
-    return impl_->ensureClient() ? listPorts(impl_->client, JackPortIsInput)
+    return impl_->ensureClient() ? listPorts(impl_->client, JACK_DEFAULT_AUDIO_TYPE,
+                                             JackPortIsInput)
+                                 : std::vector<std::string>{};
+}
+
+std::vector<std::string> JackConnectionManager::midiInputSources() const {
+    return impl_->ensureClient() ? listPorts(impl_->client, JACK_DEFAULT_MIDI_TYPE,
+                                             JackPortIsOutput)
+                                 : std::vector<std::string>{};
+}
+
+std::vector<std::string> JackConnectionManager::midiOutputDestinations() const {
+    return impl_->ensureClient() ? listPorts(impl_->client, JACK_DEFAULT_MIDI_TYPE,
+                                             JackPortIsInput)
                                  : std::vector<std::string>{};
 }
 
@@ -82,7 +97,7 @@ bool JackConnectionManager::connectInput(std::size_t channel, const std::string&
     if (!clearConnections(impl_->client, target, true, error)) return false;
     if (source == "No connection") return true;
     const auto resolved = resolveJackPortName(
-        source, listPorts(impl_->client, JackPortIsOutput));
+        source, listPorts(impl_->client, JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput));
     if (jack_connect(impl_->client, resolved.c_str(), targetName.c_str()) != 0) {
         error = "unable to connect JACK source to " + targetName;
         return false;
@@ -105,9 +120,57 @@ bool JackConnectionManager::connectOutput(std::size_t channel, const std::string
     if (!clearConnections(impl_->client, source, false, error)) return false;
     if (destination == "No connection") return true;
     const auto resolved = resolveJackPortName(
-        destination, listPorts(impl_->client, JackPortIsInput));
+        destination, listPorts(impl_->client, JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput));
     if (jack_connect(impl_->client, sourceName.c_str(), resolved.c_str()) != 0) {
         error = "unable to connect " + sourceName + " to JACK destination";
+        return false;
+    }
+    return true;
+}
+
+bool JackConnectionManager::connectMidiInput(std::size_t port,
+                                              const std::string& source,
+                                              std::string& error) {
+    if (!impl_->ensureClient()) {
+        error = "JACK is not available";
+        return false;
+    }
+    const auto targetName = "transmission:midi_in_" + std::to_string(port + 1);
+    auto* target = jack_port_by_name(impl_->client, targetName.c_str());
+    if (!target) {
+        error = "Transmission JACK MIDI input is not registered: " + targetName;
+        return false;
+    }
+    if (!clearConnections(impl_->client, target, true, error)) return false;
+    if (source == "No connection") return true;
+    const auto resolved = resolveJackPortName(
+        source, listPorts(impl_->client, JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput));
+    if (jack_connect(impl_->client, resolved.c_str(), targetName.c_str()) != 0) {
+        error = "unable to connect JACK MIDI source to " + targetName;
+        return false;
+    }
+    return true;
+}
+
+bool JackConnectionManager::connectMidiOutput(std::size_t port,
+                                               const std::string& destination,
+                                               std::string& error) {
+    if (!impl_->ensureClient()) {
+        error = "JACK is not available";
+        return false;
+    }
+    const auto sourceName = "transmission:midi_out_" + std::to_string(port + 1);
+    auto* source = jack_port_by_name(impl_->client, sourceName.c_str());
+    if (!source) {
+        error = "Transmission JACK MIDI output is not registered: " + sourceName;
+        return false;
+    }
+    if (!clearConnections(impl_->client, source, false, error)) return false;
+    if (destination == "No connection") return true;
+    const auto resolved = resolveJackPortName(
+        destination, listPorts(impl_->client, JACK_DEFAULT_MIDI_TYPE, JackPortIsInput));
+    if (jack_connect(impl_->client, sourceName.c_str(), resolved.c_str()) != 0) {
+        error = "unable to connect " + sourceName + " to JACK MIDI destination";
         return false;
     }
     return true;
@@ -142,11 +205,23 @@ JackConnectionManager::JackConnectionManager() : impl_(std::make_unique<Impl>())
 JackConnectionManager::~JackConnectionManager() = default;
 std::vector<std::string> JackConnectionManager::inputSources() const { return {}; }
 std::vector<std::string> JackConnectionManager::outputDestinations() const { return {}; }
+std::vector<std::string> JackConnectionManager::midiInputSources() const { return {}; }
+std::vector<std::string> JackConnectionManager::midiOutputDestinations() const { return {}; }
 bool JackConnectionManager::connectInput(std::size_t, const std::string&, std::string& error) {
     error = "JACK support is not enabled";
     return false;
 }
 bool JackConnectionManager::connectOutput(std::size_t, const std::string&, std::string& error) {
+    error = "JACK support is not enabled";
+    return false;
+}
+bool JackConnectionManager::connectMidiInput(std::size_t, const std::string&,
+                                              std::string& error) {
+    error = "JACK support is not enabled";
+    return false;
+}
+bool JackConnectionManager::connectMidiOutput(std::size_t, const std::string&,
+                                               std::string& error) {
     error = "JACK support is not enabled";
     return false;
 }

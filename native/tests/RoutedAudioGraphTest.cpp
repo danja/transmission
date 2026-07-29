@@ -26,5 +26,26 @@ int main() {
     assert(cycle.connect("a", "b"));
     assert(cycle.connect("b", "a"));
     assert(!cycle.prepare(1, 4));
+
+    transmission::RoutedAudioGraph midi;
+    assert(midi.addNode("midi-in",
+                        std::make_unique<transmission::PassThroughProcessor>()));
+    assert(midi.addNode("midi-out",
+                        std::make_unique<transmission::PassThroughProcessor>()));
+    assert(midi.setExternalMidiInput("midi-in", 2));
+    assert(midi.setExternalMidiOutput("midi-out", 3));
+    assert(midi.connectMidi("midi-in", "midi-out"));
+    assert(midi.prepare(1, 4));
+    transmission::MidiEvent inputEvent;
+    inputEvent.port = 2;
+    inputEvent.size = 3;
+    inputEvent.data = {0x90, 60, 100};
+    float midiOutputAudio[] = {0.0F, 0.0F, 0.0F, 0.0F};
+    float* midiAudioOutputs[] = {midiOutputAudio};
+    midi.processWithMidi(inputs, midiAudioOutputs, 1, 4, &inputEvent, 1);
+    transmission::MidiEvent outputEvent;
+    assert(midi.takeExternalMidiOutput(&outputEvent, 1) == 1);
+    assert(outputEvent.port == 3);
+    assert(outputEvent.data == inputEvent.data);
     return 0;
 }

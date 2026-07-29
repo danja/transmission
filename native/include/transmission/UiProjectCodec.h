@@ -7,7 +7,9 @@
 
 namespace transmission {
 
-enum class UiProjectNodeKind { SystemInput, SystemOutput, PassThrough, Plugin };
+enum class UiProjectNodeKind {
+    SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput
+};
 enum class UiProjectConnectionKind { Audio, Midi };
 
 struct UiProjectNode {
@@ -21,6 +23,7 @@ struct UiProjectNode {
     double x = 0.0;
     double y = 0.0;
     std::string pluginPath;
+    std::string externalPort;
 };
 
 struct UiProjectConnection {

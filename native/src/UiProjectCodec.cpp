@@ -92,7 +92,10 @@ std::string encodeUiProject(const UiProject& project) {
                << '\t' << static_cast<int>(node.kind) << '\t' << node.audioInputs
                << '\t' << node.audioOutputs << '\t' << node.midiInputs << '\t'
                << node.midiOutputs << '\t' << node.x << '\t' << node.y << '\t'
-               << hexEncode(node.pluginPath) << '\n';
+               << hexEncode(node.kind == UiProjectNodeKind::MidiInput ||
+                                    node.kind == UiProjectNodeKind::MidiOutput
+                                ? node.externalPort : node.pluginPath)
+               << '\n';
     }
     for (const auto& connection : project.connections) {
         output << "EDGE\t" << hexEncode(connection.from) << '\t'
@@ -154,17 +157,23 @@ bool decodeUiProject(const std::string& text, UiProject& project,
         } else if (values[0] == "NODE") {
             UiProjectNode node;
             int kind = 0;
+            std::string resource;
             if (values.size() != 11 || !hexDecode(values[1], node.id) ||
                 !hexDecode(values[2], node.label) || !integer(values[3], kind) ||
-                kind < 0 || kind > static_cast<int>(UiProjectNodeKind::Plugin) ||
+                kind < 0 || kind > static_cast<int>(UiProjectNodeKind::MidiOutput) ||
                 !integer(values[4], node.audioInputs) ||
                 !integer(values[5], node.audioOutputs) ||
                 !integer(values[6], node.midiInputs) ||
                 !integer(values[7], node.midiOutputs) ||
                 !number(values[8], node.x) || !number(values[9], node.y) ||
-                !hexDecode(values[10], node.pluginPath) || node.id.empty())
+                !hexDecode(values[10], resource) || node.id.empty())
                 return fail();
             node.kind = static_cast<UiProjectNodeKind>(kind);
+            if (node.kind == UiProjectNodeKind::MidiInput ||
+                node.kind == UiProjectNodeKind::MidiOutput)
+                node.externalPort = std::move(resource);
+            else
+                node.pluginPath = std::move(resource);
             candidate.nodes.push_back(std::move(node));
         } else if (values[0] == "EDGE") {
             UiProjectConnection connection;

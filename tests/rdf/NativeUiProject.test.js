@@ -26,9 +26,11 @@ describe('native UI Turtle project helper', () => {
       `NODE\t${hex('system-input')}\t${hex('System Input')}\t0\t0\t2\t0\t1\t20\t40\t-`,
       `NODE\t${hex('drumgen')}\t${hex('drumgen')}\t3\t0\t2\t1\t1\t260\t40\t${hex('/home/test/drumgen.vst3')}`,
       `NODE\t${hex('drumkit')}\t${hex('drumkit')}\t3\t2\t2\t1\t1\t500\t40\t${hex('/home/test/drumkit.vst3')}`,
+      `NODE\t${hex('midi-output-1')}\t${hex('MIDI Output')}\t5\t0\t0\t1\t0\t620\t180\t${hex('synth-42:midi_in')}`,
       `NODE\t${hex('system-output')}\t${hex('System Output')}\t1\t2\t0\t1\t0\t740\t40\t-`,
       `EDGE\t${hex('system-input')}\t${hex('drumgen')}\t1\t0\t0`,
       `EDGE\t${hex('drumgen')}\t${hex('drumkit')}\t1\t0\t0`,
+      `EDGE\t${hex('drumgen')}\t${hex('midi-output-1')}\t1\t0\t0`,
       `EDGE\t${hex('drumkit')}\t${hex('system-output')}\t0\t0\t0`,
       'END',
       ''
@@ -44,6 +46,8 @@ describe('native UI Turtle project helper', () => {
     expect(restored).toContain('TRANSPORT\t132\t8\t1')
     expect(restored).toContain(`NODE\t${hex('drumgen')}`)
     expect(restored).toContain(`EDGE\t${hex('drumgen')}\t${hex('drumkit')}\t1\t0\t0`)
+    expect(restored).toContain(`NODE\t${hex('midi-output-1')}\t${hex('MIDI Output')}\t5`)
+    expect(restored).toContain(hex('synth-42:midi_in'))
     expect(restored).toContain(`OUTPUT\t0\t${hex('playback:left')}`)
   }, 15_000)
 

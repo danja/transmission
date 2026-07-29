@@ -67,7 +67,7 @@ Native notifications are limited to lifecycle, plugin errors, underruns, device 
 4. Implement VST3 discovery and metadata. *(bundle discovery, SDK metadata inspector, and CLI complete)*
 5. Implement deterministic offline native processing. *(processor, graph, fake device, transport, SDK-backed VST3 probe, and reusable graph-integrated VST3 processor complete)*
 6. Add JACK/PipeWire audio and MIDI I/O. *(optional JACK callback/device adapter, rate/period negotiation, physical-port auto-connect, bounded MIDI input forwarding, engine lifecycle wiring, live probe, automated MIDI smoke test, and VST3 note event conversion complete; broader MIDI mapping, live-server validation in this execution environment, and PipeWire remain)*
-7. Implement native graph routing and multi-plugin processing. *(routed DAG, fan-out/fan-in mixing, cycle rejection, engine integration, compiled graph construction, and VST3 instance loading are complete; processor factory coverage and multi-bus routing remain)*
+7. Implement native graph routing and multi-plugin processing. *(routed DAG, fan-out/fan-in mixing, cycle rejection, engine integration, compiled graph construction, VST3 instance loading, asymmetric per-node channel layouts, and port-addressed multi-bus routing are complete; processor factory coverage remains)*
 8. Add the N-API bridge and Node session lifecycle. *(control addon, transport/MIDI/diagnostics calls, EngineSession engine creation, compiled graph construction, bounded MIDI and parameter submission, optional JACK device construction, and VST3 parameter application complete; richer device selection and notifications remain)*
 9. Build graph editing and plugin browsing. *(native GTK live host complete: typed audio/MIDI ports and colored routes, control-thread snapshot compilation, real JACK-backed Play/Stop, persistent per-channel external audio connections, selectable external JACK MIDI input/output nodes, visible runtime failures, bounded generator-to-instrument and external MIDI routing, node context menus, node dragging, type-compatible arc creation, modal `~/.vst3` browsing, double-click native VST3 editor embedding, and a File menu with RDF/Turtle New/Open/Save/Save As; richer editing commands and plugin browser metadata remain)*
 10. Add parameter/state management, diagnostics, packaging, and project/UI synchronization. *(Linux VST3 editor embedding is complete in the native GTK prototype)*
@@ -140,6 +140,23 @@ probe processed 99 blocks with zero underruns.
 Status: implemented. RDF Turtle remains canonical, and all graph execution,
 editor layout, transport, plugin path, and requested external-routing fields
 needed by the current GTK UI round trip through the File menu.
+
+## Multi-bus plugin routing
+
+Status: implemented. VST3 topology inspection now flattens each audio bus into
+named graph ports. GTK plugin nodes use the discovered audio and event port
+counts, grow vertically to preserve connector spacing, and retain port indices
+when compiling the runtime snapshot. The routed graph preallocates input and
+output storage per node and mixes each audio cable into its selected destination
+port. `Vst3Processor` maps those flat ports back to their VST3 bus/channel
+locations, including asymmetric layouts such as T-Mix's eight mono inputs and
+stereo output.
+
+Saved projects remain compatible because audio port counts and cable indices
+were already part of the Turtle model. On load, plugin nodes are re-inspected
+before validation so older hardcoded stereo metadata is reconciled with the
+installed bundle. A saved cable whose index no longer exists after a plugin
+upgrade is rejected as a missing port instead of being silently redirected.
 
 ## Assumptions
 

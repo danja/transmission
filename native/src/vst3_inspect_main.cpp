@@ -25,5 +25,16 @@ int main(int argc, char** argv) {
                   << "category=" << descriptor.category << "\n"
                   << "module=" << descriptor.modulePath << "\n\n";
     }
+    transmission::Vst3PluginTopology topology;
+    if (transmission::Vst3Inspector().inspectTopology(argv[1], topology, error)) {
+        std::cout << "audioInputs=" << topology.audioInputs.size() << "\n"
+                  << "audioOutputs=" << topology.audioOutputs.size() << "\n"
+                  << "midiInputs=" << topology.midiInputs << "\n"
+                  << "midiOutputs=" << topology.midiOutputs << "\n";
+        for (std::size_t index = 0; index < topology.audioInputs.size(); ++index)
+            std::cout << "input." << index << "=" << topology.audioInputs[index].name << "\n";
+        for (std::size_t index = 0; index < topology.audioOutputs.size(); ++index)
+            std::cout << "output." << index << "=" << topology.audioOutputs[index].name << "\n";
+    }
     return 0;
 }

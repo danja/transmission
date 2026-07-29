@@ -17,9 +17,14 @@ namespace transmission {
  */
 class RoutedAudioGraph {
 public:
-    bool addNode(std::string id, std::unique_ptr<AudioProcessor> processor);
+    bool addNode(std::string id, std::unique_ptr<AudioProcessor> processor,
+                 std::size_t audioInputs = 0, std::size_t audioOutputs = 0);
     bool connect(const std::string& from, const std::string& to);
+    bool connect(const std::string& from, std::size_t fromPort,
+                 const std::string& to, std::size_t toPort);
     bool connectMidi(const std::string& from, const std::string& to);
+    bool setExternalAudioInput(const std::string& nodeId);
+    bool setExternalAudioOutput(const std::string& nodeId);
     bool setExternalMidiInput(const std::string& nodeId, std::size_t port);
     bool setExternalMidiOutput(const std::string& nodeId, std::size_t port);
     bool setParameter(const std::string& nodeId, std::uint32_t parameterId,
@@ -39,11 +44,18 @@ public:
     std::size_t nodeCount() const noexcept { return nodes_.size(); }
 
 private:
+    struct AudioRoute {
+        std::size_t node = 0;
+        std::size_t fromPort = 0;
+        std::size_t toPort = 0;
+        bool allChannels = false;
+    };
+
     struct Node {
         std::string id;
         std::unique_ptr<AudioProcessor> processor;
-        std::vector<std::size_t> incoming;
-        std::vector<std::size_t> outgoing;
+        std::vector<AudioRoute> incoming;
+        std::vector<AudioRoute> outgoing;
         std::vector<std::size_t> midiIncoming;
         std::vector<std::size_t> midiOutgoing;
         std::vector<float> input;
@@ -55,6 +67,11 @@ private:
         std::size_t midiInputCount = 0;
         std::size_t externalMidiInputPort = static_cast<std::size_t>(-1);
         std::size_t externalMidiOutputPort = static_cast<std::size_t>(-1);
+        std::size_t audioInputs = 0;
+        std::size_t audioOutputs = 0;
+        bool inheritDeviceChannels = false;
+        bool externalAudioInput = false;
+        bool externalAudioOutput = false;
     };
 
     std::vector<Node> nodes_;

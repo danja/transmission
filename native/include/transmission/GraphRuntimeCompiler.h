@@ -5,6 +5,7 @@
 
 #include <functional>
 #include <memory>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -20,12 +21,16 @@ struct RuntimeGraphNode {
     RuntimeNodeKind kind = RuntimeNodeKind::Plugin;
     std::string pluginPath;
     std::size_t externalMidiPort = 0;
+    std::size_t audioInputs = 0;
+    std::size_t audioOutputs = 0;
 };
 
 struct RuntimeGraphConnection {
     std::string from;
     std::string to;
     RuntimeConnectionKind kind = RuntimeConnectionKind::Audio;
+    std::size_t fromPort = std::numeric_limits<std::size_t>::max();
+    std::size_t toPort = std::numeric_limits<std::size_t>::max();
 };
 
 struct RuntimeGraphSnapshot {

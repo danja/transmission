@@ -45,7 +45,7 @@ public:
 transmission::RuntimeGraphSnapshot validSnapshot() {
     using NodeKind = transmission::RuntimeNodeKind;
     using EdgeKind = transmission::RuntimeConnectionKind;
-    return {
+    transmission::RuntimeGraphSnapshot snapshot{
         {{"input", NodeKind::SystemInput, ""},
          {"generator", NodeKind::Plugin, "/generator.vst3"},
          {"capture", NodeKind::Plugin, "/capture.vst3"},
@@ -55,6 +55,16 @@ transmission::RuntimeGraphSnapshot validSnapshot() {
          {"capture", "output", EdgeKind::Audio},
          {"input", "generator", EdgeKind::Midi},
          {"generator", "capture", EdgeKind::Midi}}};
+    for (auto& node : snapshot.nodes) {
+        node.audioInputs = 1;
+        node.audioOutputs = 1;
+    }
+    for (auto& connection : snapshot.connections) {
+        if (connection.kind != EdgeKind::Audio) continue;
+        connection.fromPort = 0;
+        connection.toPort = 0;
+    }
+    return snapshot;
 }
 
 } // namespace
@@ -98,6 +108,10 @@ int main() {
     missing.connections.push_back({"missing", "capture",
                                    transmission::RuntimeConnectionKind::Audio});
     assert(!compiler.compile(missing, config, error));
+
+    auto missingPort = validSnapshot();
+    missingPort.connections.front().fromPort = 2;
+    assert(!compiler.compile(missingPort, config, error));
 
     auto cycle = validSnapshot();
     cycle.connections.push_back({"capture", "generator",

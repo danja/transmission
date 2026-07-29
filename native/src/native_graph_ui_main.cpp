@@ -7,6 +7,7 @@
 #include "transmission/JackAudioDevice.h"
 #include "transmission/UiProjectCodec.h"
 #include "transmission/Vst3EditorHost.h"
+#include "transmission/Vst3Inspector.h"
 #include "transmission/Vst3Processor.h"
 
 #include <algorithm>
@@ -24,7 +25,8 @@
 
 namespace {
 constexpr double nodeWidth = 190.0;
-constexpr double nodeHeight = 70.0;
+constexpr double minimumNodeHeight = 70.0;
+constexpr double portSpacing = 18.0;
 
 enum class NodeKind {
     SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput
@@ -42,6 +44,8 @@ struct Node {
     double y = 0.0;
     std::string pluginPath;
     std::string externalPort;
+    std::vector<std::string> audioInputLabels;
+    std::vector<std::string> audioOutputLabels;
 };
 
 enum class PortKind { Audio, Midi };
@@ -57,11 +61,11 @@ struct Edge {
 struct GraphView {
     std::vector<Node> nodes{
         {"system-input", "System Input", NodeKind::SystemInput, 0, 2, 0, 1,
-         60.0, 150.0, "", ""},
+         60.0, 150.0, "", "", {}, {}},
         {"gain", "AGain / VST3", NodeKind::PassThrough, 2, 2, 1, 1,
-         340.0, 150.0, "", ""},
+         340.0, 150.0, "", "", {}, {}},
         {"system-output", "System Output", NodeKind::SystemOutput, 2, 0, 1, 0,
-         580.0, 150.0, "", ""},
+         580.0, 150.0, "", "", {}, {}},
     };
     std::vector<Edge> edges{{0, 1, 0, 0, PortKind::Audio}, {1, 2, 0, 0, PortKind::Audio},
                             {0, 1, 0, 0, PortKind::Midi}, {1, 2, 0, 0, PortKind::Midi}};
@@ -187,7 +191,9 @@ transmission::RuntimeGraphSnapshot runtimeSnapshot(const GraphView& view) {
             externalMidiPort = midiInputPort++;
         else if (node.kind == NodeKind::MidiOutput)
             externalMidiPort = midiOutputPort++;
-        snapshot.nodes.push_back({node.id, kind, node.pluginPath, externalMidiPort});
+        snapshot.nodes.push_back({
+            node.id, kind, node.pluginPath, externalMidiPort,
+            node.audioInputs, node.audioOutputs});
     }
     snapshot.connections.reserve(view.edges.size());
     for (const auto& edge : view.edges) {
@@ -196,7 +202,8 @@ transmission::RuntimeGraphSnapshot runtimeSnapshot(const GraphView& view) {
             view.nodes[edge.from].id, view.nodes[edge.to].id,
             edge.kind == PortKind::Audio
                 ? transmission::RuntimeConnectionKind::Audio
-                : transmission::RuntimeConnectionKind::Midi});
+                : transmission::RuntimeConnectionKind::Midi,
+            edge.fromPort, edge.toPort});
     }
     return snapshot;
 }
@@ -209,8 +216,12 @@ void cancelPointerInteraction(GtkWidget* canvas, GraphView& view) {
 
 Node* nodeAt(GraphView& view, double x, double y) {
     for (auto it = view.nodes.rbegin(); it != view.nodes.rend(); ++it) {
+        const auto ports = std::max(it->audioInputs + it->midiInputs,
+                                    it->audioOutputs + it->midiOutputs);
+        const auto height = std::max(
+            minimumNodeHeight, static_cast<double>(ports + 1) * portSpacing);
         if (x >= it->x && x <= it->x + nodeWidth &&
-            y >= it->y && y <= it->y + nodeHeight) return &*it;
+            y >= it->y && y <= it->y + height) return &*it;
     }
     return nullptr;
 }
@@ -227,7 +238,9 @@ double portY(const Node& node, PortKind kind, std::size_t port, bool output) {
     const auto midiPorts = output ? node.midiOutputs : node.midiInputs;
     const auto total = audioPorts + midiPorts;
     const auto index = kind == PortKind::Audio ? port : audioPorts + port;
-    return node.y + nodeHeight * static_cast<double>(index + 1) /
+    const auto height = std::max(
+        minimumNodeHeight, static_cast<double>(total + 1) * portSpacing);
+    return node.y + height * static_cast<double>(index + 1) /
                         static_cast<double>(total + 1);
 }
 
@@ -324,8 +337,8 @@ std::string midiOutputLabel(const std::string& destination) {
     return destination == "No connection" ? "MIDI Output (none)" : destination;
 }
 
-void drawNodeLabel(cairo_t* cr, const std::string& label, double x, double y) {
-    constexpr double availableWidth = nodeWidth - 30.0;
+void drawNodeLabel(cairo_t* cr, const std::string& label, double x, double y,
+                   double availableWidth = nodeWidth - 30.0) {
     cairo_text_extents_t extents{};
     cairo_text_extents(cr, label.c_str(), &extents);
     if (extents.width <= availableWidth) {
@@ -355,10 +368,27 @@ void addPluginFromDialog(GtkDialog*, gint response, gpointer data) {
             const auto stem = std::filesystem::path(path).stem().string();
             const auto id = "plugin-" + std::to_string(context->view->nextPluginId++);
             const auto offset = static_cast<double>(context->view->nodes.size() % 3) * 35.0;
+            transmission::Vst3PluginTopology topology;
+            std::string error;
+            if (!transmission::Vst3Inspector().inspectTopology(path, topology, error)) {
+                setStatus(*context->view, "Unable to inspect " + stem + ": " + error, true);
+                gtk_widget_destroy(context->dialog);
+                delete context;
+                return;
+            }
+            std::vector<std::string> inputLabels;
+            std::vector<std::string> outputLabels;
+            for (const auto& port : topology.audioInputs)
+                inputLabels.push_back(port.name);
+            for (const auto& port : topology.audioOutputs)
+                outputLabels.push_back(port.name);
             stopRuntime(*context->view, "Graph changed — press Play to compile and start audio");
             context->view->nodes.push_back({
-                id, stem, NodeKind::Plugin, 2, 2, 1, 1, 300.0 + offset,
-                300.0 + offset, path, ""});
+                id, topology.name.empty() ? stem : topology.name, NodeKind::Plugin,
+                topology.audioInputs.size(), topology.audioOutputs.size(),
+                topology.midiInputs, topology.midiOutputs, 300.0 + offset,
+                300.0 + offset, path, "", std::move(inputLabels),
+                std::move(outputLabels)});
             gtk_widget_queue_draw(context->canvas);
         }
     }
@@ -412,7 +442,7 @@ void addMidiNodeFromDialog(GtkDialog*, gint response, gpointer data) {
                                        : midiOutputLabel(selected),
                     context->input ? NodeKind::MidiInput : NodeKind::MidiOutput,
                     0, 0, context->input ? 0U : 1U, context->input ? 1U : 0U,
-                    300.0 + offset, 300.0 + offset, "", selected});
+                    300.0 + offset, 300.0 + offset, "", selected, {}, {}});
             }
             g_free(selected);
             gtk_widget_queue_draw(context->canvas);
@@ -932,7 +962,11 @@ gboolean drawGraph(GtkWidget*, cairo_t* cr, gpointer data) {
                               node.kind == NodeKind::MidiOutput;
         cairo_set_source_rgb(cr, endpoint ? 0.16 : 0.20, endpoint ? 0.34 : 0.23,
                              endpoint ? 0.28 : 0.38);
-        cairo_rectangle(cr, node.x, node.y, nodeWidth, nodeHeight);
+        const auto totalPorts = std::max(node.audioInputs + node.midiInputs,
+                                         node.audioOutputs + node.midiOutputs);
+        const auto height = std::max(
+            minimumNodeHeight, static_cast<double>(totalPorts + 1) * portSpacing);
+        cairo_rectangle(cr, node.x, node.y, nodeWidth, height);
         cairo_fill_preserve(cr);
         cairo_set_line_width(cr, 2.0);
         cairo_set_source_rgb(cr, endpoint ? 0.36 : 0.54, endpoint ? 0.72 : 0.58,
@@ -941,7 +975,10 @@ gboolean drawGraph(GtkWidget*, cairo_t* cr, gpointer data) {
         cairo_set_source_rgb(cr, 0.92, 0.94, 0.98);
         cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
         cairo_set_font_size(cr, 16.0);
-        drawNodeLabel(cr, node.label, node.x + 15.0, node.y + 31.0);
+        const bool hasAudioLabels =
+            !node.audioInputLabels.empty() || !node.audioOutputLabels.empty();
+        drawNodeLabel(cr, node.label, node.x + (hasAudioLabels ? 55.0 : 15.0),
+                      node.y + 31.0, hasAudioLabels ? 80.0 : nodeWidth - 30.0);
         for (std::size_t port = 0; port < node.audioInputs; ++port)
             drawPort(cr, node.x, portY(node, PortKind::Audio, port, false),
                      false, PortKind::Audio);
@@ -954,6 +991,22 @@ gboolean drawGraph(GtkWidget*, cairo_t* cr, gpointer data) {
         for (std::size_t port = 0; port < node.midiOutputs; ++port)
             drawPort(cr, node.x + nodeWidth,
                      portY(node, PortKind::Midi, port, true), true, PortKind::Midi);
+        cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL,
+                               CAIRO_FONT_WEIGHT_NORMAL);
+        cairo_set_font_size(cr, 10.0);
+        cairo_set_source_rgba(cr, 0.82, 0.87, 0.95, 0.9);
+        for (std::size_t port = 0; port < node.audioInputLabels.size(); ++port) {
+            cairo_move_to(cr, node.x + 11.0,
+                          portY(node, PortKind::Audio, port, false) + 3.5);
+            cairo_show_text(cr, node.audioInputLabels[port].c_str());
+        }
+        for (std::size_t port = 0; port < node.audioOutputLabels.size(); ++port) {
+            cairo_text_extents_t extents{};
+            cairo_text_extents(cr, node.audioOutputLabels[port].c_str(), &extents);
+            cairo_move_to(cr, node.x + nodeWidth - 11.0 - extents.width,
+                          portY(node, PortKind::Audio, port, true) + 3.5);
+            cairo_show_text(cr, node.audioOutputLabels[port].c_str());
+        }
     }
     return FALSE;
 }
@@ -1150,11 +1203,33 @@ bool validateProject(const transmission::UiProject& project, std::string& error)
 
 bool applyProject(GraphView& view, const transmission::UiProject& project,
                   std::string& error) {
-    if (!validateProject(project, error)) return false;
+    auto normalized = project;
+    std::unordered_map<std::string, std::vector<std::string>> inputLabels;
+    std::unordered_map<std::string, std::vector<std::string>> outputLabels;
+    for (auto& node : normalized.nodes) {
+        if (node.kind != transmission::UiProjectNodeKind::Plugin ||
+            node.pluginPath.empty()) continue;
+        transmission::Vst3PluginTopology topology;
+        if (!transmission::Vst3Inspector().inspectTopology(
+                node.pluginPath, topology, error)) {
+            error = "Unable to inspect " + node.pluginPath + ": " + error;
+            return false;
+        }
+        node.audioInputs = topology.audioInputs.size();
+        node.audioOutputs = topology.audioOutputs.size();
+        node.midiInputs = topology.midiInputs;
+        node.midiOutputs = topology.midiOutputs;
+        if (!topology.name.empty()) node.label = topology.name;
+        for (const auto& port : topology.audioInputs)
+            inputLabels[node.id].push_back(port.name);
+        for (const auto& port : topology.audioOutputs)
+            outputLabels[node.id].push_back(port.name);
+    }
+    if (!validateProject(normalized, error)) return false;
     std::unordered_map<std::string, std::size_t> indices;
     std::vector<Node> nodes;
-    nodes.reserve(project.nodes.size());
-    for (const auto& source : project.nodes) {
+    nodes.reserve(normalized.nodes.size());
+    for (const auto& source : normalized.nodes) {
         indices.emplace(source.id, nodes.size());
         const auto kind = static_cast<NodeKind>(static_cast<int>(source.kind));
         const auto label = kind == NodeKind::MidiOutput
@@ -1162,11 +1237,12 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
         nodes.push_back({
             source.id, label, kind,
             source.audioInputs, source.audioOutputs, source.midiInputs, source.midiOutputs,
-            source.x, source.y, source.pluginPath, source.externalPort});
+            source.x, source.y, source.pluginPath, source.externalPort,
+            inputLabels[source.id], outputLabels[source.id]});
     }
     std::vector<Edge> edges;
-    edges.reserve(project.connections.size());
-    for (const auto& source : project.connections) {
+    edges.reserve(normalized.connections.size());
+    for (const auto& source : normalized.connections) {
         edges.push_back({
             indices.at(source.from), indices.at(source.to), source.fromPort, source.toPort,
             source.kind == transmission::UiProjectConnectionKind::Audio
@@ -1176,8 +1252,8 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
     stopRuntime(view);
     view.nodes = std::move(nodes);
     view.edges = std::move(edges);
-    view.systemInputConnections = project.systemInputConnections;
-    view.systemOutputConnections = project.systemOutputConnections;
+    view.systemInputConnections = normalized.systemInputConnections;
+    view.systemOutputConnections = normalized.systemOutputConnections;
     view.dragging = static_cast<std::size_t>(-1);
     view.connectingFrom = static_cast<std::size_t>(-1);
     view.nextPluginId = 1;
@@ -1191,9 +1267,9 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
         ++view.nextMidiInputId;
     while (identifiers.contains("midi-output-" + std::to_string(view.nextMidiOutputId)))
         ++view.nextMidiOutputId;
-    gtk_spin_button_set_value(view.tempo, project.tempo);
-    gtk_spin_button_set_value(view.loopBars, project.loopBars);
-    gtk_toggle_button_set_active(view.loop, project.loopEnabled);
+    gtk_spin_button_set_value(view.tempo, normalized.tempo);
+    gtk_spin_button_set_value(view.loopBars, normalized.loopBars);
+    gtk_toggle_button_set_active(view.loop, normalized.loopEnabled);
     updateTransportDisplay(view);
     gtk_widget_queue_draw(view.canvas);
     return true;
@@ -1410,8 +1486,9 @@ void activate(GtkApplication* application, gpointer) {
             if (node.kind != transmission::RuntimeNodeKind::Plugin)
                 return std::make_unique<transmission::PassThroughProcessor>();
             auto processor = std::make_unique<transmission::Vst3Processor>();
-            if (!processor->initialize(node.pluginPath, config.channels,
-                                       config.blockSize, config.sampleRate, error))
+            if (!processor->initialize(
+                    node.pluginPath, node.audioInputs, node.audioOutputs,
+                    config.blockSize, config.sampleRate, error))
                 return nullptr;
             return processor;
         });

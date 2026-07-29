@@ -1,7 +1,30 @@
 #include "transmission/RoutedAudioGraph.h"
 
+#include <algorithm>
 #include <cassert>
 #include <memory>
+
+namespace {
+
+class EightToTwoProcessor final : public transmission::AudioProcessor {
+public:
+    void process(const float* const*, float* const* outputs,
+                 std::size_t channels, std::size_t frames) noexcept override {
+        for (std::size_t channel = 0; channel < channels; ++channel)
+            std::fill_n(outputs[channel], frames, 0.0F);
+    }
+
+    void process(const float* const* inputs, std::size_t inputChannels,
+                 float* const* outputs, std::size_t outputChannels,
+                 std::size_t frames) noexcept override {
+        assert(inputChannels == 8);
+        assert(outputChannels == 2);
+        std::copy_n(inputs[6], frames, outputs[0]);
+        std::copy_n(inputs[7], frames, outputs[1]);
+    }
+};
+
+} // namespace
 
 int main() {
     transmission::RoutedAudioGraph graph;
@@ -47,5 +70,33 @@ int main() {
     assert(midi.takeExternalMidiOutput(&outputEvent, 1) == 1);
     assert(outputEvent.port == 3);
     assert(outputEvent.data == inputEvent.data);
+
+    transmission::RoutedAudioGraph asymmetric;
+    assert(asymmetric.addNode(
+        "input", std::make_unique<transmission::PassThroughProcessor>(), 2, 2));
+    assert(asymmetric.addNode(
+        "mixer", std::make_unique<EightToTwoProcessor>(), 8, 2));
+    assert(asymmetric.addNode(
+        "output", std::make_unique<transmission::PassThroughProcessor>(), 2, 2));
+    assert(asymmetric.setExternalAudioInput("input"));
+    assert(asymmetric.setExternalAudioOutput("output"));
+    assert(asymmetric.connect("input", 0, "mixer", 6));
+    assert(asymmetric.connect("input", 1, "mixer", 7));
+    assert(asymmetric.connect("mixer", 0, "output", 0));
+    assert(asymmetric.connect("mixer", 1, "output", 1));
+    assert(!asymmetric.connect("input", 2, "mixer", 0));
+    assert(!asymmetric.connect("mixer", 0, "output", 2));
+    assert(asymmetric.prepare(2, 4));
+    const float left[] = {1.0F, 2.0F, 3.0F, 4.0F};
+    const float right[] = {5.0F, 6.0F, 7.0F, 8.0F};
+    const float* asymmetricInputs[] = {left, right};
+    float leftOutput[4]{};
+    float rightOutput[4]{};
+    float* asymmetricOutputs[] = {leftOutput, rightOutput};
+    asymmetric.process(asymmetricInputs, asymmetricOutputs, 2, 4);
+    for (std::size_t frame = 0; frame < 4; ++frame) {
+        assert(leftOutput[frame] == left[frame]);
+        assert(rightOutput[frame] == right[frame]);
+    }
     return 0;
 }

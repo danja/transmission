@@ -12,7 +12,10 @@ ctest --test-dir native/build --output-on-failure
 
 The audio callback must be added in a separate module. It must not use the control mutex or call into Node.js.
 
-`AudioProcessor` is the first real-time processing contract. Its `process` method receives caller-owned, preallocated channel buffers and is required to be `noexcept` and allocation-free.
+`AudioProcessor` is the first real-time processing contract. Its `process`
+methods receive caller-owned, preallocated channel buffers and are required to
+be `noexcept` and allocation-free. The asymmetric overload carries independent
+input and output channel counts for mixer and instrument topologies.
 
 `RoutedAudioGraph` provides the DAG form used for project execution. Its control side registers node IDs and edges, `prepare()` resolves a topological order and allocates buffers, and the callback performs only buffer mixing and processor calls.
 
@@ -50,14 +53,16 @@ native/build-vst3/transmission_vst3_offline \
 
 Expected output includes `inputChannels=2`, `outputChannels=2`, `frames=512`, and non-zero input/output RMS values. The probe owns setup-time allocations and parameter queues; the eventual audio callback must move those objects into a preallocated instance runtime.
 
-The reusable processor can also be exercised through `AudioGraph`:
+The reusable processor can also be exercised with its discovered channel
+topology:
 
 ```sh
 native/build-vst3/transmission_vst3_graph_probe \
   /tmp/transmission-vst3-sdk-build/VST3/Release/again-sample-accurate.vst3
 ```
 
-This reports `graphProcessors=1` and a non-zero output RMS after processing 512 frames.
+This reports `graphProcessors=1`, the discovered input/output channel counts,
+and a non-zero output RMS after processing 512 frames.
 
 The engine/device lifecycle probe uses the same processor through `AudioEngine`:
 

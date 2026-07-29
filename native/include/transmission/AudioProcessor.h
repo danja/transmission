@@ -22,6 +22,9 @@ public:
     virtual ~AudioProcessor() = default;
     virtual void process(const float* const* inputs, float* const* outputs,
                          std::size_t channels, std::size_t frames) noexcept = 0;
+    virtual void process(const float* const* inputs, std::size_t inputChannels,
+                         float* const* outputs, std::size_t outputChannels,
+                         std::size_t frames) noexcept;
     virtual void processWithMidi(const float* const* inputs, float* const* outputs,
                                  std::size_t channels, std::size_t frames,
                                  const MidiEvent* events, std::size_t eventCount) noexcept {
@@ -29,6 +32,10 @@ public:
         (void)eventCount;
         process(inputs, outputs, channels, frames);
     }
+    virtual void processWithMidi(const float* const* inputs, std::size_t inputChannels,
+                                 float* const* outputs, std::size_t outputChannels,
+                                 std::size_t frames, const MidiEvent* events,
+                                 std::size_t eventCount) noexcept;
     virtual bool setParameter(std::uint32_t /*parameterId*/, double /*normalizedValue*/,
                               std::string& error) {
         error = "processor does not expose parameters";

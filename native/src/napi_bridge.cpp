@@ -97,6 +97,12 @@ bool getArray(napi_env env, napi_value object, const char* name, napi_value& val
     return isArray;
 }
 
+bool getObject(napi_env env, napi_value object, const char* name, napi_value& value) {
+    napi_valuetype type = napi_undefined;
+    return napi_get_named_property(env, object, name, &value) == napi_ok &&
+           napi_typeof(env, value, &type) == napi_ok && type == napi_object;
+}
+
 napi_value createEngine(napi_env env, napi_callback_info info) {
     napi_value argv[1];
     std::size_t argc = 1;
@@ -158,6 +164,16 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
         std::string type;
         if (!getString(env, node, "id", id)) return fail(env, "Native graph node id is required");
         getString(env, node, "type", type);
+        std::size_t audioInputs = 0;
+        std::size_t audioOutputs = 0;
+        napi_value ports;
+        double portCount = 0.0;
+        if (getObject(env, node, "ports", ports)) {
+            if (getNumber(env, ports, "audioInputs", portCount) && portCount >= 0.0)
+                audioInputs = static_cast<std::size_t>(portCount);
+            if (getNumber(env, ports, "audioOutputs", portCount) && portCount >= 0.0)
+                audioOutputs = static_cast<std::size_t>(portCount);
+        }
         std::unique_ptr<transmission::AudioProcessor> processor;
         napi_value settings;
         std::string pluginPath;
@@ -169,7 +185,8 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
 #ifdef TRANSMISSION_NAPI_WITH_VST3
             auto vst = std::make_unique<transmission::Vst3Processor>();
             std::string error;
-            if (!vst->initialize(pluginPath, engineChannels, engineFrames, engineSampleRate, error))
+            if (!vst->initialize(pluginPath, audioInputs, audioOutputs,
+                                 engineFrames, engineSampleRate, error))
                 return fail(env, error.c_str());
             processor = std::move(vst);
 #else
@@ -178,10 +195,19 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
         } else {
             processor = std::make_unique<transmission::PassThroughProcessor>();
         }
-        if (!routed->addNode(id, std::move(processor)))
+        if (type == "AudioInput" || type == "AudioOutput" ||
+            type == "system-input" || type == "system-output") {
+            audioInputs = engineChannels;
+            audioOutputs = engineChannels;
+        }
+        if (!routed->addNode(id, std::move(processor), audioInputs, audioOutputs))
             return fail(env, "Unable to add native graph node");
-        if (type == "system-input" && !routed->setExternalMidiInput(id))
-            return fail(env, "Unable to configure native MIDI input endpoint");
+        if ((type == "AudioInput" || type == "system-input") &&
+            !routed->setExternalAudioInput(id))
+            return fail(env, "Unable to configure native audio input endpoint");
+        if ((type == "AudioOutput" || type == "system-output") &&
+            !routed->setExternalAudioOutput(id))
+            return fail(env, "Unable to configure native audio output endpoint");
     }
     std::uint32_t connectionCount = 0;
     napi_get_array_length(env, connections, &connectionCount);
@@ -193,8 +219,16 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
         std::string to;
         if (!getString(env, connection, "kind", kind) || !getString(env, connection, "from", from) ||
             !getString(env, connection, "to", to)) return fail(env, "Invalid native graph connection");
-        if (kind == "audio" && !routed->connect(from, to))
-            return fail(env, "Unable to connect native audio graph");
+        if (kind == "audio") {
+            double fromPortValue = 0.0;
+            double toPortValue = 0.0;
+            if (!getNumber(env, connection, "fromPort", fromPortValue) ||
+                !getNumber(env, connection, "toPort", toPortValue) ||
+                fromPortValue < 0.0 || toPortValue < 0.0 ||
+                !routed->connect(from, static_cast<std::size_t>(fromPortValue),
+                                 to, static_cast<std::size_t>(toPortValue)))
+                return fail(env, "Unable to connect native audio graph");
+        }
         if (kind == "midi" && !routed->connectMidi(from, to))
             return fail(env, "Unable to connect native MIDI graph");
     }

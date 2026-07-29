@@ -5,13 +5,17 @@
 
 namespace transmission {
 
-bool RoutedAudioGraph::addNode(std::string id, std::unique_ptr<AudioProcessor> processor) {
+bool RoutedAudioGraph::addNode(std::string id, std::unique_ptr<AudioProcessor> processor,
+                               std::size_t audioInputs, std::size_t audioOutputs) {
     if (id.empty() || !processor || preparedChannels_ != 0 ||
         std::any_of(nodes_.begin(), nodes_.end(), [&id](const auto& node) { return node.id == id; }))
         return false;
     Node node;
     node.id = std::move(id);
     node.processor = std::move(processor);
+    node.audioInputs = audioInputs;
+    node.audioOutputs = audioOutputs;
+    node.inheritDeviceChannels = audioInputs == 0 && audioOutputs == 0;
     nodes_.push_back(std::move(node));
     return true;
 }
@@ -23,9 +27,53 @@ bool RoutedAudioGraph::connect(const std::string& from, const std::string& to) {
     if (source == nodes_.end() || destination == nodes_.end()) return false;
     const auto sourceIndex = static_cast<std::size_t>(source - nodes_.begin());
     const auto destinationIndex = static_cast<std::size_t>(destination - nodes_.begin());
-    if (std::find(source->outgoing.begin(), source->outgoing.end(), destinationIndex) != source->outgoing.end()) return false;
-    source->outgoing.push_back(destinationIndex);
-    destination->incoming.push_back(sourceIndex);
+    if (std::any_of(source->outgoing.begin(), source->outgoing.end(),
+                    [destinationIndex](const auto& route) {
+                        return route.node == destinationIndex && route.allChannels;
+                    })) return false;
+    source->outgoing.push_back({destinationIndex, 0, 0, true});
+    destination->incoming.push_back({sourceIndex, 0, 0, true});
+    return true;
+}
+
+bool RoutedAudioGraph::connect(const std::string& from, std::size_t fromPort,
+                               const std::string& to, std::size_t toPort) {
+    if (preparedChannels_ != 0 || from == to) return false;
+    auto source = std::find_if(nodes_.begin(), nodes_.end(),
+                               [&from](const auto& node) { return node.id == from; });
+    auto destination = std::find_if(nodes_.begin(), nodes_.end(),
+                                    [&to](const auto& node) { return node.id == to; });
+    if (source == nodes_.end() || destination == nodes_.end() ||
+        (!source->inheritDeviceChannels && fromPort >= source->audioOutputs) ||
+        (!destination->inheritDeviceChannels && toPort >= destination->audioInputs))
+        return false;
+    const auto sourceIndex = static_cast<std::size_t>(source - nodes_.begin());
+    const auto destinationIndex = static_cast<std::size_t>(destination - nodes_.begin());
+    if (std::any_of(source->outgoing.begin(), source->outgoing.end(),
+                    [&](const auto& route) {
+                        return route.node == destinationIndex && !route.allChannels &&
+                               route.fromPort == fromPort && route.toPort == toPort;
+                    })) return false;
+    source->outgoing.push_back({destinationIndex, fromPort, toPort, false});
+    destination->incoming.push_back({sourceIndex, fromPort, toPort, false});
+    return true;
+}
+
+bool RoutedAudioGraph::setExternalAudioInput(const std::string& nodeId) {
+    if (preparedChannels_ != 0) return false;
+    auto node = std::find_if(nodes_.begin(), nodes_.end(),
+                             [&nodeId](const auto& candidate) { return candidate.id == nodeId; });
+    if (node == nodes_.end()) return false;
+    node->externalAudioInput = true;
+    return true;
+}
+
+bool RoutedAudioGraph::setExternalAudioOutput(const std::string& nodeId) {
+    if (preparedChannels_ != 0) return false;
+    auto node = std::find_if(nodes_.begin(), nodes_.end(),
+                             [&nodeId](const auto& candidate) { return candidate.id == nodeId; });
+    if (node == nodes_.end()) return false;
+    node->externalAudioOutput = true;
     return true;
 }
 
@@ -92,20 +140,27 @@ bool RoutedAudioGraph::prepare(std::size_t channels, std::size_t frames) noexcep
         std::vector<std::vector<std::size_t>> dependencies(nodes_.size());
         std::vector<std::size_t> ready;
         for (std::size_t index = 0; index < nodes_.size(); ++index) {
-            dependencies[index] = nodes_[index].outgoing;
+            for (const auto& route : nodes_[index].outgoing)
+                if (std::find(dependencies[index].begin(), dependencies[index].end(),
+                              route.node) == dependencies[index].end())
+                    dependencies[index].push_back(route.node);
             for (const auto destination : nodes_[index].midiOutgoing)
                 if (std::find(dependencies[index].begin(), dependencies[index].end(),
                               destination) == dependencies[index].end())
                     dependencies[index].push_back(destination);
             for (const auto destination : dependencies[index]) ++incoming[destination];
-            nodes_[index].input.assign(channels * frames, 0.0F);
-            nodes_[index].output.assign(channels * frames, 0.0F);
-            nodes_[index].inputPointers.resize(channels);
-            nodes_[index].outputPointers.resize(channels);
-            for (std::size_t channel = 0; channel < channels; ++channel) {
-                nodes_[index].inputPointers[channel] = nodes_[index].input.data() + channel * frames;
-                nodes_[index].outputPointers[channel] = nodes_[index].output.data() + channel * frames;
+            if (nodes_[index].inheritDeviceChannels) {
+                nodes_[index].audioInputs = channels;
+                nodes_[index].audioOutputs = channels;
             }
+            nodes_[index].input.assign(nodes_[index].audioInputs * frames, 0.0F);
+            nodes_[index].output.assign(nodes_[index].audioOutputs * frames, 0.0F);
+            nodes_[index].inputPointers.resize(nodes_[index].audioInputs);
+            nodes_[index].outputPointers.resize(nodes_[index].audioOutputs);
+            for (std::size_t channel = 0; channel < nodes_[index].audioInputs; ++channel)
+                nodes_[index].inputPointers[channel] = nodes_[index].input.data() + channel * frames;
+            for (std::size_t channel = 0; channel < nodes_[index].audioOutputs; ++channel)
+                nodes_[index].outputPointers[channel] = nodes_[index].output.data() + channel * frames;
         }
         for (std::size_t index = 0; index < nodes_.size(); ++index)
             if (incoming[index] == 0) ready.push_back(index);
@@ -146,6 +201,10 @@ void RoutedAudioGraph::processWithMidi(const float* const* inputs, float* const*
                                        const MidiEvent* events, std::size_t eventCount) noexcept {
     if (!inputs || !outputs || channels != preparedChannels_ || frames != preparedFrames_) return;
     externalMidiOutputCount_ = 0;
+    const bool explicitAudioInputs = std::any_of(
+        nodes_.begin(), nodes_.end(), [](const auto& node) { return node.externalAudioInput; });
+    const bool explicitAudioOutputs = std::any_of(
+        nodes_.begin(), nodes_.end(), [](const auto& node) { return node.externalAudioOutput; });
     for (auto& node : nodes_) {
         node.processor->applyPendingParameters();
         std::fill(node.input.begin(), node.input.end(), 0.0F);
@@ -162,13 +221,15 @@ void RoutedAudioGraph::processWithMidi(const float* const* inputs, float* const*
     }
     for (const auto index : executionOrder_) {
         auto& node = nodes_[index];
-        if (node.incoming.empty()) {
-            for (std::size_t channel = 0; channel < channels; ++channel)
+        if (node.externalAudioInput || (!explicitAudioInputs && node.incoming.empty())) {
+            for (std::size_t channel = 0;
+                 channel < std::min(channels, node.audioInputs); ++channel)
                 std::memcpy(node.input.data() + channel * frames, inputs[channel], frames * sizeof(float));
         }
-        node.processor->processWithMidi(node.inputPointers.data(), node.outputPointers.data(),
-                                        channels, frames, node.midiInput.data(),
-                                        node.midiInputCount);
+        node.processor->processWithMidi(
+            node.inputPointers.data(), node.audioInputs,
+            node.outputPointers.data(), node.audioOutputs, frames,
+            node.midiInput.data(), node.midiInputCount);
         const auto midiOutputCount = node.processor->takeOutputMidi(
             node.midiOutput.data(), node.midiOutput.size());
         if (node.externalMidiOutputPort != static_cast<std::size_t>(-1)) {
@@ -188,10 +249,17 @@ void RoutedAudioGraph::processWithMidi(const float* const* inputs, float* const*
                         target.midiInput.begin() + static_cast<std::ptrdiff_t>(target.midiInputCount));
             target.midiInputCount += copied;
         }
-        for (const auto destination : node.outgoing) {
-            for (std::size_t channel = 0; channel < channels; ++channel) {
-                const auto* source = node.output.data() + channel * frames;
-                auto* target = nodes_[destination].input.data() + channel * frames;
+        for (const auto& route : node.outgoing) {
+            auto& destination = nodes_[route.node];
+            const auto routeCount = route.allChannels
+                ? std::min(node.audioOutputs, destination.audioInputs) : std::size_t{1};
+            for (std::size_t offset = 0; offset < routeCount; ++offset) {
+                const auto sourcePort = route.allChannels ? offset : route.fromPort;
+                const auto targetPort = route.allChannels ? offset : route.toPort;
+                if (sourcePort >= node.audioOutputs || targetPort >= destination.audioInputs)
+                    continue;
+                const auto* source = node.output.data() + sourcePort * frames;
+                auto* target = destination.input.data() + targetPort * frames;
                 for (std::size_t frame = 0; frame < frames; ++frame) target[frame] += source[frame];
             }
         }
@@ -199,8 +267,10 @@ void RoutedAudioGraph::processWithMidi(const float* const* inputs, float* const*
     for (std::size_t channel = 0; channel < channels; ++channel)
         std::fill(outputs[channel], outputs[channel] + frames, 0.0F);
     for (const auto& node : nodes_) {
-        if (!node.outgoing.empty()) continue;
-        for (std::size_t channel = 0; channel < channels; ++channel)
+        if (!node.externalAudioOutput &&
+            (explicitAudioOutputs || !node.outgoing.empty())) continue;
+        for (std::size_t channel = 0;
+             channel < std::min(channels, node.audioOutputs); ++channel)
             for (std::size_t frame = 0; frame < frames; ++frame)
                 outputs[channel][frame] += node.output[channel * frames + frame];
     }

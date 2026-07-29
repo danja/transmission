@@ -13,6 +13,8 @@
 #include <array>
 #include <atomic>
 #include <memory>
+#include <utility>
+#include <vector>
 
 namespace transmission {
 
@@ -29,7 +31,10 @@ struct Vst3Processor::Impl {
     Steinberg::Vst::ParameterChanges outputParameterChanges{32};
     Steinberg::Vst::ProcessContext processContext{};
     std::string name;
-    std::size_t channels = 0;
+    std::size_t inputChannels = 0;
+    std::size_t outputChannels = 0;
+    std::vector<std::pair<Steinberg::int32, Steinberg::int32>> inputLocations;
+    std::vector<std::pair<Steinberg::int32, Steinberg::int32>> outputLocations;
     std::size_t frames = 0;
     bool active = false;
     bool processing = false;
@@ -59,9 +64,17 @@ Vst3Processor::~Vst3Processor() = default;
 bool Vst3Processor::initialize(const std::string& modulePath, std::size_t channels,
                                std::size_t frames, double sampleRate,
                                std::string& error) {
+    return initialize(modulePath, channels, channels, frames, sampleRate, error);
+}
+
+bool Vst3Processor::initialize(const std::string& modulePath,
+                               std::size_t inputChannels,
+                               std::size_t outputChannels,
+                               std::size_t frames, double sampleRate,
+                               std::string& error) {
     impl_.reset();
-    if (modulePath.empty() || channels == 0 || frames == 0 || sampleRate <= 0.0) {
-        error = "module path, channels, frames, and sample rate must be valid";
+    if (modulePath.empty() || outputChannels == 0 || frames == 0 || sampleRate <= 0.0) {
+        error = "module path, output channels, frames, and sample rate must be valid";
         return false;
     }
 
@@ -137,13 +150,21 @@ bool Vst3Processor::initialize(const std::string& modulePath, std::size_t channe
         return false;
     }
     candidate->hasAudioInput = inputBusCount > 0 && candidate->processData.numInputs > 0;
-    if (candidate->processData.numOutputs < 1 ||
-        (candidate->hasAudioInput &&
-         candidate->processData.inputs[0].numChannels < static_cast<Steinberg::int32>(channels)) ||
-        candidate->processData.outputs[0].numChannels < static_cast<Steinberg::int32>(channels)) {
+    for (Steinberg::int32 bus = 0; bus < candidate->processData.numInputs; ++bus)
+        for (Steinberg::int32 channel = 0;
+             channel < candidate->processData.inputs[bus].numChannels; ++channel)
+            candidate->inputLocations.emplace_back(bus, channel);
+    for (Steinberg::int32 bus = 0; bus < candidate->processData.numOutputs; ++bus)
+        for (Steinberg::int32 channel = 0;
+             channel < candidate->processData.outputs[bus].numChannels; ++channel)
+            candidate->outputLocations.emplace_back(bus, channel);
+    if (candidate->outputLocations.size() < outputChannels ||
+        candidate->inputLocations.size() < inputChannels) {
         error = "VST3 effect does not provide the requested channel count";
         return false;
     }
+    candidate->inputLocations.resize(inputChannels);
+    candidate->outputLocations.resize(outputChannels);
     if (candidate->component->setActive(true) != Steinberg::kResultOk) {
         error = "VST3 component activation failed";
         return false;
@@ -158,7 +179,8 @@ bool Vst3Processor::initialize(const std::string& modulePath, std::size_t channe
     }
     candidate->processing = true;
     candidate->name = selected.name();
-    candidate->channels = channels;
+    candidate->inputChannels = inputChannels;
+    candidate->outputChannels = outputChannels;
     candidate->frames = frames;
     candidate->processContext.sampleRate = sampleRate;
     candidate->processContext.state = Steinberg::Vst::ProcessContext::kPlaying |
@@ -239,24 +261,51 @@ void Vst3Processor::process(const float* const* inputs, float* const* outputs,
 void Vst3Processor::processWithMidi(const float* const* inputs, float* const* outputs,
                                     std::size_t channels, std::size_t frames,
                                     const MidiEvent* events, std::size_t eventCount) noexcept {
-    if (!ready() || !inputs || !outputs || channels != impl_->channels ||
-        frames != impl_->frames) {
-        if (outputs) {
+    if (!impl_ || channels != impl_->inputChannels ||
+        channels != impl_->outputChannels) {
+        if (outputs)
             for (std::size_t channel = 0; channel < channels; ++channel)
+                if (outputs[channel])
+                    std::fill_n(outputs[channel], frames, 0.0F);
+        return;
+    }
+    processWithMidi(inputs, impl_->inputChannels, outputs, impl_->outputChannels,
+                    frames, events, eventCount);
+}
+
+void Vst3Processor::process(const float* const* inputs, std::size_t inputChannels,
+                            float* const* outputs, std::size_t outputChannels,
+                            std::size_t frames) noexcept {
+    processWithMidi(inputs, inputChannels, outputs, outputChannels, frames, nullptr, 0);
+}
+
+void Vst3Processor::processWithMidi(
+    const float* const* inputs, std::size_t inputChannels,
+    float* const* outputs, std::size_t outputChannels, std::size_t frames,
+    const MidiEvent* events, std::size_t eventCount) noexcept {
+    if (!ready() || (inputChannels != 0 && !inputs) || !outputs ||
+        inputChannels != impl_->inputChannels ||
+        outputChannels != impl_->outputChannels || frames != impl_->frames) {
+        if (outputs) {
+            for (std::size_t channel = 0; channel < outputChannels; ++channel)
                 if (outputs[channel]) std::fill(outputs[channel], outputs[channel] + frames, 0.0F);
         }
         return;
     }
     impl_->processData.numSamples = static_cast<Steinberg::int32>(frames);
     impl_->processData.processContext = &impl_->processContext;
-    for (std::size_t channel = 0; channel < channels; ++channel) {
-        if (!inputs[channel] || !outputs[channel]) return;
-        if (impl_->hasAudioInput)
-            impl_->processData.setChannelBuffer(Steinberg::Vst::kInput, 0,
-                                                static_cast<Steinberg::int32>(channel),
-                                                const_cast<float*>(inputs[channel]));
-        impl_->processData.setChannelBuffer(Steinberg::Vst::kOutput, 0,
-                                             static_cast<Steinberg::int32>(channel), outputs[channel]);
+    for (std::size_t channel = 0; channel < inputChannels; ++channel) {
+        if (!inputs[channel]) return;
+        const auto [bus, busChannel] = impl_->inputLocations[channel];
+        impl_->processData.setChannelBuffer(
+            Steinberg::Vst::kInput, bus, busChannel,
+            const_cast<float*>(inputs[channel]));
+    }
+    for (std::size_t channel = 0; channel < outputChannels; ++channel) {
+        if (!outputs[channel]) return;
+        const auto [bus, busChannel] = impl_->outputLocations[channel];
+        impl_->processData.setChannelBuffer(
+            Steinberg::Vst::kOutput, bus, busChannel, outputs[channel]);
     }
     impl_->inputEvents.clear();
     impl_->outputEvents.clear();
@@ -298,7 +347,7 @@ void Vst3Processor::processWithMidi(const float* const* inputs, float* const* ou
         impl_->hasParameterChanges ? &impl_->parameterChanges : nullptr;
     impl_->processData.outputParameterChanges = &impl_->outputParameterChanges;
     if (impl_->processor->process(impl_->processData) != Steinberg::kResultOk) {
-        for (std::size_t channel = 0; channel < channels; ++channel)
+        for (std::size_t channel = 0; channel < outputChannels; ++channel)
             if (outputs[channel]) std::fill(outputs[channel], outputs[channel] + frames, 0.0F);
     }
 }

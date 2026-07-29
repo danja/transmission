@@ -25,6 +25,9 @@ public:
     bool initialize(const std::string& modulePath, std::size_t channels,
                     std::size_t frames, double sampleRate,
                     std::string& error);
+    bool initialize(const std::string& modulePath, std::size_t inputChannels,
+                    std::size_t outputChannels, std::size_t frames,
+                    double sampleRate, std::string& error);
     bool ready() const noexcept;
     const std::string& pluginName() const noexcept;
 
@@ -38,9 +41,16 @@ public:
 
     void process(const float* const* inputs, float* const* outputs,
                  std::size_t channels, std::size_t frames) noexcept override;
+    void process(const float* const* inputs, std::size_t inputChannels,
+                 float* const* outputs, std::size_t outputChannels,
+                 std::size_t frames) noexcept override;
     void processWithMidi(const float* const* inputs, float* const* outputs,
                          std::size_t channels, std::size_t frames,
                          const MidiEvent* events, std::size_t eventCount) noexcept override;
+    void processWithMidi(const float* const* inputs, std::size_t inputChannels,
+                         float* const* outputs, std::size_t outputChannels,
+                         std::size_t frames, const MidiEvent* events,
+                         std::size_t eventCount) noexcept override;
 
 private:
     struct Impl;

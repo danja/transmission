@@ -6,6 +6,29 @@
 
 namespace transmission {
 
+void AudioProcessor::process(const float* const* inputs, std::size_t inputChannels,
+                             float* const* outputs, std::size_t outputChannels,
+                             std::size_t frames) noexcept {
+    if (inputChannels == outputChannels) {
+        process(inputs, outputs, inputChannels, frames);
+        return;
+    }
+    if (!outputs) return;
+    for (std::size_t channel = 0; channel < outputChannels; ++channel)
+        if (outputs[channel]) std::fill_n(outputs[channel], frames, 0.0F);
+}
+
+void AudioProcessor::processWithMidi(
+    const float* const* inputs, std::size_t inputChannels,
+    float* const* outputs, std::size_t outputChannels, std::size_t frames,
+    const MidiEvent* events, std::size_t eventCount) noexcept {
+    if (inputChannels == outputChannels) {
+        processWithMidi(inputs, outputs, inputChannels, frames, events, eventCount);
+        return;
+    }
+    process(inputs, inputChannels, outputs, outputChannels, frames);
+}
+
 void PassThroughProcessor::process(const float* const* inputs, float* const* outputs,
                                    std::size_t channels, std::size_t frames) noexcept {
     if (!inputs || !outputs) return;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
+#include <limits>
 
 namespace transmission {
 
@@ -43,7 +44,9 @@ std::unique_ptr<RoutedAudioGraph> GraphRuntimeCompiler::compile(
             return nullptr;
         }
         const auto key = std::to_string(static_cast<int>(connection.kind)) + ":" +
-                         connection.from + ":" + connection.to;
+                         connection.from + ":" + connection.to + ":" +
+                         std::to_string(connection.fromPort) + ":" +
+                         std::to_string(connection.toPort);
         if (!typedEdges.emplace(key).second) continue;
         auto& dependencies = outgoing[from->second];
         if (std::find(dependencies.begin(), dependencies.end(), to->second) ==
@@ -76,8 +79,26 @@ std::unique_ptr<RoutedAudioGraph> GraphRuntimeCompiler::compile(
             if (error.empty()) error = "unable to create processor for node: " + node.id;
             return nullptr;
         }
-        if (!graph->addNode(node.id, std::move(processor))) {
+        std::size_t audioInputs = node.audioInputs;
+        std::size_t audioOutputs = node.audioOutputs;
+        if (node.kind == RuntimeNodeKind::SystemInput ||
+            node.kind == RuntimeNodeKind::SystemOutput) {
+            audioInputs = config.channels;
+            audioOutputs = config.channels;
+        }
+        if (!graph->addNode(node.id, std::move(processor),
+                            audioInputs, audioOutputs)) {
             error = "unable to add runtime graph node: " + node.id;
+            return nullptr;
+        }
+        if (node.kind == RuntimeNodeKind::SystemInput &&
+            !graph->setExternalAudioInput(node.id)) {
+            error = "unable to configure the runtime audio input endpoint";
+            return nullptr;
+        }
+        if (node.kind == RuntimeNodeKind::SystemOutput &&
+            !graph->setExternalAudioOutput(node.id)) {
+            error = "unable to configure the runtime audio output endpoint";
             return nullptr;
         }
         if ((node.kind == RuntimeNodeKind::SystemInput ||
@@ -96,11 +117,17 @@ std::unique_ptr<RoutedAudioGraph> GraphRuntimeCompiler::compile(
     typedEdges.clear();
     for (const auto& connection : snapshot.connections) {
         const auto key = std::to_string(static_cast<int>(connection.kind)) + ":" +
-                         connection.from + ":" + connection.to;
+                         connection.from + ":" + connection.to + ":" +
+                         std::to_string(connection.fromPort) + ":" +
+                         std::to_string(connection.toPort);
         if (!typedEdges.emplace(key).second) continue;
+        const auto noPort = std::numeric_limits<std::size_t>::max();
         const bool connected = connection.kind == RuntimeConnectionKind::Audio
-                                   ? graph->connect(connection.from, connection.to)
-                                   : graph->connectMidi(connection.from, connection.to);
+            ? (connection.fromPort == noPort || connection.toPort == noPort
+                   ? graph->connect(connection.from, connection.to)
+                   : graph->connect(connection.from, connection.fromPort,
+                                    connection.to, connection.toPort))
+            : graph->connectMidi(connection.from, connection.to);
         if (!connected) {
             error = "unable to compile runtime connection: " + connection.from +
                     " -> " + connection.to;

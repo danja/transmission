@@ -1,4 +1,13 @@
-Transmission is being designed to be a generative music workstation.
+# Project origins
 
-It draws on two existing projects : [Transmissions](https://github.com/danja/transmissions) which is a pipeline processing framework I put together largely for text processing, plus [Downspout](https://github.com/danja/downspout) which is a set of VST plugins with an emphasis on generative algorithms.
+Transmission combines ideas from two earlier projects:
 
+- [Transmissions](https://github.com/danja/transmissions), a graph-oriented
+  pipeline framework whose RDF model influenced Transmission's project format;
+- [Downspout](https://github.com/danja/downspout), a VST3 collection emphasizing
+  generative algorithms and interoperable musical systems.
+
+Audio processing required a new native, real-time-safe engine rather than the
+asynchronous event-processing model used by Transmissions. The resulting split
+between a Node.js control plane and C++ audio engine is described in the
+[architecture document](architecture.md).

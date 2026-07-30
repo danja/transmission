@@ -1,304 +1,89 @@
 # Transmission
 
-Transmission is being designed to be a generative music workstation.
+**A Generative Audio Workstation for Linux.**
 
-It is actually a modular Linux VST3 transmission host primarily intended to use generative plugins such as those of [Downspout](https://danja.github.io/downspout/)
+Transmission is a graph-based environment for building musical systems from
+VST3 plugins. Instead of arranging every note on a timeline, you connect MIDI
+generators, instruments, effects, mixers, hardware ports, and system audio into
+patches that can evolve while the transport runs.
 
+It is especially well suited to generative plugins such as
+[Downspout](https://danja.github.io/downspout/), while remaining a general
+Linux VST3 host.
 
+## What you can do
 
-## Implemented foundation
+- Build typed audio and MIDI graphs by connecting visible nodes.
+- Use autonomous, probabilistic, and audio-reactive VST3 plugins.
+- Open plugins' native editors and hear parameter changes during playback.
+- Connect JACK or PipeWire-JACK audio and MIDI ports.
+- Save complete patches as readable RDF Turtle (`.ttl`) files.
+- Render a patch offline to WAV or MP3.
+- Ask an LLM through MCP to discover plugins, compare their behaviour, design
+  compatible chains, edit projects, and validate the resulting graph.
 
-The project is split between a Node.js control plane and a C++ real-time engine. RDF/Turtle projects are parsed into a typed graph, compiled and then supplied to the native engine through a control-rate bridge.
+## Quick start
 
-It draws on an existing project : [Transmissions](https://github.com/danja/transmissions) which is a pipeline processing framework I put together largely for text processing. However for audio it needed to be realtime and native. 
+Transmission is currently built from source. Follow the
+[installation guide](docs/installation.md) for system packages, the Steinberg
+VST3 SDK, audio setup, and MCP registration.
 
-The current control, persistence, threading, and audio paths are described in
-[docs/architecture.md](docs/architecture.md), with a standalone
-[Mermaid diagram](docs/architecture.mermaid).
-
-- RDF/Turtle graph parsing, validation, compilation, and persistence
-- Modular plugin registry and VST3 bundle discovery
-- Native preallocated audio processor and graph contracts
-- Native routed DAG graph with fan-out/fan-in mixing and cycle rejection
-- Deterministic fake audio device for offline testing
-- DAW transport with start/stop, seeking, tempo maps, and looping
-- Optional Steinberg SDK-backed VST3 metadata inspection, offline block processing, and graph integration
-- Optional JACK audio-device backend with callback-safe port bridging
-- JACK MIDI input events with bounded channel-message forwarding
-- VST3 note-on/note-off event conversion
-- Optional Node N-API control addon
-- Optional native GTK graph editor with system input/output nodes
-- Node project sessions with undo/redo and a control-plane engine session
-
-## Development
-
-Download the [Steinberg VST 3 SDK](https://www.steinberg.net/developers/vstsdk/)
-and extract it into `~/VST_SDK`. The build expects the SDK source tree at
-`~/VST_SDK/vst3sdk`.
+With the prerequisites installed:
 
 ```sh
 npm install
-npm test
-npm run check
-cmake -S native -B native/build
-cmake --build native/build
-ctest --test-dir native/build --output-on-failure
-```
-
-The complete local build, including JavaScript checks/tests, native CTest, JACK tools, and the GTK/JACK/VST3 UI, is available as:
-
-```sh
 ./build.sh
 ./transmission
 ```
 
-The native engine currently provides lifecycle, transport, linear and routed graph execution, fake-device, VST3 discovery, metadata inspection, a deterministic VST3 processing probe, a reusable VST3 processor inside `AudioGraph`, and an optional N-API control addon. The VST3-enabled addon can construct routed processors directly from compiled node settings. The native UI includes a modular graph canvas, VST3 browsing/editor embedding, and JACK-backed external connection management for system I/O nodes.
+Transmission discovers VST3 bundles installed in `~/.vst3`.
 
-Build and smoke-test the optional Node addon:
+## Basic workflow
 
-```sh
-npm run native:configure:napi
-npm run native:build:napi
-node -e "const n=require('./native/build-napi/transmission_native.node'); n.createEngine(); n.loadProject({}); n.configureTransport({sampleRate:48000,tempoMap:[{beat:0,bpm:120}]}); console.log(n.getDiagnostics()); n.disposeEngine()"
-```
+1. Right-click the graph background to add a VST3 plugin or MIDI endpoint.
+2. Drag between matching audio or MIDI ports to connect nodes.
+3. Double-click a plugin to open its native editor.
+4. Double-click System Input or System Output to select JACK connections.
+5. Set tempo and loop length, then press **Play**.
+6. Use **File → Save** to store the graph as Turtle.
+7. Use **File → Render Audio** to export a chosen number of bars.
 
-The addon exposes control-rate lifecycle, transport, MIDI, and diagnostics calls. Audio buffers and real-time callbacks stay in native code.
+WAV rendering is built in. MP3 rendering requires `ffmpeg`.
 
-To try the first native graph UI slice:
+Example projects are available in [`patches/`](patches/), including a drum and
+bass system, an ensemble, and a long-form vibratone patch.
 
-```sh
-cmake -S native -B native/build-ui -DTRANSMISSION_WITH_GTK_UI=ON
-cmake --build native/build-ui --target transmission_graph_ui
-native/build-ui/transmission_graph_ui
-```
+## Generative control through MCP
 
-The native canvas renders typed audio and MIDI topology, compiles execution data through a control-thread graph compiler, starts the VST3 graph on JACK from the Play button, preserves and applies external system-port choices, and reports runtime failures in the window. VST3 MIDI output is routed through bounded native buffers, so generator-to-instrument chains execute without callback allocation. It also discovers bundles from `~/.vst3`, opens native plugin editors, provides node context menus, supports dragging nodes, creates type-compatible arcs, and provides JACK/PipeWire period, render-ahead, and xrun diagnostics under Settings → Audio. Render ahead uses a preallocated lock-free queue and dedicated graph worker with selectable Off/1/2/4-block latency; two blocks is the default. Period requests are verified against the value exposed to JACK clients; if PipeWire acknowledges a request without adopting it, Transmission restores the previous working period and reports the mismatch instead of starting a silent client.
+Transmission includes an MCP server and an RDF-backed plugin catalogue. This
+lets an MCP client reason about musical behaviour rather than relying only on
+plugin names and bus counts.
 
-Right-clicking the canvas also offers Add MIDI Input and Add MIDI Output.
-Each action lists the compatible JACK MIDI ports, creates a typed graph
-endpoint, and persists the selected external port. MIDI endpoints use dedicated
-bounded JACK buffers and never contribute audio to the graph.
+For example:
 
-The File menu provides New, Open, Save, Save As, Render Audio, and Quit, with
-the usual keyboard shortcuts. Render Audio (`Ctrl+Shift+R`) runs the compiled
-graph faster than real time without JACK, starting at beat zero and following
-the current tempo and loop settings for the requested number of bars. It writes
-stereo 32-bit floating-point WAV directly. MP3 export renders the same lossless
-intermediate and then uses `ffmpeg` with the `libmp3lame` encoder; MP3 export
-therefore requires `ffmpeg` to be installed and available on `PATH`. Rendering
-runs on a cancellable worker, uses an automatically bounded number of graph
-processing threads, and atomically replaces the selected output only after
-successful completion.
+> Search the Transmission catalogue for installed MIDI drum generators.
+> Compare their behaviour, choose a compatible instrument, and validate the
+> proposed chain.
 
-Transmission projects use RDF Turtle (`.ttl`) as their canonical format.
-Saving and loading preserve plugin bundle paths, typed graph connections and
-ports, editor positions, tempo/loop settings, and requested JACK input/output
-connections. Normalized plugin parameters and opaque VST3 component/controller
-state are also stored; state blobs are base64-encoded in Turtle and captured
-only after audio processing has stopped. GTK exchanges a small validated snapshot with
-the existing Node project session, which performs RDF parsing and atomic file
-writes on the control thread; the native audio callback never parses RDF or
-accesses the filesystem.
+> Create a slowly evolving generative patch, connect it to System Output, and
+> save it as RDF Turtle.
 
-Build the VST3-enabled UI to open native plugin editors by double-clicking plugin nodes:
+The current MCP server can inspect, create, validate, open, and save projects;
+apply revision-checked graph changes; configure transport; control an optional
+native engine; read diagnostics; and search plugin profiles. It does not yet
+attach to an already-running GTK window.
 
-```sh
-cmake -S native -B native/build-ui-vst3 \
-  -DTRANSMISSION_WITH_GTK_UI=ON -DTRANSMISSION_WITH_VST3=ON \
-  -DTRANSMISSION_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
-cmake --build native/build-ui-vst3 --target transmission_graph_ui
-native/build-ui-vst3/transmission_graph_ui
-```
+See [MCP setup](docs/installation.md#mcp-setup) and the
+[plugin catalogue guide](docs/plugin-profiles.md).
 
-For the GTK UI with native VST3 editors and JACK external-port management:
+## Documentation
 
-```sh
-cmake -S native -B native/build-ui-jack-vst3 \
-  -DTRANSMISSION_WITH_GTK_UI=ON -DTRANSMISSION_WITH_JACK=ON \
-  -DTRANSMISSION_WITH_VST3=ON -DTRANSMISSION_BUILD_TESTS=OFF \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build native/build-ui-jack-vst3 --target transmission_graph_ui
-native/build-ui-jack-vst3/transmission_graph_ui
-```
+- [Installation, building, MCP setup, and troubleshooting](docs/installation.md)
+- [Architecture](docs/architecture.md) and
+  [Mermaid diagram](docs/architecture.mermaid)
+- [RDF plugin profiles](docs/plugin-profiles.md)
+- [Implementation plan and status](docs/plan.md)
+- [Open work](docs/todo.md)
 
-The System Input and System Output dialogs enumerate JACK ports on demand and apply connections to `transmission:in_N` and `transmission:out_N`. The Transmission engine must already be running in the same JACK server for routes to apply.
-
-On Linux the editor host embeds the VST3 `IPlugView` through X11 and supplies the SDK run-loop interface using GTK timers. Double-clicking system nodes has no editor action.
-The `./transmission` launcher selects GTK's X11 backend so native plugin editors
-can be embedded when the desktop session itself uses Wayland.
-
-To build the addon with VST3 node construction enabled:
-
-```sh
-cmake -S native -B native/build-napi-vst3 \
-  -DTRANSMISSION_WITH_NAPI=ON -DTRANSMISSION_WITH_VST3=ON
-cmake --build native/build-napi-vst3 --target transmission_native
-```
-
-Compiled nodes with `settings.pluginPath` are instantiated as VST3 processors; other nodes currently use native pass-through processors until their processor factories are registered.
-
-Stopped-engine parameter routing can be smoke-tested against a VST3 bundle:
-
-```sh
-scripts/test-napi-vst3-parameter.sh /path/to/Plugin.vst3
-```
-
-`setParameter(nodeId, parameterId, normalizedValue, sampleOffset)` accepts numeric or string parameter IDs. Changes are submitted through a bounded native queue and applied at the start of the next audio block; updates are rejected only when the queue is full or the target processor has no parameter support.
-
-For a Node-controlled JACK engine, enable JACK as well and pass `{ device: 'jack', blockSize: 1024, sampleRate: 48000 }` to `createEngine`:
-
-```sh
-cmake -S native -B native/build-napi-jack \
-  -DTRANSMISSION_WITH_NAPI=ON -DTRANSMISSION_WITH_JACK=ON
-cmake --build native/build-napi-jack --target transmission_native
-```
-
-The optional JACK backend is built with:
-
-```sh
-cmake -S native -B native/build-jack -DTRANSMISSION_WITH_JACK=ON
-cmake --build native/build-jack
-```
-
-It registers predeclared mono ports, validates the server’s sample rate and period, and forwards JACK buffers directly to the engine callback. Set `AudioDeviceConfig::autoConnect` to `true` to connect physical capture/playback ports during configuration. A running JACK server is required when configuring a `JackAudioDevice` instance.
-
-With a JACK server configured for 48 kHz/1024 frames, run the live lifecycle probe:
-
-```sh
-native/build-jack/transmission_jack_engine_probe
-```
-
-Add `--auto-connect` when physical hardware ports should be connected automatically.
-
-The automated MIDI smoke test handles timing and port names for you:
-
-```sh
-scripts/test-jack-midi.sh
-```
-
-To build the optional SDK-backed metadata inspector:
-
-```sh
-cmake -S native -B native/build-vst3 \
-  -DTRANSMISSION_WITH_VST3=ON \
-  -DTRANSMISSION_BUILD_TESTS=OFF \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build native/build-vst3 --target transmission_vst3_inspector
-```
-
-Then inspect an installed plugin:
-
-```sh
-native/build-vst3/transmission_vst3_inspect /path/to/Plugin.vst3
-```
-
-To instantiate a real VST3 effect and process a deterministic block:
-
-```sh
-native/build-vst3/transmission_vst3_offline /path/to/Plugin.vst3 [frames]
-```
-
-The probe reports the selected class, bus channel counts, frame count, and input/output RMS values. It is intended as the executable seam for the later real-time graph host.
-
-To exercise the reusable processor through the native graph:
-
-```sh
-native/build-vst3/transmission_vst3_graph_probe /path/to/Plugin.vst3
-```
-
-To exercise the complete native engine lifecycle with a VST3 processor and fake device:
-
-```sh
-native/build-vst3/transmission_vst3_engine_probe /path/to/Plugin.vst3
-```
-
-Project edits should flow through `EngineSession`, which compiles and validates the graph and configures transport state before passing control to the native boundary.
-
-## MCP control
-
-Transmission includes a local MCP server for control from Codex and other MCP
-clients. It exposes project inspection, RDF Turtle, atomic revision-checked
-graph transactions, project open/save, transport configuration, parameter
-changes, diagnostics, and an RDF-backed plugin capability catalogue.
-
-Start it in project-only mode:
-
-```sh
-npm run mcp:start -- --project-root "$PWD"
-```
-
-Run an end-to-end stdio protocol check:
-
-```sh
-npm run mcp:smoke
-```
-
-Project-only mode can create, edit, validate, open, and save projects but cannot
-start audio. To expose native engine controls, supply a compatible N-API addon:
-
-```sh
-npm run mcp:start -- \
-  --project-root "$PWD" \
-  --native-addon native/build-napi-jack/transmission_native.node \
-  --jack \
-  --block-size 1024 \
-  --sample-rate 48000
-```
-
-The addon must be built with JACK for device-driven audio and with VST3 support
-for plugin nodes. Add `--auto-connect` to request automatic physical JACK
-connections. Only project paths below a configured `--project-root` may be
-opened or saved. The option may be repeated to allow more than one root.
-
-Register the project-only server with Codex:
-
-```sh
-codex mcp add transmission -- \
-  node "$PWD/scripts/transmission-mcp.js" \
-  --project-root "$PWD"
-```
-
-Restart Codex after adding the server. A useful first request is:
-
-> Use the Transmission MCP server to open patches/ensemble.ttl, inspect its
-> graph and diagnostics, and report its current revision. Do not modify it.
-
-For plugin-aware composition, try:
-
-> Search the Transmission plugin catalogue for installed MIDI drum generators
-> and compatible instruments. Describe their behavioural differences and
-> validate the proposed chain before changing the project.
-
-Graph mutations require `expectedRevision`, obtained from
-`transmission_status`, `project_get`, or `transmission://project`. Complex
-transactions should first be submitted with `dryRun: true`. Structural and
-transport configuration changes are rejected while native audio is running;
-live parameter changes use the native bounded parameter queue.
-
-The built-in catalogue includes curated profiles for all Downspout plugins and
-merges them with isolated VST3 inspection of installed bundles. Technical
-topology and parameter evidence, as well as behavioural profiles, are exposed
-as RDF Turtle. See [RDF plugin catalogue](docs/plugin-profiles.md).
-
-## Headless project diagnosis
-
-The VST3 project probe loads the same RDF Turtle model as the desktop UI and
-renders it deterministically without JACK or GTK. It reports MIDI event counts,
-one-second AC RMS/DC/peak windows at every routed node, block deadline misses,
-and per-node processing time:
-
-```sh
-cmake --build native/build-ui-jack-vst3 \
-  --target transmission_vst3_project_probe
-npm run probe:project -- patches/crystal-healing-vibratones.ttl --seconds 30
-```
-
-Use `--block-size` or `--sample-rate` to reproduce a device configuration.
-The probe processes silent external input and never opens an audio device.
-Add `--realtime` to pace a fake device at wall-clock speed and exercise the
-production render-ahead and worker-thread path without JACK:
-
-```sh
-npm run probe:project -- patches/crystal-healing-vibratones.ttl \
-  --seconds 15 --realtime --render-ahead-ms 200
-```
+Transmission is under active development. Project files are intended to remain
+portable and inspectable, but interfaces may still evolve.

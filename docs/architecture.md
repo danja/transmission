@@ -1,8 +1,9 @@
 # Transmission architecture
 
-Transmission is a Linux VST3 graph host with a C++ audio engine and a Node.js
-project-control layer. RDF Turtle is the canonical project format. The native
-engine never parses RDF and no audio buffer crosses into JavaScript.
+Transmission is a Generative Audio Workstation for Linux, implemented as a
+VST3 graph host with a C++ audio engine and a Node.js project-control layer.
+RDF Turtle is the canonical project format. The native engine never parses RDF
+and no audio buffer crosses into JavaScript.
 
 The source for the accompanying architectural diagram is
 [architecture.mermaid](architecture.mermaid).

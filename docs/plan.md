@@ -6,7 +6,11 @@ The repository now contains the modular Node/C++ foundation, typed graph compile
 
 ## Summary
 
-Transmission is being rebuilt as a modular Linux digital audio workstation. Node.js owns project control, RDF/Turtle persistence, graph editing, and the user interface. A small C++ N-API bridge owns VST3 hosting and JACK/PipeWire real-time processing.
+Transmission is being built as a modular Generative Audio Workstation for
+Linux. Node.js owns project control, RDF/Turtle persistence, graph compilation,
+plugin knowledge, and MCP integration. The native GTK application owns the
+current graph editor, while a small C++ N-API bridge owns VST3 hosting and
+JACK/PipeWire real-time processing.
 
 The reference `transmissions` project supplies useful concepts—transmissions, processors, connectors, nested graphs, and factory registration—but its mutable message queues and asynchronous `EventEmitter` execution are not suitable for a real-time audio callback.
 

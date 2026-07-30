@@ -1,0 +1,295 @@
+# Installing and building Transmission
+
+Transmission is currently distributed as source and targets Linux desktops
+with VST3 and JACK-compatible audio. The normal build produces the GTK graph
+editor, native VST3 hosting, JACK audio/MIDI support, offline rendering tools,
+and the Node.js control plane.
+
+## Requirements
+
+- A C++20 compiler and standard build tools
+- CMake 3.20 or newer
+- Node.js 20 or newer with npm
+- GTK 3 development files
+- JACK development files; PipeWire's JACK compatibility layer is supported
+- The Steinberg VST3 SDK
+- `ffmpeg` for MP3 export (WAV export does not require it)
+
+On Debian or Ubuntu, the usual build packages are:
+
+```sh
+sudo apt update
+sudo apt install \
+  git build-essential cmake pkg-config \
+  libgtk-3-dev libjack-jackd2-dev \
+  nodejs npm ffmpeg
+```
+
+Your distribution may provide JACK through JACK2 or PipeWire. Transmission
+only requires that the JACK client API and a working JACK-compatible server are
+available. If the distribution's Node.js is older than version 20, install a
+current Node.js release before running `npm install`.
+
+## Steinberg VST3 SDK
+
+Download the SDK from the
+[Steinberg VST3 developer page](https://www.steinberg.net/developers/vstsdk/)
+and extract it so this file exists:
+
+```text
+~/VST_SDK/vst3sdk/CMakeLists.txt
+```
+
+The standard `build.sh` script uses that location. For a manual CMake build,
+another SDK location can be supplied with:
+
+```sh
+-DVST3_SDK_ROOT=/path/to/vst3sdk
+```
+
+Review Steinberg's SDK licence and redistribution requirements before
+packaging or distributing binaries.
+
+## Install VST3 plugins
+
+Transmission scans the standard per-user VST3 directory:
+
+```text
+~/.vst3
+```
+
+Each plugin should appear there as a `.vst3` bundle, for example:
+
+```text
+~/.vst3/drumgen.vst3
+```
+
+The [Downspout](https://danja.github.io/downspout/) collection provides
+generators, instruments, and effects designed for generative systems and has
+curated behavioural metadata in Transmission's plugin catalogue.
+
+## Build and launch
+
+Get the source, then build from the repository root:
+
+```sh
+git clone https://github.com/danja/transmission.git
+cd transmission
+npm install
+./build.sh
+./transmission
+```
+
+`build.sh` runs the JavaScript checks and tests, builds and tests the native
+engine, builds JACK tools, and creates the GTK/JACK/VST3 application at:
+
+```text
+native/build-ui-jack-vst3/transmission_graph_ui
+```
+
+The `./transmission` launcher selects GTK's X11 backend. This is necessary
+because native VST3 editor embedding currently uses X11, including when the
+desktop session itself runs under Wayland.
+
+## Audio configuration
+
+Start a JACK server or PipeWire with JACK compatibility before playing a
+project. In Transmission:
+
+1. Double-click **System Output**.
+2. Select the desired playback ports for the left and right channels.
+3. Add and configure System Input or MIDI Input/Output nodes only when the
+   patch needs external signals.
+4. Press **Play**.
+
+Requested port selections are saved in the Turtle project even if the external
+device is temporarily unavailable.
+
+Settings → Audio shows the active JACK/PipeWire period, render-ahead setting,
+processing-thread selection, xruns, and graph timing. The default automatic
+thread count adapts to the machine and graph.
+
+## Rendering audio
+
+Use **File → Render Audio** or `Ctrl+Shift+R`. Choose the number of bars and
+sample rate, then save as:
+
+- `.wav` for stereo 32-bit floating-point WAV;
+- `.mp3` for MP3 encoded by `ffmpeg` and `libmp3lame`.
+
+Rendering starts at beat zero, follows the current tempo and loop settings, and
+runs without JACK. External audio and MIDI inputs are silent during an offline
+render, while autonomous plugin generators run normally.
+
+## MCP setup
+
+Transmission's MCP server can run as a project and catalogue service without
+opening an audio device:
+
+```sh
+npm run mcp:start -- --project-root "$PWD"
+```
+
+Run the protocol smoke test with:
+
+```sh
+npm run mcp:smoke
+```
+
+Register the project-only server with Codex:
+
+```sh
+codex mcp add transmission -- \
+  node "$PWD/scripts/transmission-mcp.js" \
+  --project-root "$PWD"
+```
+
+Restart Codex after registration. Project access is restricted to configured
+roots; repeat `--project-root` to allow additional locations.
+
+Project-only mode can inspect, edit, validate, open, and save Turtle projects
+and search the installed plugin catalogue, but it cannot run audio. Graph
+mutations require the current revision and complex edits should first use dry
+run validation.
+
+### MCP with a native audio engine
+
+Build an addon with VST3 and JACK support:
+
+```sh
+cmake -S native -B native/build-napi-jack-vst3 \
+  -DTRANSMISSION_WITH_NAPI=ON \
+  -DTRANSMISSION_WITH_JACK=ON \
+  -DTRANSMISSION_WITH_VST3=ON \
+  -DVST3_SDK_ROOT="$HOME/VST_SDK/vst3sdk"
+cmake --build native/build-napi-jack-vst3 \
+  --target transmission_native --parallel
+```
+
+Start MCP with that addon:
+
+```sh
+npm run mcp:start -- \
+  --project-root "$PWD" \
+  --native-addon native/build-napi-jack-vst3/transmission_native.node \
+  --jack \
+  --block-size 1024 \
+  --sample-rate 48000
+```
+
+Add `--auto-connect` to request automatic physical audio connections. The
+addon and GTK application are currently independent hosts; MCP does not attach
+to an already-running GTK process.
+
+## Developer builds and tests
+
+Run the JavaScript checks:
+
+```sh
+npm run check
+npm test
+```
+
+Build and test the dependency-light native engine:
+
+```sh
+cmake -S native -B native/build \
+  -DTRANSMISSION_BUILD_TESTS=ON
+cmake --build native/build --parallel
+ctest --test-dir native/build --output-on-failure
+```
+
+Build only the VST3 inspection and offline-processing tools:
+
+```sh
+cmake -S native -B native/build-vst3 \
+  -DTRANSMISSION_WITH_VST3=ON \
+  -DTRANSMISSION_BUILD_TESTS=OFF \
+  -DVST3_SDK_ROOT="$HOME/VST_SDK/vst3sdk"
+cmake --build native/build-vst3 --parallel
+```
+
+Useful commands from that build include:
+
+```sh
+native/build-vst3/transmission_vst3_inspect /path/to/Plugin.vst3
+native/build-vst3/transmission_vst3_offline /path/to/Plugin.vst3
+```
+
+The project probe loads the same interchange model as the desktop UI and
+diagnoses a patch without JACK or GTK:
+
+```sh
+cmake --build native/build-ui-jack-vst3 \
+  --target transmission_vst3_project_probe
+npm run probe:project -- \
+  patches/crystal-healing-vibratones.ttl --seconds 30
+```
+
+It reports MIDI activity, per-node audio windows, block timing, and the point
+at which a signal becomes silent. Add `--realtime` to exercise the
+render-ahead worker path at wall-clock speed.
+
+### JACK and VST3 smoke tests
+
+Build the standalone JACK tools with:
+
+```sh
+cmake -S native -B native/build-jack \
+  -DTRANSMISSION_WITH_JACK=ON
+cmake --build native/build-jack --parallel
+```
+
+With a running JACK-compatible server, the following commands exercise the
+device lifecycle and MIDI path:
+
+```sh
+native/build-jack/transmission_jack_engine_probe
+scripts/test-jack-midi.sh
+```
+
+For a VST3-enabled N-API build, stopped-engine parameter routing can be checked
+against a specific bundle:
+
+```sh
+scripts/test-napi-vst3-parameter.sh /path/to/Plugin.vst3
+```
+
+## Troubleshooting
+
+### The build cannot find the VST3 SDK
+
+Confirm that `~/VST_SDK/vst3sdk/CMakeLists.txt` exists. If the SDK is elsewhere,
+run CMake manually and set `VST3_SDK_ROOT`.
+
+### Plugins are missing from the browser or MCP catalogue
+
+Confirm that each bundle is below `~/.vst3` and ends in `.vst3`. Rebuild the
+VST3-enabled targets after changing the SDK or host build.
+
+### The graph plays but produces no sound
+
+Open System Output and apply valid JACK playback destinations. Confirm the
+JACK/PipeWire server is running and inspect Settings → Audio for xruns or
+render-queue failures.
+
+### A native plugin editor does not open
+
+Launch with `./transmission`, which selects the X11 GTK backend required by the
+current editor host. A pure Wayland `GtkSocket` cannot embed the VST3 X11 view.
+
+### MP3 export fails
+
+Confirm that `ffmpeg` is on `PATH` and that its build includes the
+`libmp3lame` encoder:
+
+```sh
+ffmpeg -encoders | grep libmp3lame
+```
+
+WAV rendering remains available without `ffmpeg`.
+
+### MCP can edit projects but cannot play them
+
+That is expected in project-only mode. Build the combined N-API/JACK/VST3 addon
+and pass it with `--native-addon`, or use the GTK application for playback.

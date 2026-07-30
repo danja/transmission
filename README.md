@@ -204,3 +204,69 @@ native/build-vst3/transmission_vst3_engine_probe /path/to/Plugin.vst3
 ```
 
 Project edits should flow through `EngineSession`, which compiles and validates the graph and configures transport state before passing control to the native boundary.
+
+## MCP control
+
+Transmission includes a local MCP server for control from Codex and other MCP
+clients. It exposes project inspection, RDF Turtle, atomic revision-checked
+graph transactions, project open/save, transport configuration, parameter
+changes, diagnostics, and an RDF-backed plugin capability catalogue.
+
+Start it in project-only mode:
+
+```sh
+npm run mcp:start -- --project-root "$PWD"
+```
+
+Run an end-to-end stdio protocol check:
+
+```sh
+npm run mcp:smoke
+```
+
+Project-only mode can create, edit, validate, open, and save projects but cannot
+start audio. To expose native engine controls, supply a compatible N-API addon:
+
+```sh
+npm run mcp:start -- \
+  --project-root "$PWD" \
+  --native-addon native/build-napi-jack/transmission_native.node \
+  --jack \
+  --block-size 1024 \
+  --sample-rate 48000
+```
+
+The addon must be built with JACK for device-driven audio and with VST3 support
+for plugin nodes. Add `--auto-connect` to request automatic physical JACK
+connections. Only project paths below a configured `--project-root` may be
+opened or saved. The option may be repeated to allow more than one root.
+
+Register the project-only server with Codex:
+
+```sh
+codex mcp add transmission -- \
+  node "$PWD/scripts/transmission-mcp.js" \
+  --project-root "$PWD"
+```
+
+Restart Codex after adding the server. A useful first request is:
+
+> Use the Transmission MCP server to open patches/ensemble.ttl, inspect its
+> graph and diagnostics, and report its current revision. Do not modify it.
+
+For plugin-aware composition, try:
+
+> Search the Transmission plugin catalogue for installed MIDI drum generators
+> and compatible instruments. Describe their behavioural differences and
+> validate the proposed chain before changing the project.
+
+Graph mutations require `expectedRevision`, obtained from
+`transmission_status`, `project_get`, or `transmission://project`. Complex
+transactions should first be submitted with `dryRun: true`. Structural and
+transport configuration changes are rejected while native audio is running;
+live parameter changes use the native bounded parameter queue.
+
+The built-in catalogue includes curated profiles for all Downspout plugins and
+merges them with isolated VST3 inspection of installed bundles. Technical
+topology and parameter evidence, as well as behavioural profiles, are exposed
+as RDF Turtle. See [RDF plugin catalogue](docs/plugin-profiles.md).

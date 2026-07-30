@@ -3,10 +3,11 @@
 import { ProjectSession } from './ProjectSession.js'
 
 export class EngineSession {
-  constructor({ bridge, project = new ProjectSession() } = {}) {
+  constructor({ bridge, project = new ProjectSession(), engineOptions = {} } = {}) {
     if (!bridge) throw new TypeError('EngineSession requires a native bridge')
     this.bridge = bridge
     this.project = project
+    this.engineOptions = { ...engineOptions }
     this.state = 'idle'
     this.engineCreated = false
   }
@@ -57,6 +58,33 @@ export class EngineSession {
     this.#configureTransport()
   }
 
+  clearLoop() {
+    if (this.state === 'running') throw new Error('Stop audio before changing the loop')
+    this.project.transport.clearLoop()
+    this.#configureTransport()
+  }
+
+  seek(beat) {
+    if (this.state === 'running') throw new Error('Stop audio before seeking')
+    this.project.transport.seek(beat)
+    this.#configureTransport()
+  }
+
+  setParameter(nodeId, parameterId, value, sampleOffset = 0) {
+    if (!['loaded', 'running'].includes(this.state)) throw new Error('A compiled project must be loaded before setting a parameter')
+    return this.bridge.setParameter(nodeId, parameterId, value, sampleOffset)
+  }
+
+  diagnostics() {
+    if (!this.engineCreated) return null
+    return this.bridge.getDiagnostics()
+  }
+
+  synchronizeTransport() {
+    if (!this.engineCreated) throw new Error('A native engine must be created before configuring transport')
+    this.#configureTransport()
+  }
+
   #configureTransport() {
     if (typeof this.bridge.configureTransport === 'function') {
       this.bridge.configureTransport(this.project.transport.toJSON())
@@ -65,7 +93,7 @@ export class EngineSession {
 
   #ensureEngine() {
     if (!this.engineCreated && typeof this.bridge.createEngine === 'function') {
-      this.bridge.createEngine()
+      this.bridge.createEngine(this.engineOptions)
       this.engineCreated = true
     }
   }

@@ -30,11 +30,22 @@ int main(int argc, char** argv) {
         std::cout << "audioInputs=" << topology.audioInputs.size() << "\n"
                   << "audioOutputs=" << topology.audioOutputs.size() << "\n"
                   << "midiInputs=" << topology.midiInputs << "\n"
-                  << "midiOutputs=" << topology.midiOutputs << "\n";
+                  << "midiOutputs=" << topology.midiOutputs << "\n"
+                  << "parameterCount=" << topology.parameters.size() << "\n";
         for (std::size_t index = 0; index < topology.audioInputs.size(); ++index)
             std::cout << "input." << index << "=" << topology.audioInputs[index].name << "\n";
         for (std::size_t index = 0; index < topology.audioOutputs.size(); ++index)
             std::cout << "output." << index << "=" << topology.audioOutputs[index].name << "\n";
+        for (std::size_t index = 0; index < topology.parameters.size(); ++index) {
+            const auto& parameter = topology.parameters[index];
+            std::cout << "parameter." << index << ".id=" << parameter.id << "\n"
+                      << "parameter." << index << ".title=" << parameter.title << "\n"
+                      << "parameter." << index << ".shortTitle=" << parameter.shortTitle << "\n"
+                      << "parameter." << index << ".units=" << parameter.units << "\n"
+                      << "parameter." << index << ".defaultNormalized=" << parameter.defaultNormalized << "\n"
+                      << "parameter." << index << ".stepCount=" << parameter.stepCount << "\n"
+                      << "parameter." << index << ".flags=" << parameter.flags << "\n";
+        }
     }
     return 0;
 }

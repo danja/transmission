@@ -15,6 +15,15 @@ export const vocabulary = Object.freeze({
     parameters: `${TRN}parameters`, parameterId: `${TRN}parameterId`, normalizedValue: `${TRN}normalizedValue`,
     componentState: `${TRN}componentState`, controllerState: `${TRN}controllerState`,
     systemInputConnections: `${TRN}systemInputConnections`, systemOutputConnections: `${TRN}systemOutputConnections`,
-    tempoMap: `${TRN}tempoMap`, atBeat: `${TRN}atBeat`, bpm: `${TRN}bpm`, loopStart: `${TRN}loopStart`, loopEnd: `${TRN}loopEnd`, loopEnabled: `${TRN}loopEnabled`
+    tempoMap: `${TRN}tempoMap`, atBeat: `${TRN}atBeat`, bpm: `${TRN}bpm`, loopStart: `${TRN}loopStart`, loopEnd: `${TRN}loopEnd`, loopEnabled: `${TRN}loopEnabled`,
+    pluginProfile: `${TRN}PluginProfile`, discoveredPlugin: `${TRN}DiscoveredPlugin`,
+    bundleName: `${TRN}bundleName`, vstClassId: `${TRN}vstClassId`, vendor: `${TRN}vendor`,
+    role: `${TRN}role`, produces: `${TRN}produces`, accepts: `${TRN}accepts`, requires: `${TRN}requires`,
+    recommendedBefore: `${TRN}recommendedBefore`, recommendedAfter: `${TRN}recommendedAfter`,
+    companion: `${TRN}companion`, genre: `${TRN}genre`, caution: `${TRN}caution`, homepage: `${TRN}homepage`,
+    modulePath: `${TRN}modulePath`, category: `${TRN}category`, discoverySource: `${TRN}discoverySource`,
+    parameter: `${TRN}parameter`, parameterTitle: `${TRN}parameterTitle`, shortTitle: `${TRN}shortTitle`,
+    units: `${TRN}units`, defaultNormalized: `${TRN}defaultNormalized`,
+    stepCount: `${TRN}stepCount`, parameterFlags: `${TRN}parameterFlags`
   })
 })

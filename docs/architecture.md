@@ -304,3 +304,32 @@ Those extensions should continue to use immutable compiled snapshots for
 structural changes and bounded queues for live events. They must not introduce
 JavaScript calls, network access, filesystem work, allocation, or
 unpredictable locking on the audio callback.
+
+### MCP control adapter
+
+The local MCP server is the first implemented control-plane adapter. It wraps
+`TransmissionControlService`, which in turn owns a `ProjectSession` and may own
+an `EngineSession`. The adapter itself contains schemas and protocol metadata,
+but no graph, persistence, or audio-processing logic.
+
+The stdio server exposes the current project, Turtle representation, and
+diagnostics as resources. Its tools create, open, save, and inspect projects;
+apply atomic revision-checked graph transactions; configure transport; persist
+parameter values; and control an optional native engine. Project path access is
+limited to configured roots.
+
+The plugin catalogue follows the same RDF-oriented control-plane approach.
+Curated Turtle profiles describe musical behaviour and meaningful signal
+semantics. An isolated VST3 inspector contributes technical identity, topology,
+and parameter evidence, which is also serialized as Turtle. `PluginCatalogue`
+merges those layers without allowing inferred buses to overwrite curated
+behaviour—for example, a compatibility-only silent audio bus does not turn a
+MIDI generator into a useful audio source. MCP searches load concise catalogue
+results on demand instead of placing the entire plugin corpus in server
+instructions.
+
+This initial server is headless and does not attach to an already-running GTK
+process. The intended next architectural step is a single local control service
+that owns the active project and engine. GTK and MCP would then be clients of
+that service, avoiding two independent graphs or two processes competing for
+JACK and plugin instances.

@@ -1,0 +1,271 @@
+@prefix trn: <http://purl.org/stuff/transmissions/> .
+@prefix dsp: <http://purl.org/stuff/transmissions/plugins/downspout/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+dsp:bassgen a trn:PluginProfile ;
+    rdfs:label "BassGen" ;
+    rdfs:comment "Transport-aware bass generator with persistent patterns, meter-aware rhythm, variation, and Follow/Dodge input controls." ;
+    trn:bundleName "bassgen.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiGenerator ;
+    trn:produces trn:Midi, trn:BassMidi ;
+    trn:accepts trn:Midi ;
+    trn:requires trn:HostTransport ;
+    trn:genre "Straight", "Reel", "Waltz", "Jig", "Slip Jig" ;
+    trn:recommendedBefore dsp:basilico .
+
+dsp:p-mix a trn:PluginProfile ;
+    rdfs:label "P-Mix" ;
+    rdfs:comment "Transport-aware probabilistic stereo gate that creates evolving switching and rhythmic dropouts." ;
+    trn:bundleName "p_mix.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:AudioEffect ;
+    trn:accepts trn:Audio ;
+    trn:produces trn:Audio ;
+    trn:requires trn:HostTransport .
+
+dsp:e-mix a trn:PluginProfile ;
+    rdfs:label "E-Mix" ;
+    rdfs:comment "Transport-aware deterministic Euclidean stereo gate." ;
+    trn:bundleName "e_mix.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:AudioEffect ;
+    trn:accepts trn:Audio ;
+    trn:produces trn:Audio ;
+    trn:requires trn:HostTransport .
+
+dsp:m-mix a trn:PluginProfile ;
+    rdfs:label "M-Mix" ;
+    rdfs:comment "Transport-aware MIDI gate combining probabilistic transitions with Euclidean blocks." ;
+    trn:bundleName "m_mix.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiProcessor ;
+    trn:accepts trn:Midi ;
+    trn:produces trn:Midi ;
+    trn:requires trn:HostTransport .
+
+dsp:t-mix a trn:PluginProfile ;
+    rdfs:label "T-Mix" ;
+    rdfs:comment "Eight-input mono-strip mixer with level, pan, mute, solo, metering, and stereo master output." ;
+    trn:bundleName "t_mix.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:AudioMixer ;
+    trn:accepts trn:Audio ;
+    trn:produces trn:Audio .
+
+dsp:melgen a trn:PluginProfile ;
+    rdfs:label "MelGen" ;
+    rdfs:comment "Phrase-aware melody generator with contour, question/answer structure, and reactions to incoming context." ;
+    trn:bundleName "melgen.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiGenerator ;
+    trn:accepts trn:Midi ;
+    trn:produces trn:Midi, trn:MelodyMidi ;
+    trn:requires trn:HostTransport .
+
+dsp:rift a trn:PluginProfile ;
+    rdfs:label "Rift" ;
+    rdfs:comment "Transport-locked live/sample buffer disruptor for chop, stutter, reverse, skip, smear, and pitch-slip actions." ;
+    trn:bundleName "rift.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:AudioEffect ;
+    trn:accepts trn:Audio ;
+    trn:produces trn:Audio ;
+    trn:requires trn:HostTransport ;
+    trn:caution "Use repeats and pitch-slip conservatively in dense arrangements." .
+
+dsp:orchid a trn:PluginProfile ;
+    rdfs:label "Orchid" ;
+    rdfs:comment "Transport-aware voiced freeze effect using autocorrelation capture and grid-synchronised loop holds." ;
+    trn:bundleName "orchid.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:AudioEffect ;
+    trn:accepts trn:Audio ;
+    trn:produces trn:Audio ;
+    trn:requires trn:HostTransport .
+
+dsp:ambo a trn:PluginProfile ;
+    rdfs:label "Ambo" ;
+    rdfs:comment "Stereo ambient processor with rearrangeable time, spectral, tape, shimmer, delay, drive, and feedback modules." ;
+    trn:bundleName "ambo.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:AudioEffect ;
+    trn:accepts trn:Audio ;
+    trn:produces trn:Audio ;
+    trn:caution "High feedback and stacked delay or shimmer settings can become dense quickly." .
+
+dsp:drumgen a trn:PluginProfile ;
+    rdfs:label "DrumGen" ;
+    rdfs:comment "Transport- and meter-aware drum generator with pattern variation, fills, and broad genre vocabulary." ;
+    trn:bundleName "drumgen.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiGenerator ;
+    trn:produces trn:Midi, trn:DrumMidi ;
+    trn:requires trn:HostTransport ;
+    trn:genre "Breakbeat", "Amen", "Jungle", "Hip Hop", "Jazz", "Rock", "Dub" ;
+    trn:recommendedBefore dsp:drumkit ;
+    trn:caution "The stereo audio output is intentionally silent compatibility output; connect its MIDI output to an instrument." .
+
+dsp:drumkit a trn:PluginProfile ;
+    rdfs:label "DrumKit" ;
+    rdfs:comment "Stereo synthesised drum instrument and natural sound source for DrumGen and Xoxolo." ;
+    trn:bundleName "drumkit.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:Instrument, trn:DrumInstrument ;
+    trn:accepts trn:Midi, trn:DrumMidi ;
+    trn:produces trn:Audio .
+
+dsp:cadence a trn:PluginProfile ;
+    rdfs:label "Cadence" ;
+    rdfs:comment "Transport-aware MIDI harmonizer and comping generator." ;
+    trn:bundleName "cadence.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiProcessor ;
+    trn:accepts trn:Midi ;
+    trn:produces trn:Midi, trn:HarmonyMidi ;
+    trn:requires trn:HostTransport ;
+    trn:recommendedBefore dsp:canticle .
+
+dsp:arpgen a trn:PluginProfile ;
+    rdfs:label "ArpGen" ;
+    rdfs:comment "Transport-synchronised chord-capture and scale-derived arpeggiator." ;
+    trn:bundleName "arpgen.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiProcessor ;
+    trn:accepts trn:Midi ;
+    trn:produces trn:Midi, trn:MelodyMidi ;
+    trn:requires trn:HostTransport ;
+    trn:recommendedBefore dsp:canticle .
+
+dsp:counterpointer a trn:PluginProfile ;
+    rdfs:label "Counterpointer" ;
+    rdfs:comment "Learns incoming MIDI and emits a related monophonic counter-melody." ;
+    trn:bundleName "counterpointer.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiProcessor ;
+    trn:accepts trn:Midi ;
+    trn:produces trn:Midi, trn:MelodyMidi ;
+    trn:recommendedBefore dsp:canticle .
+
+dsp:sidecar a trn:PluginProfile ;
+    rdfs:label "Sidecar" ;
+    rdfs:comment "MIDI phrase player with deterministic local generation and optional localhost coordinator mode." ;
+    trn:bundleName "sidecar.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiGenerator ;
+    trn:accepts trn:Midi ;
+    trn:produces trn:Midi, trn:MelodyMidi ;
+    trn:requires trn:HostTransport ;
+    trn:caution "Coordinator mode depends on a separate localhost service." .
+
+dsp:gremlin-driver a trn:PluginProfile ;
+    rdfs:label "GremlinDriver" ;
+    rdfs:comment "Transport-aware MIDI modulation and action sequencer designed to control Gremlin." ;
+    trn:bundleName "gremlin_driver.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiProcessor, trn:Controller ;
+    trn:accepts trn:Midi ;
+    trn:produces trn:Midi ;
+    trn:requires trn:HostTransport ;
+    trn:recommendedBefore dsp:gremlin ;
+    trn:companion dsp:gremlin .
+
+dsp:gremlin a trn:PluginProfile ;
+    rdfs:label "Gremlin" ;
+    rdfs:comment "Chaotic glitch instrument with scenes, macros, actions, randomisation, and performance controls." ;
+    trn:bundleName "gremlin.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:Instrument ;
+    trn:accepts trn:Midi ;
+    trn:produces trn:Audio ;
+    trn:companion dsp:gremlin-driver ;
+    trn:caution "Randomisation and delay-oriented behaviours can produce large level or density changes." .
+
+dsp:ground a trn:PluginProfile ;
+    rdfs:label "Ground" ;
+    rdfs:comment "Long-form bass generator with Dub and Jazz styles, phrase planning, and guarded bass-register output." ;
+    trn:bundleName "ground.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiGenerator ;
+    trn:produces trn:Midi, trn:BassMidi ;
+    trn:requires trn:HostTransport ;
+    trn:genre "Dub", "Jazz" ;
+    trn:recommendedBefore dsp:basilico .
+
+dsp:floozy a trn:PluginProfile ;
+    rdfs:label "Floozy" ;
+    rdfs:comment "Eight-voice hybrid physical/modulation synthesizer for expressive leads, plucks, and synthetic textures." ;
+    trn:bundleName "floozy.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:Instrument ;
+    trn:accepts trn:Midi ;
+    trn:produces trn:Audio .
+
+dsp:basilico a trn:PluginProfile ;
+    rdfs:label "Basilico" ;
+    rdfs:comment "Monophonic bass instrument with upright, electric, dub, acid, and industrial models." ;
+    trn:bundleName "basilico.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:Instrument, trn:BassInstrument ;
+    trn:accepts trn:Midi, trn:BassMidi ;
+    trn:produces trn:Audio ;
+    trn:genre "Dub", "Acid" .
+
+dsp:canticle a trn:PluginProfile ;
+    rdfs:label "Canticle" ;
+    rdfs:comment "Twelve-voice keys, reed, pad, pluck, and glass instrument for melody, counterpoint, and chords." ;
+    trn:bundleName "canticle.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:Instrument ;
+    trn:accepts trn:Midi, trn:MelodyMidi, trn:HarmonyMidi ;
+    trn:produces trn:Audio .
+
+dsp:tuney-vst a trn:PluginProfile ;
+    rdfs:label "Tuney VST" ;
+    rdfs:comment "Text-to-music instrument and MIDI generator with configurable alphabets, scales, and microtonal tunings." ;
+    trn:bundleName "tuney_vst.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:Instrument, trn:MidiGenerator ;
+    trn:accepts trn:Midi ;
+    trn:produces trn:Audio, trn:Midi, trn:MelodyMidi .
+
+dsp:luma a trn:PluginProfile ;
+    rdfs:label "Luma" ;
+    rdfs:comment "Launchpad-oriented performance generator whose lit cells become bass, chord, melody, and drum agents." ;
+    trn:bundleName "luma.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiGenerator, trn:Controller ;
+    trn:accepts trn:Midi ;
+    trn:produces trn:Midi, trn:MultiPartMidi ;
+    trn:requires trn:HostTransport, trn:Launchpad ;
+    trn:caution "The UI remains usable without hardware, but intended LED feedback requires a Launchpad MIDI connection." .
+
+dsp:paunchlad a trn:PluginProfile ;
+    rdfs:label "PaunchLad" ;
+    rdfs:comment "Launchpad dub performance effect with echo throws, splashes, sirens, hits, dropouts, chops, and freezes." ;
+    trn:bundleName "paunchlad.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:AudioEffect, trn:PerformanceInstrument ;
+    trn:accepts trn:Audio, trn:Midi ;
+    trn:produces trn:Audio ;
+    trn:requires trn:Launchpad .
+
+dsp:lifeform a trn:PluginProfile ;
+    rdfs:label "Lifeform" ;
+    rdfs:comment "Conway Game of Life sequencer mapping cellular generations to melodic or drum MIDI." ;
+    trn:bundleName "lifeform.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiGenerator, trn:Controller ;
+    trn:accepts trn:Midi ;
+    trn:produces trn:Midi, trn:MelodyMidi, trn:DrumMidi ;
+    trn:requires trn:HostTransport, trn:Launchpad .
+
+dsp:xoxolo a trn:PluginProfile ;
+    rdfs:label "Xoxolo" ;
+    rdfs:comment "Explicit x0x-style drum sequencer with 11 DrumKit-oriented lanes and patterns up to 32 steps." ;
+    trn:bundleName "xoxolo.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiGenerator ;
+    trn:produces trn:Midi, trn:DrumMidi ;
+    trn:requires trn:HostTransport ;
+    trn:recommendedBefore dsp:drumkit .

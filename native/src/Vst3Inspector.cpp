@@ -37,6 +37,12 @@ std::string busName(const Steinberg::Vst::BusInfo& info,
     return name;
 }
 
+std::string parameterText(const Steinberg::Vst::String128& value) {
+    char text[128]{};
+    Steinberg::UString128(value).toAscii(text, 128);
+    return text;
+}
+
 void appendPorts(Steinberg::Vst::IComponent& component,
                  Steinberg::Vst::BusDirection direction,
                  std::vector<Vst3PortDescriptor>& ports) {
@@ -96,6 +102,25 @@ bool Vst3Inspector::inspectTopology(const std::string& modulePath,
     topology.midiOutputs = static_cast<std::size_t>(std::max<Steinberg::int32>(
         0, component->getBusCount(Steinberg::Vst::kEvent,
                                   Steinberg::Vst::kOutput)));
+    if (auto controller = provider->getControllerPtr()) {
+        const auto parameterCount = controller->getParameterCount();
+        topology.parameters.reserve(static_cast<std::size_t>(
+            std::max<Steinberg::int32>(0, parameterCount)));
+        for (Steinberg::int32 index = 0; index < parameterCount; ++index) {
+            Steinberg::Vst::ParameterInfo info{};
+            if (controller->getParameterInfo(index, info) != Steinberg::kResultTrue)
+                continue;
+            topology.parameters.push_back({
+                static_cast<std::uint32_t>(info.id),
+                parameterText(info.title),
+                parameterText(info.shortTitle),
+                parameterText(info.units),
+                info.defaultNormalizedValue,
+                info.stepCount,
+                info.flags
+            });
+        }
+    }
     return true;
 }
 

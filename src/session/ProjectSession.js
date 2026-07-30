@@ -15,6 +15,7 @@ export class ProjectSession {
     this.compiledGraph = null
     this.filePath = null
     this.revision = 0
+    this.savedRevision = null
     this.history = []
     this.future = []
     this.transport = new Transport()
@@ -27,6 +28,7 @@ export class ProjectSession {
     this.compiledGraph = this.compiler(this.graph)
     this.filePath = filePath
     this.revision = 0
+    this.savedRevision = filePath ? 0 : null
     this.history = []
     this.future = []
     return this.compiledGraph
@@ -63,6 +65,12 @@ export class ProjectSession {
     return true
   }
 
+  markChanged() {
+    if (!this.graph) throw new Error('No project is open')
+    this.revision += 1
+    return this.revision
+  }
+
   async save(filePath = this.filePath) {
     if (!this.graph) throw new Error('No project is open')
     if (!filePath) throw new Error('A project file path is required')
@@ -73,6 +81,7 @@ export class ProjectSession {
     await writeFile(temporaryPath, content, 'utf8')
     await rename(temporaryPath, filePath)
     this.filePath = filePath
+    this.savedRevision = this.revision
     return filePath
   }
 

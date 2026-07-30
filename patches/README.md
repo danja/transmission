@@ -31,6 +31,10 @@ four-on-the-floor drums, a driven D-minor techno bass, high-tension evolving
 chords, and a sixteenth-note plucked arpeggio. T-Mix balances the four
 stereo branches before Guardian protects the final output.
 
+`kraurock-jazz.ttl` combines a 126 BPM motorik drum grid with a jazz/Dorian
+bass ostinato, evolving electric keys, and a learned contrapuntal reed line.
+The four stereo branches meet at T-Mix and Guardian.
+
 The current Transmission VST3 bridge routes note-on and note-off output but not
 VST3 legacy MIDI CC output. Consequently Drift's CC monitor remains at zero,
 and the CC portions of Conductor and Oracle are not yet visible downstream.

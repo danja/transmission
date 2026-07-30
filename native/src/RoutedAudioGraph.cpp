@@ -117,6 +117,36 @@ bool RoutedAudioGraph::setExternalMidiOutput(const std::string& nodeId,
     return true;
 }
 
+bool RoutedAudioGraph::copyNodeAudioOutput(
+    const std::string& nodeId, std::size_t channel, float* samples,
+    std::size_t frames) const noexcept {
+    if (!samples || preparedFrames_ == 0 || frames > preparedFrames_)
+        return false;
+    const auto node = std::find_if(
+        nodes_.begin(), nodes_.end(), [&nodeId](const auto& candidate) {
+            return candidate.id == nodeId;
+        });
+    if (node == nodes_.end() || channel >= node->audioOutputs)
+        return false;
+    std::copy_n(node->output.data() + channel * preparedFrames_, frames,
+                samples);
+    return true;
+}
+
+std::size_t RoutedAudioGraph::copyNodeMidiOutput(
+    const std::string& nodeId, MidiEvent* events,
+    std::size_t capacity) const noexcept {
+    if (!events || capacity == 0) return 0;
+    const auto node = std::find_if(
+        nodes_.begin(), nodes_.end(), [&nodeId](const auto& candidate) {
+            return candidate.id == nodeId;
+        });
+    if (node == nodes_.end()) return 0;
+    const auto copied = std::min(capacity, node->midiOutputCount);
+    std::copy_n(node->midiOutput.begin(), copied, events);
+    return copied;
+}
+
 bool RoutedAudioGraph::setParameter(const std::string& nodeId, std::uint32_t parameterId,
                                     double normalizedValue, std::string& error) {
     auto node = std::find_if(nodes_.begin(), nodes_.end(),

@@ -84,6 +84,8 @@ if(TRANSMISSION_WITH_VST3)
   target_link_libraries(transmission_vst3_engine_probe PRIVATE transmission_vst3_inspector transmission_engine)
   add_executable(transmission_vst3_chain_probe src/vst3_chain_probe_main.cpp)
   target_link_libraries(transmission_vst3_chain_probe PRIVATE transmission_vst3_inspector transmission_engine)
+  add_executable(transmission_vst3_project_probe src/vst3_project_probe_main.cpp)
+  target_link_libraries(transmission_vst3_project_probe PRIVATE transmission_vst3_inspector transmission_engine)
   if(TRANSMISSION_WITH_JACK)
     add_executable(transmission_vst3_jack_chain_probe
       src/vst3_jack_chain_probe_main.cpp

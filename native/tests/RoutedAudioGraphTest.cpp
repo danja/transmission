@@ -69,6 +69,11 @@ int main() {
     float* outputs[] = {output};
     graph.process(inputs, outputs, 1, 4);
     for (int index = 0; index < 4; ++index) assert(output[index] == input[index] * 2.0F);
+    float sourceOutput[4]{};
+    assert(graph.copyNodeAudioOutput("source", 0, sourceOutput, 4));
+    assert(!graph.copyNodeAudioOutput("missing", 0, sourceOutput, 4));
+    for (int index = 0; index < 4; ++index)
+        assert(sourceOutput[index] == input[index]);
     const auto timings = graph.processorTimings();
     assert(timings.size() == 3);
     assert(std::all_of(timings.begin(), timings.end(),
@@ -121,6 +126,10 @@ int main() {
     assert(midi.takeExternalMidiOutput(&outputEvent, 1) == 1);
     assert(outputEvent.port == 3);
     assert(outputEvent.data == inputEvent.data);
+    transmission::MidiEvent nodeEvent;
+    assert(midi.copyNodeMidiOutput("midi-in", &nodeEvent, 1) == 1);
+    assert(nodeEvent.data == inputEvent.data);
+    assert(midi.copyNodeMidiOutput("missing", &nodeEvent, 1) == 0);
 
     transmission::RoutedAudioGraph asymmetric;
     assert(asymmetric.addNode(

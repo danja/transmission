@@ -1,0 +1,94 @@
+@prefix : <http://purl.org/stuff/transmissions/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+:crystal-healing-vibratones a :Transmission ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Crystal Healing Binaural Vibratones" ;
+    :tempoMap ( [ :atBeat 0 ; :bpm 54 ] ) ;
+    :loopStart 0 ;
+    :loopEnd 64 ;
+    :loopEnabled true ;
+    :systemOutputConnections ( "UMC404HD 192k-44:playback_AUX0" "UMC404HD 192k-44:playback_AUX1" ) ;
+    :pipe ( <melgen> <cadence> <arpgen> <canticle-motion> <canticle-chords> <tmix> <orchid> <ambo> <system-output> ) ;
+    :connections ( [ :from <melgen> ; :to <cadence> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <cadence> ; :to <arpgen> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <cadence> ; :to <canticle-chords> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <arpgen> ; :to <canticle-motion> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <canticle-motion> ; :to <tmix> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <canticle-motion> ; :to <tmix> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <canticle-chords> ; :to <tmix> ; :kind "audio" ; :fromPort 0 ; :toPort 2 ] [ :from <canticle-chords> ; :to <tmix> ; :kind "audio" ; :fromPort 1 ; :toPort 3 ] [ :from <tmix> ; :to <orchid> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <tmix> ; :to <orchid> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <orchid> ; :to <ambo> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <orchid> ; :to <ambo> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <ambo> ; :to <system-output> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <ambo> ; :to <system-output> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] ) .
+
+<melgen> a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Crystal Motif" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 230 ;
+    :settings [ :pluginPath "/home/danny/.vst3/melgen.vst3" ] ;
+    :parameters ( [ :parameterId 2082 ; :normalizedValue 0.472441 ] [ :parameterId 2083 ; :normalizedValue 0.684211 ] [ :parameterId 2085 ; :normalizedValue 0.2 ] [ :parameterId 2086 ; :normalizedValue 0.428571 ] [ :parameterId 2087 ; :normalizedValue 0.333333 ] [ :parameterId 2088 ; :normalizedValue 0.8 ] [ :parameterId 2089 ; :normalizedValue 0.6 ] [ :parameterId 2091 ; :normalizedValue 0.72 ] [ :parameterId 2092 ; :normalizedValue 0.5 ] [ :parameterId 2093 ; :normalizedValue 0.86 ] [ :parameterId 2094 ; :normalizedValue 0.42 ] [ :parameterId 2095 ; :normalizedValue 0.78 ] [ :parameterId 2096 ; :normalizedValue 0.82 ] [ :parameterId 2097 ; :normalizedValue 0.18 ] [ :parameterId 2098 ; :normalizedValue 0 ] [ :parameterId 2099 ; :normalizedValue 0.62 ] [ :parameterId 2100 ; :normalizedValue 0.317 ] [ :parameterId 2105 ; :normalizedValue 0 ] [ :parameterId 2106 ; :normalizedValue 0.78 ] ) .
+
+<cadence> a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Eerie Chord Weaver" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 270 ;
+    :editorY 230 ;
+    :settings [ :pluginPath "/home/danny/.vst3/cadence.vst3" ] ;
+    :parameters ( [ :parameterId 2082 ; :normalizedValue 0 ] [ :parameterId 2083 ; :normalizedValue 0.7 ] [ :parameterId 2084 ; :normalizedValue 0.428571 ] [ :parameterId 2085 ; :normalizedValue 0.5 ] [ :parameterId 2086 ; :normalizedValue 0.74 ] [ :parameterId 2087 ; :normalizedValue 0.35 ] [ :parameterId 2088 ; :normalizedValue 1 ] [ :parameterId 2089 ; :normalizedValue 0.95 ] [ :parameterId 2090 ; :normalizedValue 0.666667 ] [ :parameterId 2091 ; :normalizedValue 0.82 ] [ :parameterId 2092 ; :normalizedValue 1 ] [ :parameterId 2094 ; :normalizedValue 0 ] [ :parameterId 2096 ; :normalizedValue 0.16 ] [ :parameterId 2097 ; :normalizedValue 0.18 ] [ :parameterId 2098 ; :normalizedValue 0.8 ] [ :parameterId 2099 ; :normalizedValue 0.15 ] ) .
+
+<arpgen> a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Perpetual Lydian Rise and Fall" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 510 ;
+    :editorY 80 ;
+    :settings [ :pluginPath "/home/danny/.vst3/arpgen.vst3" ] ;
+    :parameters ( [ :parameterId 2082 ; :normalizedValue 1 ] [ :parameterId 2083 ; :normalizedValue 0.666667 ] [ :parameterId 2084 ; :normalizedValue 0.2 ] [ :parameterId 2085 ; :normalizedValue 0.666667 ] [ :parameterId 2086 ; :normalizedValue 0 ] [ :parameterId 2087 ; :normalizedValue 0.888889 ] [ :parameterId 2088 ; :normalizedValue 1 ] [ :parameterId 2089 ; :normalizedValue 1 ] [ :parameterId 2090 ; :normalizedValue 0.9 ] [ :parameterId 2091 ; :normalizedValue 0.72 ] [ :parameterId 2092 ; :normalizedValue 0 ] ) .
+
+<canticle-motion> a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Ascending Glass" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 750 ;
+    :editorY 80 ;
+    :settings [ :pluginPath "/home/danny/.vst3/canticle.vst3" ] ;
+    :parameters ( [ :parameterId 2082 ; :normalizedValue 1 ] [ :parameterId 2083 ; :normalizedValue 0.86 ] [ :parameterId 2084 ; :normalizedValue 0.42 ] [ :parameterId 2085 ; :normalizedValue 0.38 ] [ :parameterId 2086 ; :normalizedValue 0.18 ] [ :parameterId 2087 ; :normalizedValue 0.68 ] [ :parameterId 2088 ; :normalizedValue 0.84 ] [ :parameterId 2089 ; :normalizedValue 0.9 ] [ :parameterId 2090 ; :normalizedValue 0.24 ] [ :parameterId 2091 ; :normalizedValue 1 ] [ :parameterId 2092 ; :normalizedValue 0.04 ] [ :parameterId 2093 ; :normalizedValue 0.48 ] [ :parameterId 2094 ; :normalizedValue 0.84 ] [ :parameterId 2095 ; :normalizedValue 1 ] [ :parameterId 2096 ; :normalizedValue 1 ] [ :parameterId 2097 ; :normalizedValue 1 ] ) .
+
+<canticle-chords> a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Suspended Crystal Chords" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 510 ;
+    :editorY 350 ;
+    :settings [ :pluginPath "/home/danny/.vst3/canticle.vst3" ] ;
+    :parameters ( [ :parameterId 2082 ; :normalizedValue 1 ] [ :parameterId 2083 ; :normalizedValue 0.78 ] [ :parameterId 2084 ; :normalizedValue 0.58 ] [ :parameterId 2085 ; :normalizedValue 0.2 ] [ :parameterId 2086 ; :normalizedValue 0.36 ] [ :parameterId 2087 ; :normalizedValue 0.82 ] [ :parameterId 2088 ; :normalizedValue 0.9 ] [ :parameterId 2089 ; :normalizedValue 0.96 ] [ :parameterId 2090 ; :normalizedValue 0.14 ] [ :parameterId 2091 ; :normalizedValue 0.94 ] [ :parameterId 2092 ; :normalizedValue 0.03 ] [ :parameterId 2093 ; :normalizedValue 0.52 ] [ :parameterId 2094 ; :normalizedValue 0.62 ] [ :parameterId 2095 ; :normalizedValue 1 ] [ :parameterId 2096 ; :normalizedValue 0.666667 ] [ :parameterId 2097 ; :normalizedValue 0.666667 ] ) .
+
+<tmix> a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Binaural Field" ;
+    :audioInputs 8 ;
+    :audioOutputs 2 ;
+    :editorX 990 ;
+    :editorY 220 ;
+    :settings [ :pluginPath "/home/danny/.vst3/t_mix.vst3" ] ;
+    :parameters ( [ :parameterId 2 ; :normalizedValue 0.69 ] [ :parameterId 3 ; :normalizedValue 0.69 ] [ :parameterId 4 ; :normalizedValue 0.65 ] [ :parameterId 5 ; :normalizedValue 0.65 ] [ :parameterId 10 ; :normalizedValue 0.08 ] [ :parameterId 11 ; :normalizedValue 0.92 ] [ :parameterId 12 ; :normalizedValue 0.25 ] [ :parameterId 13 ; :normalizedValue 0.75 ] [ :parameterId 34 ; :normalizedValue 0.72 ] ) .
+
+<orchid> a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Harmonic Crystal Freeze" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :editorX 1230 ;
+    :editorY 220 ;
+    :settings [ :pluginPath "/home/danny/.vst3/orchid.vst3" ] ;
+    :parameters ( [ :parameterId 2 ; :normalizedValue 0.55 ] [ :parameterId 3 ; :normalizedValue 0.85 ] [ :parameterId 4 ; :normalizedValue 0.75 ] [ :parameterId 5 ; :normalizedValue 0.15 ] [ :parameterId 6 ; :normalizedValue 0.85 ] [ :parameterId 7 ; :normalizedValue 0.6 ] [ :parameterId 8 ; :normalizedValue 1 ] [ :parameterId 9 ; :normalizedValue 0.35 ] [ :parameterId 10 ; :normalizedValue 0.12 ] [ :parameterId 11 ; :normalizedValue 0.65 ] [ :parameterId 12 ; :normalizedValue 0.48 ] [ :parameterId 13 ; :normalizedValue 0.82 ] [ :parameterId 14 ; :normalizedValue 0.5 ] [ :parameterId 15 ; :normalizedValue 0.4 ] ) .
+
+<ambo> a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Shimmering Vibratone Space" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :editorX 1470 ;
+    :editorY 220 ;
+    :settings [ :pluginPath "/home/danny/.vst3/ambo.vst3" ] ;
+    :parameters ( [ :parameterId 2 ; :normalizedValue 0.333333 ] [ :parameterId 3 ; :normalizedValue 0.72 ] [ :parameterId 4 ; :normalizedValue 0.84 ] [ :parameterId 5 ; :normalizedValue 0.16 ] [ :parameterId 6 ; :normalizedValue 0.68 ] [ :parameterId 7 ; :normalizedValue 0.52 ] [ :parameterId 8 ; :normalizedValue 0.05 ] [ :parameterId 9 ; :normalizedValue 0.32 ] [ :parameterId 10 ; :normalizedValue 0.72 ] [ :parameterId 11 ; :normalizedValue 0.48 ] [ :parameterId 14 ; :normalizedValue 0 ] ) .
+
+<system-output> a :AudioOutput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Output" ;
+    :audioInputs 2 ;
+    :midiInputs 1 ;
+    :editorX 1710 ;
+    :editorY 220 .

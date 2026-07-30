@@ -61,6 +61,15 @@ public:
     void setProcessContext(const AudioProcessContext& context) noexcept;
     std::size_t takeExternalMidiOutput(MidiEvent* events,
                                        std::size_t capacity) noexcept;
+    /**
+     * Copy the most recently processed node block for synchronous offline
+     * diagnosis. The caller must not race this with process().
+     */
+    bool copyNodeAudioOutput(const std::string& nodeId, std::size_t channel,
+                             float* samples, std::size_t frames) const noexcept;
+    std::size_t copyNodeMidiOutput(const std::string& nodeId,
+                                   MidiEvent* events,
+                                   std::size_t capacity) const noexcept;
     void setTimingEnabled(bool enabled) noexcept { timingEnabled_ = enabled; }
     std::vector<ProcessorTiming> processorTimings() const;
     std::vector<NodeProcessorState> processorStates(std::string& error);

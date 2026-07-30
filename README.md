@@ -270,3 +270,19 @@ The built-in catalogue includes curated profiles for all Downspout plugins and
 merges them with isolated VST3 inspection of installed bundles. Technical
 topology and parameter evidence, as well as behavioural profiles, are exposed
 as RDF Turtle. See [RDF plugin catalogue](docs/plugin-profiles.md).
+
+## Headless project diagnosis
+
+The VST3 project probe loads the same RDF Turtle model as the desktop UI and
+renders it deterministically without JACK or GTK. It reports MIDI event counts,
+one-second AC RMS/DC/peak windows at every routed node, block deadline misses,
+and per-node processing time:
+
+```sh
+cmake --build native/build-ui-jack-vst3 \
+  --target transmission_vst3_project_probe
+npm run probe:project -- patches/crystal-healing-vibratones.ttl --seconds 30
+```
+
+Use `--block-size` or `--sample-rate` to reproduce a device configuration.
+The probe processes silent external input and never opens an audio device.

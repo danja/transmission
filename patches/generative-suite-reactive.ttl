@@ -1,0 +1,112 @@
+@prefix : <http://purl.org/stuff/transmissions/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+:generative-suite-reactive a :Transmission ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Generative Suite — Reactive Resonance" ;
+    :tempoMap ( [ :atBeat 0 ; :bpm 84 ] ) ;
+    :loopStart 0 ;
+    :loopEnd 64 ;
+    :loopEnabled true ;
+    :systemInputConnections ( "No connection" "No connection" ) ;
+    :systemOutputConnections ( "system:playback_1" "system:playback_2" ) ;
+    :pipe ( :system-input :harmonic-atlas :canticle :oracle :resonance-garden :drift :midi-monitor :orbit :guardian :system-output ) ;
+    :connections (
+        [ :from :harmonic-atlas ; :to :canticle ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :harmonic-atlas ; :to :oracle ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :canticle ; :to :oracle ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :canticle ; :to :oracle ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :oracle ; :to :resonance-garden ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :oracle ; :to :resonance-garden ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :oracle ; :to :resonance-garden ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :resonance-garden ; :to :drift ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :resonance-garden ; :to :drift ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :drift ; :to :midi-monitor ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :drift ; :to :orbit ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :drift ; :to :orbit ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :orbit ; :to :guardian ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :orbit ; :to :guardian ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :guardian ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :guardian ; :to :system-output ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+    ) .
+
+:system-input a :AudioInput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Input" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 450 .
+
+:harmonic-atlas a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Harmonic Atlas" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 150 ;
+    :settings [ :pluginPath "/home/danny/.vst3/harmonic_atlas.vst3" ] .
+
+:canticle a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Canticle" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 270 ;
+    :editorY 150 ;
+    :settings [ :pluginPath "/home/danny/.vst3/canticle.vst3" ] .
+
+:oracle a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Oracle" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 500 ;
+    :editorY 150 ;
+    :settings [ :pluginPath "/home/danny/.vst3/oracle.vst3" ] .
+
+:resonance-garden a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Resonance Garden" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 730 ;
+    :editorY 150 ;
+    :settings [ :pluginPath "/home/danny/.vst3/resonance_garden.vst3" ] .
+
+:drift a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Drift" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 960 ;
+    :editorY 150 ;
+    :settings [ :pluginPath "/home/danny/.vst3/drift.vst3" ] .
+
+:midi-monitor a :MidiOutput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Drift CC — No connection" ;
+    :midiInputs 1 ;
+    :editorX 1190 ;
+    :editorY 360 ;
+    :settings [ :externalPort "No connection" ] .
+
+:orbit a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Orbit" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :editorX 1190 ;
+    :editorY 150 ;
+    :settings [ :pluginPath "/home/danny/.vst3/orbit.vst3" ] .
+
+:guardian a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Guardian" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :editorX 1420 ;
+    :editorY 150 ;
+    :settings [ :pluginPath "/home/danny/.vst3/guardian.vst3" ] .
+
+:system-output a :AudioOutput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Output" ;
+    :audioInputs 2 ;
+    :midiInputs 1 ;
+    :editorX 1650 ;
+    :editorY 150 .

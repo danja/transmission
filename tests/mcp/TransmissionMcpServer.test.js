@@ -87,9 +87,9 @@ describe('Transmission MCP server', () => {
       name: 'plugins_search',
       arguments: { produces: ['DrumMidi'] }
     })
-    expect(search.structuredContent.matches).toBe(3)
+    expect(search.structuredContent.matches).toBe(4)
     expect(search.structuredContent.entries.map(plugin => plugin.name))
-      .toEqual(['DrumGen', 'Lifeform', 'Xoxolo'])
+      .toEqual(['DrumGen', 'Lifeform', 'Polymeter', 'Xoxolo'])
 
     const profile = await client.readResource({ uri: 'transmission://plugins/profiles' })
     expect(profile.contents[0].text).toContain('dsp:drumgen a trn:PluginProfile')

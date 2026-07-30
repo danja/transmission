@@ -1,0 +1,88 @@
+@prefix : <http://purl.org/stuff/transmissions/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+:generative-suite-rhythm-memory a :Transmission ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Generative Suite — Polymeter and Memory" ;
+    :tempoMap ( [ :atBeat 0 ; :bpm 108 ] ) ;
+    :loopStart 0 ;
+    :loopEnd 64 ;
+    :loopEnabled true ;
+    :systemInputConnections ( "No connection" "No connection" ) ;
+    :systemOutputConnections ( "system:playback_1" "system:playback_2" ) ;
+    :pipe ( :system-input :polymeter :mnemosyne :drumkit :canticle :t-mix :guardian :system-output ) ;
+    :connections (
+        [ :from :polymeter ; :to :drumkit ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :polymeter ; :to :mnemosyne ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :mnemosyne ; :to :canticle ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :drumkit ; :to :t-mix ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :drumkit ; :to :t-mix ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :canticle ; :to :t-mix ; :kind "audio" ; :fromPort 0 ; :toPort 2 ]
+        [ :from :canticle ; :to :t-mix ; :kind "audio" ; :fromPort 1 ; :toPort 3 ]
+        [ :from :t-mix ; :to :guardian ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :t-mix ; :to :guardian ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :guardian ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :guardian ; :to :system-output ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+    ) .
+
+:system-input a :AudioInput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Input" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 430 .
+
+:polymeter a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Polymeter" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 170 ;
+    :settings [ :pluginPath "/home/danny/.vst3/polymeter.vst3" ] .
+
+:mnemosyne a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Mnemosyne" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 270 ;
+    :editorY 280 ;
+    :settings [ :pluginPath "/home/danny/.vst3/mnemosyne.vst3" ] .
+
+:drumkit a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "DrumKit" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 270 ;
+    :editorY 80 ;
+    :settings [ :pluginPath "/home/danny/.vst3/drumkit.vst3" ] .
+
+:canticle a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Canticle" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 500 ;
+    :editorY 280 ;
+    :settings [ :pluginPath "/home/danny/.vst3/canticle.vst3" ] .
+
+:t-mix a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "T-Mix" ;
+    :audioInputs 8 ;
+    :audioOutputs 2 ;
+    :editorX 730 ;
+    :editorY 170 ;
+    :settings [ :pluginPath "/home/danny/.vst3/t_mix.vst3" ] .
+
+:guardian a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Guardian" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :editorX 960 ;
+    :editorY 170 ;
+    :settings [ :pluginPath "/home/danny/.vst3/guardian.vst3" ] .
+
+:system-output a :AudioOutput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Output" ;
+    :audioInputs 2 ;
+    :midiInputs 1 ;
+    :editorX 1190 ;
+    :editorY 170 .

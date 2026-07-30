@@ -1,0 +1,62 @@
+@prefix : <http://purl.org/stuff/transmissions/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+:generative-suite-mosaic a :Transmission ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Generative Suite — Mosaic and Drift" ;
+    :tempoMap ( [ :atBeat 0 ; :bpm 96 ] ) ;
+    :loopStart 0 ;
+    :loopEnd 64 ;
+    :loopEnabled true ;
+    :systemInputConnections ( "system:capture_1" "system:capture_2" ) ;
+    :systemOutputConnections ( "system:playback_1" "system:playback_2" ) ;
+    :pipe ( :system-input :drift :mosaic :guardian :system-output ) ;
+    :connections (
+        [ :from :system-input ; :to :drift ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :system-input ; :to :drift ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :drift ; :to :mosaic ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :drift ; :to :guardian ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :drift ; :to :guardian ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :mosaic ; :to :guardian ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :mosaic ; :to :guardian ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :guardian ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :guardian ; :to :system-output ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+    ) .
+
+:system-input a :AudioInput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Optional Live Input" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 300 .
+
+:drift a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Drift" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 270 ;
+    :editorY 300 ;
+    :settings [ :pluginPath "/home/danny/.vst3/drift.vst3" ] .
+
+:mosaic a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Mosaic — load WAV samples" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 500 ;
+    :editorY 100 ;
+    :settings [ :pluginPath "/home/danny/.vst3/mosaic.vst3" ] .
+
+:guardian a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Guardian" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :editorX 730 ;
+    :editorY 200 ;
+    :settings [ :pluginPath "/home/danny/.vst3/guardian.vst3" ] .
+
+:system-output a :AudioOutput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Output" ;
+    :audioInputs 2 ;
+    :midiInputs 1 ;
+    :editorX 960 ;
+    :editorY 200 .

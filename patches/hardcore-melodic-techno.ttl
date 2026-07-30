@@ -1,0 +1,327 @@
+@prefix : <http://purl.org/stuff/transmissions/> .
+
+:hardcore-melodic-techno a :Transmission ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Hardcore Melodic Techno" ;
+    :tempoMap ( [ :atBeat 0 ; :bpm 158 ] ) ;
+    :loopStart 0 ;
+    :loopEnd 128 ;
+    :loopEnabled true ;
+    :systemInputConnections ( "No connection" "No connection" ) ;
+    :systemOutputConnections ( "system:playback_1" "system:playback_2" ) ;
+    :pipe (
+        :system-input
+        :polymeter :drumkit
+        :bassgen :basilico
+        :conductor :harmonic-atlas :canticle :orbit
+        :arpgen :arp-canticle
+        :t-mix :guardian :system-output
+    ) ;
+    :connections (
+        [ :from :polymeter ; :to :drumkit ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :bassgen ; :to :basilico ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :conductor ; :to :harmonic-atlas ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :harmonic-atlas ; :to :canticle ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :harmonic-atlas ; :to :arpgen ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :arpgen ; :to :arp-canticle ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :canticle ; :to :orbit ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :canticle ; :to :orbit ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :drumkit ; :to :t-mix ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :drumkit ; :to :t-mix ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :basilico ; :to :t-mix ; :kind "audio" ; :fromPort 0 ; :toPort 2 ]
+        [ :from :basilico ; :to :t-mix ; :kind "audio" ; :fromPort 1 ; :toPort 3 ]
+        [ :from :arp-canticle ; :to :t-mix ; :kind "audio" ; :fromPort 0 ; :toPort 4 ]
+        [ :from :arp-canticle ; :to :t-mix ; :kind "audio" ; :fromPort 1 ; :toPort 5 ]
+        [ :from :orbit ; :to :t-mix ; :kind "audio" ; :fromPort 0 ; :toPort 6 ]
+        [ :from :orbit ; :to :t-mix ; :kind "audio" ; :fromPort 1 ; :toPort 7 ]
+        [ :from :t-mix ; :to :guardian ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :t-mix ; :to :guardian ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :guardian ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :guardian ; :to :system-output ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+    ) .
+
+:system-input a :AudioInput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Input" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 560 .
+
+:polymeter a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Polymeter" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 50 ;
+    :settings [ :pluginPath "/home/danny/.vst3/polymeter.vst3" ] ;
+    :parameters (
+        [ :parameterId 2 ; :normalizedValue 0.483871 ]
+        [ :parameterId 3 ; :normalizedValue 0.125 ]
+        [ :parameterId 4 ; :normalizedValue 0 ]
+        [ :parameterId 5 ; :normalizedValue 1 ]
+        [ :parameterId 6 ; :normalizedValue 0 ]
+        [ :parameterId 7 ; :normalizedValue 1 ]
+        [ :parameterId 8 ; :normalizedValue 0.283465 ]
+        [ :parameterId 9 ; :normalizedValue 0.6 ]
+        [ :parameterId 10 ; :normalizedValue 0 ]
+        [ :parameterId 11 ; :normalizedValue 0.483871 ]
+        [ :parameterId 12 ; :normalizedValue 0.0625 ]
+        [ :parameterId 13 ; :normalizedValue 0.129032 ]
+        [ :parameterId 14 ; :normalizedValue 1 ]
+        [ :parameterId 15 ; :normalizedValue 0 ]
+        [ :parameterId 16 ; :normalizedValue 0.82 ]
+        [ :parameterId 17 ; :normalizedValue 0.299213 ]
+        [ :parameterId 18 ; :normalizedValue 0.6 ]
+        [ :parameterId 19 ; :normalizedValue 0 ]
+        [ :parameterId 20 ; :normalizedValue 0.483871 ]
+        [ :parameterId 21 ; :normalizedValue 0.5 ]
+        [ :parameterId 22 ; :normalizedValue 0 ]
+        [ :parameterId 23 ; :normalizedValue 0.94 ]
+        [ :parameterId 24 ; :normalizedValue 0.333333 ]
+        [ :parameterId 25 ; :normalizedValue 0.5 ]
+        [ :parameterId 26 ; :normalizedValue 0.330709 ]
+        [ :parameterId 27 ; :normalizedValue 0.6 ]
+        [ :parameterId 28 ; :normalizedValue 0.005 ]
+        [ :parameterId 29 ; :normalizedValue 0.483871 ]
+        [ :parameterId 30 ; :normalizedValue 0.25 ]
+        [ :parameterId 31 ; :normalizedValue 0.064516 ]
+        [ :parameterId 32 ; :normalizedValue 0.72 ]
+        [ :parameterId 33 ; :normalizedValue 0 ]
+        [ :parameterId 34 ; :normalizedValue 0.42 ]
+        [ :parameterId 35 ; :normalizedValue 0.362205 ]
+        [ :parameterId 36 ; :normalizedValue 0.6 ]
+        [ :parameterId 37 ; :normalizedValue 0.01 ]
+        [ :parameterId 38 ; :normalizedValue 0.0967742 ]
+        [ :parameterId 39 ; :normalizedValue 0.692 ]
+    ) .
+
+:drumkit a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "DrumKit" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 280 ;
+    :editorY 50 ;
+    :settings [ :pluginPath "/home/danny/.vst3/drumkit.vst3" ] .
+
+:bassgen a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "BassGen" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 180 ;
+    :settings [ :pluginPath "/home/danny/.vst3/bassgen.vst3" ] ;
+    :parameters (
+        [ :parameterId 2082 ; :normalizedValue 0.299213 ]
+        [ :parameterId 2083 ; :normalizedValue 0 ]
+        [ :parameterId 2084 ; :normalizedValue 0 ]
+        [ :parameterId 2085 ; :normalizedValue 0.2 ]
+        [ :parameterId 2087 ; :normalizedValue 0.333333 ]
+        [ :parameterId 2088 ; :normalizedValue 0.333333 ]
+        [ :parameterId 2089 ; :normalizedValue 0.78 ]
+        [ :parameterId 2090 ; :normalizedValue 0.333333 ]
+        [ :parameterId 2091 ; :normalizedValue 0.32 ]
+        [ :parameterId 2092 ; :normalizedValue 0.78 ]
+        [ :parameterId 2093 ; :normalizedValue 0.419 ]
+        [ :parameterId 2101 ; :normalizedValue 0.72 ]
+    ) .
+
+:basilico a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Basilico" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 280 ;
+    :editorY 180 ;
+    :settings [ :pluginPath "/home/danny/.vst3/basilico.vst3" ] ;
+    :parameters (
+        [ :parameterId 2082 ; :normalizedValue 0.5 ]
+        [ :parameterId 2083 ; :normalizedValue 0.5 ]
+        [ :parameterId 2084 ; :normalizedValue 0.72 ]
+        [ :parameterId 2085 ; :normalizedValue 0.7 ]
+        [ :parameterId 2086 ; :normalizedValue 0.64 ]
+        [ :parameterId 2088 ; :normalizedValue 0.08 ]
+        [ :parameterId 2089 ; :normalizedValue 0.74 ]
+        [ :parameterId 2090 ; :normalizedValue 0.37 ]
+        [ :parameterId 2091 ; :normalizedValue 0.52 ]
+        [ :parameterId 2092 ; :normalizedValue 0.68 ]
+        [ :parameterId 2094 ; :normalizedValue 0.005 ]
+        [ :parameterId 2095 ; :normalizedValue 0.2 ]
+        [ :parameterId 2096 ; :normalizedValue 0.42 ]
+        [ :parameterId 2097 ; :normalizedValue 0.12 ]
+        [ :parameterId 2098 ; :normalizedValue 0.82 ]
+        [ :parameterId 2099 ; :normalizedValue 0.666667 ]
+        [ :parameterId 2100 ; :normalizedValue 0.62 ]
+        [ :parameterId 2101 ; :normalizedValue 0.78 ]
+        [ :parameterId 2103 ; :normalizedValue 0.12 ]
+        [ :parameterId 2104 ; :normalizedValue 1 ]
+        [ :parameterId 2105 ; :normalizedValue 0.571429 ]
+        [ :parameterId 2109 ; :normalizedValue 0.18 ]
+    ) .
+
+:conductor a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Conductor" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 320 ;
+    :settings [ :pluginPath "/home/danny/.vst3/conductor.vst3" ] ;
+    :parameters (
+        [ :parameterId 3 ; :normalizedValue 0.225806 ]
+        [ :parameterId 4 ; :normalizedValue 0.238095 ]
+        [ :parameterId 6 ; :normalizedValue 1 ]
+        [ :parameterId 7 ; :normalizedValue 0.55 ]
+        [ :parameterId 8 ; :normalizedValue 0.85 ]
+        [ :parameterId 10 ; :normalizedValue 0.235294 ]
+        [ :parameterId 17 ; :normalizedValue 0.314 ]
+    ) .
+
+:harmonic-atlas a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Harmonic Atlas" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 280 ;
+    :editorY 320 ;
+    :settings [ :pluginPath "/home/danny/.vst3/harmonic_atlas.vst3" ] ;
+    :parameters (
+        [ :parameterId 2082 ; :normalizedValue 1 ]
+        [ :parameterId 2083 ; :normalizedValue 0 ]
+        [ :parameterId 2084 ; :normalizedValue 0.82 ]
+        [ :parameterId 2085 ; :normalizedValue 0.733333 ]
+        [ :parameterId 2086 ; :normalizedValue 0.666667 ]
+        [ :parameterId 2087 ; :normalizedValue 0.75 ]
+        [ :parameterId 2088 ; :normalizedValue 0.84 ]
+        [ :parameterId 2089 ; :normalizedValue 0.3 ]
+        [ :parameterId 2090 ; :normalizedValue 1 ]
+        [ :parameterId 2091 ; :normalizedValue 0.181818 ]
+        [ :parameterId 2093 ; :normalizedValue 0.271 ]
+    ) .
+
+:canticle a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Canticle Chords" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 520 ;
+    :editorY 320 ;
+    :settings [ :pluginPath "/home/danny/.vst3/canticle.vst3" ] ;
+    :parameters (
+        [ :parameterId 2082 ; :normalizedValue 1 ]
+        [ :parameterId 2083 ; :normalizedValue 0.38 ]
+        [ :parameterId 2084 ; :normalizedValue 0.75 ]
+        [ :parameterId 2085 ; :normalizedValue 0.4 ]
+        [ :parameterId 2086 ; :normalizedValue 0.03 ]
+        [ :parameterId 2087 ; :normalizedValue 0.24 ]
+        [ :parameterId 2088 ; :normalizedValue 0.7 ]
+        [ :parameterId 2089 ; :normalizedValue 0.28 ]
+        [ :parameterId 2090 ; :normalizedValue 0.2 ]
+        [ :parameterId 2091 ; :normalizedValue 0.92 ]
+        [ :parameterId 2092 ; :normalizedValue 0.24 ]
+        [ :parameterId 2093 ; :normalizedValue 0.58 ]
+        [ :parameterId 2094 ; :normalizedValue 0.45 ]
+        [ :parameterId 2095 ; :normalizedValue 0.75 ]
+        [ :parameterId 2096 ; :normalizedValue 0.333333 ]
+        [ :parameterId 2097 ; :normalizedValue 0.666667 ]
+    ) .
+
+:orbit a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Orbit" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :editorX 760 ;
+    :editorY 320 ;
+    :settings [ :pluginPath "/home/danny/.vst3/orbit.vst3" ] ;
+    :parameters (
+        [ :parameterId 2 ; :normalizedValue 0.666667 ]
+        [ :parameterId 3 ; :normalizedValue 0.11811 ]
+        [ :parameterId 4 ; :normalizedValue 0.72 ]
+        [ :parameterId 5 ; :normalizedValue 0.7 ]
+        [ :parameterId 6 ; :normalizedValue 0.3 ]
+        [ :parameterId 7 ; :normalizedValue 0.08 ]
+        [ :parameterId 8 ; :normalizedValue 0.413 ]
+        [ :parameterId 9 ; :normalizedValue 0.72 ]
+    ) .
+
+:arpgen a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "ArpGen" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 520 ;
+    :editorY 470 ;
+    :settings [ :pluginPath "/home/danny/.vst3/arpgen.vst3" ] ;
+    :parameters (
+        [ :parameterId 2082 ; :normalizedValue 0 ]
+        [ :parameterId 2083 ; :normalizedValue 0.666667 ]
+        [ :parameterId 2084 ; :normalizedValue 0.6 ]
+        [ :parameterId 2085 ; :normalizedValue 0.666667 ]
+        [ :parameterId 2089 ; :normalizedValue 0.666667 ]
+        [ :parameterId 2090 ; :normalizedValue 0.48 ]
+        [ :parameterId 2091 ; :normalizedValue 0.9 ]
+        [ :parameterId 2092 ; :normalizedValue 0 ]
+    ) .
+
+:arp-canticle a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Canticle Pluck" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 760 ;
+    :editorY 470 ;
+    :settings [ :pluginPath "/home/danny/.vst3/canticle.vst3" ] ;
+    :parameters (
+        [ :parameterId 2082 ; :normalizedValue 0.75 ]
+        [ :parameterId 2083 ; :normalizedValue 0.72 ]
+        [ :parameterId 2084 ; :normalizedValue 0.35 ]
+        [ :parameterId 2085 ; :normalizedValue 0.15 ]
+        [ :parameterId 2086 ; :normalizedValue 0.005 ]
+        [ :parameterId 2087 ; :normalizedValue 0.12 ]
+        [ :parameterId 2088 ; :normalizedValue 0.35 ]
+        [ :parameterId 2089 ; :normalizedValue 0.12 ]
+        [ :parameterId 2090 ; :normalizedValue 0.06 ]
+        [ :parameterId 2091 ; :normalizedValue 0.8 ]
+        [ :parameterId 2092 ; :normalizedValue 0.35 ]
+        [ :parameterId 2093 ; :normalizedValue 0.62 ]
+        [ :parameterId 2094 ; :normalizedValue 0.65 ]
+        [ :parameterId 2095 ; :normalizedValue 0.666667 ]
+        [ :parameterId 2096 ; :normalizedValue 0.666667 ]
+        [ :parameterId 2097 ; :normalizedValue 0 ]
+    ) .
+
+:t-mix a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "T-Mix" ;
+    :audioInputs 8 ;
+    :audioOutputs 2 ;
+    :editorX 1210 ;
+    :editorY 240 ;
+    :settings [ :pluginPath "/home/danny/.vst3/t_mix.vst3" ] ;
+    :parameters (
+        [ :parameterId 2 ; :normalizedValue 0.82 ]
+        [ :parameterId 3 ; :normalizedValue 0.82 ]
+        [ :parameterId 4 ; :normalizedValue 0.68 ]
+        [ :parameterId 5 ; :normalizedValue 0.68 ]
+        [ :parameterId 6 ; :normalizedValue 0.56 ]
+        [ :parameterId 7 ; :normalizedValue 0.56 ]
+        [ :parameterId 8 ; :normalizedValue 0.44 ]
+        [ :parameterId 9 ; :normalizedValue 0.44 ]
+        [ :parameterId 10 ; :normalizedValue 0.22 ]
+        [ :parameterId 11 ; :normalizedValue 0.78 ]
+        [ :parameterId 12 ; :normalizedValue 0.3 ]
+        [ :parameterId 13 ; :normalizedValue 0.7 ]
+        [ :parameterId 14 ; :normalizedValue 0.12 ]
+        [ :parameterId 15 ; :normalizedValue 0.88 ]
+        [ :parameterId 16 ; :normalizedValue 0.34 ]
+        [ :parameterId 17 ; :normalizedValue 0.66 ]
+        [ :parameterId 34 ; :normalizedValue 0.72 ]
+    ) .
+
+:guardian a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Guardian" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :editorX 1450 ;
+    :editorY 240 ;
+    :settings [ :pluginPath "/home/danny/.vst3/guardian.vst3" ] .
+
+:system-output a :AudioOutput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Output" ;
+    :audioInputs 2 ;
+    :midiInputs 1 ;
+    :editorX 1690 ;
+    :editorY 240 .

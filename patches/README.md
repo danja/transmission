@@ -24,6 +24,13 @@ Every autonomous audio chain ends in Guardian. The patches use
 `system:playback_1` and `system:playback_2` as portable defaults, except Mosaic,
 which also requests the standard capture ports for its optional live input.
 
+## Performance patch
+
+`hardcore-melodic-techno.ttl` is a 158 BPM performance patch with programmed
+four-on-the-floor drums, a driven D-minor techno bass, high-tension evolving
+chords, and a sixteenth-note plucked arpeggio. T-Mix balances the four
+stereo branches before Guardian protects the final output.
+
 The current Transmission VST3 bridge routes note-on and note-off output but not
 VST3 legacy MIDI CC output. Consequently Drift's CC monitor remains at zero,
 and the CC portions of Conductor and Oracle are not yet visible downstream.

@@ -169,10 +169,14 @@ through diagnostics.
 
 JACK MIDI input is converted into bounded `MidiEvent` records with a frame
 offset, port, and up to three bytes of channel-message data. Routed MIDI edges
-carry these records between graph nodes. `Vst3Processor` converts supported
-note-on and note-off messages to VST3 events and converts plugin output events
-back to bounded native MIDI. Broader MIDI mapping and SysEx are not currently
-implemented.
+carry these records between graph nodes. `Vst3Processor` converts notes and
+polyphonic pressure to VST3 events. During plugin initialization it caches
+`IMidiMapping` assignments for all channels, then delivers CC, channel
+pressure, and pitch bend as bounded, sample-offset parameter points without
+querying the plugin on the audio thread. Plugin note, pressure, and legacy MIDI
+CC output events are converted back to bounded native MIDI. Program changes
+can leave a plugin through the legacy output event; generic program-change
+input and SysEx are not currently implemented.
 
 Control-originated MIDI and parameter changes use bounded queues. Parameters
 are applied at the beginning of a processing block. A full queue produces a

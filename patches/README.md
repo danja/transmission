@@ -35,8 +35,8 @@ stereo branches before Guardian protects the final output.
 bass ostinato, evolving electric keys, and a learned contrapuntal reed line.
 The four stereo branches meet at T-Mix and Guardian.
 
-The current Transmission VST3 bridge routes note-on and note-off output but not
-VST3 legacy MIDI CC output. Consequently Drift's CC monitor remains at zero,
-and the CC portions of Conductor and Oracle are not yet visible downstream.
-Their audio paths, section notes, passed notes, and response notes remain
-testable. This limitation is tracked in `docs/todo.md`.
+Transmission routes VST3 note, pressure, and legacy MIDI CC output through
+bounded MIDI edges. Incoming CC, channel pressure, and pitch bend use each
+plugin's cached VST3 MIDI-controller assignments, preserving channel and sample
+offset. The disconnected Drift monitor therefore reports activity without
+requiring an external MIDI destination.

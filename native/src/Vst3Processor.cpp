@@ -1,4 +1,5 @@
 #include "transmission/Vst3Processor.h"
+#include "transmission/Vst3MidiEventConversion.h"
 
 #include "public.sdk/source/vst/hosting/hostclasses.h"
 #include "public.sdk/source/vst/hosting/module.h"
@@ -9,6 +10,7 @@
 #include "public.sdk/source/common/memorystream.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
+#include "pluginterfaces/vst/ivstmidicontrollers.h"
 #include "pluginterfaces/vst/ivstprocesscontext.h"
 
 #include <algorithm>
@@ -33,6 +35,16 @@ struct Vst3Processor::Impl {
     Steinberg::Vst::ParameterChanges parameterChanges{256};
     Steinberg::Vst::ParameterChanges outputParameterChanges{256};
     Steinberg::Vst::ProcessContext processContext{};
+    static constexpr std::size_t midiChannels = 16;
+    static constexpr std::size_t midiControllerCount = 130;
+    static constexpr Steinberg::int32 maxParameterQueues = 256;
+    static constexpr Steinberg::int32 maxPointsPerParameterQueue = 5;
+    std::array<std::array<Steinberg::Vst::ParamID, midiControllerCount>,
+               midiChannels> midiControllerAssignments{};
+    std::array<std::array<bool, midiControllerCount>,
+               midiChannels> hasMidiControllerAssignment{};
+    std::array<Steinberg::Vst::Event, maxMidiEventsPerBlock>
+        outputEventScratch{};
     std::string name;
     std::size_t inputChannels = 0;
     std::size_t outputChannels = 0;
@@ -115,6 +127,30 @@ bool Vst3Processor::initialize(const std::string& modulePath,
     if (!candidate->component || !candidate->processor) {
         error = "VST3 component does not expose IAudioProcessor";
         return false;
+    }
+    if (candidate->controller) {
+        Steinberg::FUnknownPtr<Steinberg::Vst::IMidiMapping> midiMapping(
+            candidate->controller);
+        if (midiMapping) {
+            for (Steinberg::int16 channel = 0;
+                 channel < static_cast<Steinberg::int16>(
+                     Impl::midiChannels); ++channel) {
+                for (Steinberg::int16 controller = 0;
+                     controller < static_cast<Steinberg::int16>(
+                         Impl::midiControllerCount); ++controller) {
+                    Steinberg::Vst::ParamID parameterId =
+                        Steinberg::Vst::kNoParamId;
+                    if (midiMapping->getMidiControllerAssignment(
+                            0, channel, controller, parameterId) ==
+                        Steinberg::kResultTrue) {
+                        candidate->midiControllerAssignments[channel]
+                            [controller] = parameterId;
+                        candidate->hasMidiControllerAssignment[channel]
+                            [controller] = true;
+                    }
+                }
+            }
+        }
     }
 
     const auto inputBusCount = candidate->component->getBusCount(
@@ -408,34 +444,44 @@ void Vst3Processor::processWithMidi(
     impl_->outputParameterChanges.clearQueue();
     for (std::size_t index = 0; index < eventCount; ++index) {
         const auto& midi = events[index];
-        if (midi.size < 3) continue;
-        const auto status = midi.data[0] & 0xf0;
-        const auto channel = static_cast<Steinberg::int16>(midi.data[0] & 0x0f);
         Steinberg::Vst::Event event{};
-        event.busIndex = 0;
-        event.sampleOffset = static_cast<Steinberg::int32>(
-            std::min<std::size_t>(midi.frameOffset, frames - 1));
-        event.ppqPosition = 0.0;
-        event.flags = Steinberg::Vst::Event::kIsLive;
-        if (status == 0x90 && midi.data[2] != 0) {
-            event.type = Steinberg::Vst::Event::kNoteOnEvent;
-            event.noteOn.channel = channel;
-            event.noteOn.pitch = midi.data[1];
-            event.noteOn.tuning = 0.0F;
-            event.noteOn.velocity = static_cast<float>(midi.data[2]) / 127.0F;
-            event.noteOn.length = 0;
-            event.noteOn.noteId = -1;
-        } else if (status == 0x80 || status == 0x90) {
-            event.type = Steinberg::Vst::Event::kNoteOffEvent;
-            event.noteOff.channel = channel;
-            event.noteOff.pitch = midi.data[1];
-            event.noteOff.velocity = static_cast<float>(midi.data[2]) / 127.0F;
-            event.noteOff.noteId = -1;
-            event.noteOff.tuning = 0.0F;
-        } else {
+        if (midiToVst3Event(midi, frames, event)) {
+            impl_->inputEvents.addEvent(event);
             continue;
         }
-        impl_->inputEvents.addEvent(event);
+        Vst3MidiControllerChange change;
+        if (!midiToVst3ControllerChange(midi, frames, change) ||
+            !impl_->hasMidiControllerAssignment[change.channel]
+                [change.controllerNumber])
+            continue;
+        const auto parameterId =
+            impl_->midiControllerAssignments[change.channel]
+                [change.controllerNumber];
+        Steinberg::Vst::IParamValueQueue* queue = nullptr;
+        const auto queueCount = impl_->parameterChanges.getParameterCount();
+        for (Steinberg::int32 queueIndex = 0;
+             queueIndex < queueCount; ++queueIndex) {
+            auto* candidate =
+                impl_->parameterChanges.getParameterData(queueIndex);
+            if (candidate && candidate->getParameterId() == parameterId) {
+                queue = candidate;
+                break;
+            }
+        }
+        if (!queue && queueCount < Impl::maxParameterQueues) {
+            Steinberg::int32 queueIndex = 0;
+            queue = impl_->parameterChanges.addParameterData(
+                parameterId, queueIndex);
+        }
+        if (!queue ||
+            queue->getPointCount() >=
+                Impl::maxPointsPerParameterQueue)
+            continue;
+        Steinberg::int32 pointIndex = 0;
+        if (queue->addPoint(change.sampleOffset,
+                            change.normalizedValue, pointIndex) ==
+            Steinberg::kResultTrue)
+            impl_->hasParameterChanges = true;
     }
     impl_->processData.inputEvents = &impl_->inputEvents;
     impl_->processData.outputEvents = &impl_->outputEvents;
@@ -464,36 +510,17 @@ std::size_t Vst3Processor::takeOutputMidi(MidiEvent* events,
     if (!impl_ || !events || capacity == 0) return 0;
     const auto available = std::min<std::size_t>(
         static_cast<std::size_t>(std::max<Steinberg::int32>(
-            0, impl_->outputEvents.getEventCount())), capacity);
-    std::size_t count = 0;
+            0, impl_->outputEvents.getEventCount())),
+        impl_->outputEventScratch.size());
+    std::size_t copied = 0;
     for (std::size_t index = 0; index < available; ++index) {
         Steinberg::Vst::Event event{};
         if (impl_->outputEvents.getEvent(static_cast<Steinberg::int32>(index), event) !=
             Steinberg::kResultOk) continue;
-        MidiEvent midi;
-        midi.frameOffset = static_cast<std::size_t>(
-            std::max<Steinberg::int32>(0, event.sampleOffset));
-        midi.size = 3;
-        if (event.type == Steinberg::Vst::Event::kNoteOnEvent) {
-            midi.data = {
-                static_cast<std::uint8_t>(0x90 | (event.noteOn.channel & 0x0f)),
-                static_cast<std::uint8_t>(std::clamp<Steinberg::int16>(
-                    event.noteOn.pitch, 0, 127)),
-                static_cast<std::uint8_t>(std::clamp(
-                    static_cast<int>(event.noteOn.velocity * 127.0F), 0, 127))};
-        } else if (event.type == Steinberg::Vst::Event::kNoteOffEvent) {
-            midi.data = {
-                static_cast<std::uint8_t>(0x80 | (event.noteOff.channel & 0x0f)),
-                static_cast<std::uint8_t>(std::clamp<Steinberg::int16>(
-                    event.noteOff.pitch, 0, 127)),
-                static_cast<std::uint8_t>(std::clamp(
-                    static_cast<int>(event.noteOff.velocity * 127.0F), 0, 127))};
-        } else {
-            continue;
-        }
-        events[count++] = midi;
+        impl_->outputEventScratch[copied++] = event;
     }
-    return count;
+    return convertVst3OutputEvents(
+        impl_->outputEventScratch.data(), copied, events, capacity);
 }
 
 } // namespace transmission

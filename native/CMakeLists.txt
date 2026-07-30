@@ -64,6 +64,7 @@ if(TRANSMISSION_WITH_VST3)
   add_subdirectory("${VST3_SDK_ROOT}" "${CMAKE_BINARY_DIR}/vst3sdk" EXCLUDE_FROM_ALL)
   add_library(transmission_vst3_inspector STATIC
     src/Vst3Inspector.cpp
+    src/Vst3MidiEventConversion.cpp
     src/Vst3OfflineProbe.cpp
     src/Vst3Processor.cpp
     "${VST3_SDK_ROOT}/public.sdk/source/common/memorystream.cpp"
@@ -151,6 +152,16 @@ if(TRANSMISSION_BUILD_TESTS)
     add_executable(transmission_jack_audio_device_test tests/JackAudioDeviceTest.cpp)
     target_link_libraries(transmission_jack_audio_device_test PRIVATE transmission_engine)
     add_test(NAME transmission_jack_audio_device_test COMMAND transmission_jack_audio_device_test)
+  endif()
+  if(TRANSMISSION_WITH_VST3)
+    add_executable(transmission_vst3_midi_event_conversion_test
+      tests/Vst3MidiEventConversionTest.cpp)
+    target_link_libraries(transmission_vst3_midi_event_conversion_test
+      PRIVATE transmission_vst3_inspector)
+    target_compile_options(transmission_vst3_midi_event_conversion_test
+      PRIVATE -UNDEBUG)
+    add_test(NAME transmission_vst3_midi_event_conversion_test
+      COMMAND transmission_vst3_midi_event_conversion_test)
   endif()
   add_executable(transmission_transport_test tests/TransportClockTest.cpp)
   target_link_libraries(transmission_transport_test PRIVATE transmission_engine)

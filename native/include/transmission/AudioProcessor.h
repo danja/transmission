@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "AudioDevice.h"
 
@@ -14,6 +15,11 @@ struct AudioProcessContext {
     double projectTimeMusic = 0.0;
     double tempo = 120.0;
     bool playing = false;
+};
+
+struct ProcessorState {
+    std::vector<std::uint8_t> component;
+    std::vector<std::uint8_t> controller;
 };
 
 /** Processing contract for the real-time thread. Implementations must not allocate. */
@@ -39,6 +45,17 @@ public:
     virtual bool setParameter(std::uint32_t /*parameterId*/, double /*normalizedValue*/,
                               std::string& error) {
         error = "processor does not expose parameters";
+        return false;
+    }
+    /** Control-thread project persistence; never call while processing audio. */
+    virtual bool captureState(ProcessorState& state, std::string& /*error*/) {
+        state = {};
+        return true;
+    }
+    /** Control-thread project restoration; never call while processing audio. */
+    virtual bool restoreState(const ProcessorState& state, std::string& error) {
+        if (state.component.empty() && state.controller.empty()) return true;
+        error = "processor does not expose opaque state";
         return false;
     }
     /** Submit a parameter update without touching control-plane state. */

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -11,6 +12,11 @@ enum class UiProjectNodeKind {
     SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput
 };
 enum class UiProjectConnectionKind { Audio, Midi };
+
+struct UiProjectParameter {
+    std::uint32_t id = 0;
+    double normalizedValue = 0.0;
+};
 
 struct UiProjectNode {
     std::string id;
@@ -24,6 +30,9 @@ struct UiProjectNode {
     double y = 0.0;
     std::string pluginPath;
     std::string externalPort;
+    std::vector<UiProjectParameter> parameters;
+    std::vector<std::uint8_t> componentState;
+    std::vector<std::uint8_t> controllerState;
 };
 
 struct UiProjectConnection {

@@ -5,6 +5,7 @@
 #include "public.sdk/source/vst/hosting/hostclasses.h"
 #include "public.sdk/source/vst/hosting/module.h"
 #include "public.sdk/source/vst/hosting/plugprovider.h"
+#include "public.sdk/source/common/memorystream.h"
 #include "pluginterfaces/base/funknown.h"
 #include "pluginterfaces/gui/iplugview.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
@@ -79,6 +80,7 @@ struct Vst3EditorHost::Impl {
     Steinberg::Vst::HostApplication hostApplication;
     std::unique_ptr<Steinberg::Vst::PlugProvider> provider;
     Steinberg::IPtr<Steinberg::Vst::IEditController> controller;
+    Steinberg::IPtr<Steinberg::Vst::IComponent> component;
     std::unique_ptr<ComponentHandler> componentHandler;
     Steinberg::IPtr<Steinberg::IPlugView> view;
     std::unique_ptr<EditorFrame> frame;
@@ -86,6 +88,7 @@ struct Vst3EditorHost::Impl {
     GtkWidget* socket = nullptr;
     bool closing = false;
     ParameterEditCallback parameterEdit;
+    StateCallback stateChanged;
 
     void forwardParameter(Steinberg::Vst::ParamID id,
                           Steinberg::Vst::ParamValue value) {
@@ -207,7 +210,11 @@ Vst3EditorHost::~Vst3EditorHost() { close(); }
 
 bool Vst3EditorHost::open(const std::string& modulePath,
                           const std::string& title,
-                          ParameterEditCallback parameterEdit) {
+                          ParameterEditCallback parameterEdit,
+                          StateCallback stateChanged,
+                          const ProcessorState& initialState,
+                          const std::vector<std::pair<std::uint32_t, double>>&
+                              initialParameters) {
     close();
     const auto fail = [&](const char* message) {
         std::cerr << "VST3 editor: " << message << " (" << modulePath << ")\n";
@@ -236,8 +243,31 @@ bool Vst3EditorHost::open(const std::string& modulePath,
         impl_->module->getFactory(), selected, true);
     if (!impl_->provider->initialize()) return fail("plugin initialization failed");
     impl_->controller = impl_->provider->getController();
+    impl_->component = impl_->provider->getComponentPtr();
     if (!impl_->controller) return fail("plugin has no edit controller");
     impl_->parameterEdit = std::move(parameterEdit);
+    impl_->stateChanged = std::move(stateChanged);
+    if (impl_->component && !initialState.component.empty()) {
+        Steinberg::MemoryStream stream(
+            const_cast<std::uint8_t*>(initialState.component.data()),
+            static_cast<Steinberg::TSize>(
+                initialState.component.size()));
+        if (impl_->component->setState(&stream) != Steinberg::kResultTrue)
+            return fail("plugin rejected saved component state");
+        stream.seek(0, Steinberg::IBStream::kIBSeekSet, nullptr);
+        impl_->controller->setComponentState(&stream);
+    }
+    if (!initialState.controller.empty()) {
+        Steinberg::MemoryStream stream(
+            const_cast<std::uint8_t*>(initialState.controller.data()),
+            static_cast<Steinberg::TSize>(
+                initialState.controller.size()));
+        if (impl_->controller->setState(&stream) != Steinberg::kResultTrue)
+            return fail("plugin rejected saved controller state");
+    }
+    for (const auto& [id, value] : initialParameters)
+        impl_->controller->setParamNormalized(
+            static_cast<Steinberg::Vst::ParamID>(id), value);
     impl_->componentHandler = std::make_unique<ComponentHandler>(impl_.get());
     if (impl_->controller->setComponentHandler(
             impl_->componentHandler.get()) != Steinberg::kResultTrue)
@@ -274,10 +304,37 @@ void Vst3EditorHost::close() noexcept {
     }
     impl_->view = nullptr;
     impl_->frame.reset();
+    if (impl_->stateChanged && impl_->component) {
+        ProcessorState state;
+        Steinberg::MemoryStream componentStream;
+        if (impl_->component->getState(&componentStream) ==
+            Steinberg::kResultTrue) {
+            const auto size = static_cast<std::size_t>(
+                componentStream.getSize());
+            const auto* data =
+                reinterpret_cast<const std::uint8_t*>(
+                    componentStream.getData());
+            if (data && size) state.component.assign(data, data + size);
+        }
+        Steinberg::MemoryStream controllerStream;
+        if (impl_->controller &&
+            impl_->controller->getState(&controllerStream) ==
+                Steinberg::kResultTrue) {
+            const auto size = static_cast<std::size_t>(
+                controllerStream.getSize());
+            const auto* data =
+                reinterpret_cast<const std::uint8_t*>(
+                    controllerStream.getData());
+            if (data && size) state.controller.assign(data, data + size);
+        }
+        impl_->stateChanged(std::move(state));
+    }
     if (impl_->controller) impl_->controller->setComponentHandler(nullptr);
     impl_->componentHandler.reset();
     impl_->controller = nullptr;
+    impl_->component = nullptr;
     impl_->parameterEdit = {};
+    impl_->stateChanged = {};
     impl_->destroyWindow();
     impl_->provider.reset();
     impl_->module.reset();
@@ -293,8 +350,12 @@ namespace transmission {
 struct Vst3EditorHost::Impl {};
 Vst3EditorHost::Vst3EditorHost() : impl_(std::make_unique<Impl>()) {}
 Vst3EditorHost::~Vst3EditorHost() = default;
-bool Vst3EditorHost::open(const std::string&, const std::string&,
-                          ParameterEditCallback) { return false; }
+bool Vst3EditorHost::open(
+    const std::string&, const std::string&, ParameterEditCallback,
+    StateCallback, const ProcessorState&,
+    const std::vector<std::pair<std::uint32_t, double>>&) {
+    return false;
+}
 void Vst3EditorHost::close() noexcept {}
 bool Vst3EditorHost::open() const noexcept { return false; }
 } // namespace transmission

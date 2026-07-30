@@ -1,0 +1,111 @@
+flowchart TB
+    user([User])
+    ttl[(RDF Turtle project)]
+    jack[[JACK / PipeWire server]]
+    vstBundles[(Installed VST3 bundles)]
+
+    subgraph nodePlane["Node.js project control plane"]
+        rdf["TransmissionRdf<br/>Vocabulary"]
+        graph["Graph model<br/>Transport"]
+        project["ProjectSession<br/>validation, undo/redo, atomic save"]
+        compilerJs["GraphCompiler<br/>immutable compiled graph"]
+        engineSession["EngineSession"]
+        bridge["NativeBridge"]
+        helper["native-ui-project.js<br/>UI interchange adapter"]
+    end
+
+    subgraph gtkPlane["Native GTK control and editor plane"]
+        gtk["Graph canvas, menus,<br/>transport and settings"]
+        uiCodec["UiProjectCodec v2"]
+        editor["Vst3EditorHost<br/>separate editor instance"]
+        connectionManager["JackConnectionManager<br/>enumerate and connect"]
+    end
+
+    subgraph nativeControl["Native control layer"]
+        napi["Optional N-API addon"]
+        snapshot["RuntimeGraphSnapshot"]
+        runtimeController["GraphRuntimeController"]
+        compilerNative["GraphRuntimeCompiler<br/>validate and instantiate"]
+        inspector["Vst3Inspector<br/>topology and metadata"]
+        engine["AudioEngine<br/>lifecycle, transport, queues, diagnostics"]
+    end
+
+    subgraph realtime["Native processing layer"]
+        jackDevice["JackAudioDevice<br/>audio and MIDI ports"]
+        inputQueue["Preallocated input queue"]
+        renderWorker["Render coordinator"]
+        routedGraph["RoutedAudioGraph<br/>preallocated DAG"]
+        workers["Stable processing workers<br/>dependency-level parallelism"]
+        processors["AudioProcessor instances<br/>VST3 / pass-through / MIDI endpoint"]
+        outputQueue["Preallocated output queue"]
+        transportClock["TransportClock"]
+    end
+
+    user --> gtk
+    user --> engineSession
+
+    ttl -->|parse| rdf
+    rdf --> graph
+    graph --> project
+    project --> compilerJs
+    compilerJs --> engineSession
+    engineSession --> bridge
+    bridge --> napi
+    napi --> engine
+    project -->|serialize and atomic rename| ttl
+
+    gtk --> uiCodec
+    uiCodec -->|versioned interchange| helper
+    helper --> project
+    project --> helper
+    helper -->|versioned interchange| uiCodec
+    uiCodec --> gtk
+
+    gtk -->|Play: immutable execution data| snapshot
+    snapshot --> runtimeController
+    runtimeController --> compilerNative
+    compilerNative --> routedGraph
+    runtimeController --> engine
+    gtk -->|inspect plugin| inspector
+    inspector --> vstBundles
+    compilerNative -->|factory loads plugin| vstBundles
+    gtk -->|parameters and cached state| editor
+    editor -->|parameter edits and state| gtk
+    editor --> vstBundles
+    gtk -->|bounded parameter updates| runtimeController
+    gtk --> connectionManager
+    connectionManager -->|control-rate route requests| jack
+    jack -->|port discovery| connectionManager
+
+    engine --> jackDevice
+    engine --> transportClock
+    engine --> routedGraph
+    jack -->|real-time callback buffers| jackDevice
+    jackDevice -->|audio and MIDI output| jack
+
+    jackDevice -->|render ahead enabled| inputQueue
+    inputQueue --> renderWorker
+    renderWorker --> routedGraph
+    routedGraph -->|dispatch independent nodes| workers
+    workers -->|level completion| routedGraph
+    routedGraph --> processors
+    processors --> routedGraph
+    routedGraph --> outputQueue
+    outputQueue --> jackDevice
+
+    jackDevice -.->|render ahead disabled:<br/>direct single-thread call| routedGraph
+    transportClock -->|block process context| routedGraph
+    engine -.->|atomic diagnostics| gtk
+    engine -.->|atomic diagnostics| napi
+
+    classDef external fill:#f3f4f6,stroke:#596275,color:#111827
+    classDef node fill:#dbeafe,stroke:#2563eb,color:#172554
+    classDef ui fill:#f3e8ff,stroke:#9333ea,color:#3b0764
+    classDef control fill:#dcfce7,stroke:#16a34a,color:#052e16
+    classDef rt fill:#ffedd5,stroke:#ea580c,color:#431407
+
+    class user,ttl,jack,vstBundles external
+    class rdf,graph,project,compilerJs,engineSession,bridge,helper node
+    class gtk,uiCodec,editor,connectionManager ui
+    class napi,snapshot,runtimeController,compilerNative,inspector,engine control
+    class jackDevice,inputQueue,renderWorker,routedGraph,workers,processors,outputQueue,transportClock rt

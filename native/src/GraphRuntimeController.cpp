@@ -71,4 +71,9 @@ std::vector<ProcessorTiming> GraphRuntimeController::processorTimings() const {
     return engine_.processorTimings();
 }
 
+std::vector<NodeProcessorState> GraphRuntimeController::processorStates(
+    std::string& error) {
+    return engine_.processorStates(error);
+}
+
 } // namespace transmission

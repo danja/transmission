@@ -12,6 +12,8 @@ export const vocabulary = Object.freeze({
     audioInputs: `${TRN}audioInputs`, audioOutputs: `${TRN}audioOutputs`, midiInputs: `${TRN}midiInputs`, midiOutputs: `${TRN}midiOutputs`,
     connections: `${TRN}connections`, from: `${TRN}from`, to: `${TRN}to`, kind: `${TRN}kind`,
     fromPort: `${TRN}fromPort`, toPort: `${TRN}toPort`, editorX: `${TRN}editorX`, editorY: `${TRN}editorY`,
+    parameters: `${TRN}parameters`, parameterId: `${TRN}parameterId`, normalizedValue: `${TRN}normalizedValue`,
+    componentState: `${TRN}componentState`, controllerState: `${TRN}controllerState`,
     systemInputConnections: `${TRN}systemInputConnections`, systemOutputConnections: `${TRN}systemOutputConnections`,
     tempoMap: `${TRN}tempoMap`, atBeat: `${TRN}atBeat`, bpm: `${TRN}bpm`, loopStart: `${TRN}loopStart`, loopEnd: `${TRN}loopEnd`, loopEnabled: `${TRN}loopEnabled`
   })

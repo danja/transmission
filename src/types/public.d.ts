@@ -11,6 +11,8 @@ export interface GraphNode {
     midiOutputs?: number
   }
   settings?: Record<string, unknown>
+  parameters?: Array<{ id: number, normalizedValue: number }>
+  state?: { component?: string, controller?: string }
   metadata?: Record<string, unknown>
 }
 

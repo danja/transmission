@@ -1,5 +1,6 @@
 #include "transmission/UiProjectCodec.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <sstream>
@@ -76,7 +77,7 @@ bool number(std::string_view text, double& result) {
 
 std::string encodeUiProject(const UiProject& project) {
     std::ostringstream output;
-    output << "TRANSMISSION_UI\t1\n";
+    output << "TRANSMISSION_UI\t2\n";
     output << "PROJECT\t" << hexEncode(project.id) << '\t'
            << hexEncode(project.label) << '\n';
     output << "TRANSPORT\t" << project.tempo << '\t' << project.loopBars
@@ -96,6 +97,21 @@ std::string encodeUiProject(const UiProject& project) {
                                     node.kind == UiProjectNodeKind::MidiOutput
                                 ? node.externalPort : node.pluginPath)
                << '\n';
+        for (const auto& parameter : node.parameters)
+            output << "PARAM\t" << hexEncode(node.id) << '\t'
+                   << parameter.id << '\t' << parameter.normalizedValue
+                   << '\n';
+        if (!node.componentState.empty() || !node.controllerState.empty()) {
+            const auto component = std::string_view(
+                reinterpret_cast<const char*>(node.componentState.data()),
+                node.componentState.size());
+            const auto controller = std::string_view(
+                reinterpret_cast<const char*>(node.controllerState.data()),
+                node.controllerState.size());
+            output << "STATE\t" << hexEncode(node.id) << '\t'
+                   << hexEncode(component) << '\t'
+                   << hexEncode(controller) << '\n';
+        }
     }
     for (const auto& connection : project.connections) {
         output << "EDGE\t" << hexEncode(connection.from) << '\t'
@@ -125,7 +141,7 @@ bool decodeUiProject(const std::string& text, UiProject& project,
         };
         if (!header) {
             if (values.size() != 2 || values[0] != "TRANSMISSION_UI" ||
-                values[1] != "1") return fail();
+                (values[1] != "1" && values[1] != "2")) return fail();
             header = true;
             continue;
         }
@@ -175,6 +191,38 @@ bool decodeUiProject(const std::string& text, UiProject& project,
             else
                 node.pluginPath = std::move(resource);
             candidate.nodes.push_back(std::move(node));
+        } else if (values[0] == "PARAM") {
+            std::string nodeId;
+            std::uint32_t parameterId = 0;
+            double normalizedValue = 0.0;
+            if (values.size() != 4 || !hexDecode(values[1], nodeId) ||
+                !integer(values[2], parameterId) ||
+                !number(values[3], normalizedValue) ||
+                normalizedValue < 0.0 || normalizedValue > 1.0)
+                return fail();
+            const auto node = std::find_if(
+                candidate.nodes.begin(), candidate.nodes.end(),
+                [&nodeId](const auto& current) {
+                    return current.id == nodeId;
+                });
+            if (node == candidate.nodes.end()) return fail();
+            node->parameters.push_back({parameterId, normalizedValue});
+        } else if (values[0] == "STATE") {
+            std::string nodeId;
+            std::string component;
+            std::string controller;
+            if (values.size() != 4 || !hexDecode(values[1], nodeId) ||
+                !hexDecode(values[2], component) ||
+                !hexDecode(values[3], controller))
+                return fail();
+            const auto node = std::find_if(
+                candidate.nodes.begin(), candidate.nodes.end(),
+                [&nodeId](const auto& current) {
+                    return current.id == nodeId;
+                });
+            if (node == candidate.nodes.end()) return fail();
+            node->componentState.assign(component.begin(), component.end());
+            node->controllerState.assign(controller.begin(), controller.end());
         } else if (values[0] == "EDGE") {
             UiProjectConnection connection;
             int kind = 0;

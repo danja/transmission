@@ -65,6 +65,7 @@ if(TRANSMISSION_WITH_VST3)
     src/Vst3Inspector.cpp
     src/Vst3OfflineProbe.cpp
     src/Vst3Processor.cpp
+    "${VST3_SDK_ROOT}/public.sdk/source/common/memorystream.cpp"
     "${VST3_SDK_ROOT}/public.sdk/source/vst/hosting/plugprovider.cpp"
     "${VST3_SDK_ROOT}/public.sdk/source/vst/hosting/module_linux.cpp"
   )

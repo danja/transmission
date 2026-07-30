@@ -31,7 +31,10 @@ describe('Transmission RDF adapter', () => {
         {
           id: `${base}drumgen`, type: `${base}VST3Plugin`, label: 'drumgen',
           ports: { audioOutputs: 2, midiOutputs: 1 },
-          settings: { pluginPath: '/home/test/drumgen.vst3' }, metadata: { x: 240, y: 30 }
+          settings: { pluginPath: '/home/test/drumgen.vst3' },
+          parameters: [{ id: 42, normalizedValue: 0.75 }],
+          state: { component: 'AAEC/w==', controller: 'ECA=' },
+          metadata: { x: 240, y: 30 }
         },
         {
           id: `${base}output`, type: `${base}AudioOutput`, label: 'System Output',
@@ -55,6 +58,12 @@ describe('Transmission RDF adapter', () => {
     const restored = graphFromDataset(dataset, graph.id)
     expect(restored.connections).toEqual(graph.connections)
     expect(restored.node(`${base}drumgen`).settings[`${base}pluginPath`]).toEqual(['/home/test/drumgen.vst3'])
+    expect(restored.node(`${base}drumgen`).parameters).toEqual([
+      { id: 42, normalizedValue: 0.75 }
+    ])
+    expect(restored.node(`${base}drumgen`).state).toEqual({
+      component: 'AAEC/w==', controller: 'ECA='
+    })
     expect(restored.node(`${base}drumgen`).metadata).toEqual({ x: 240, y: 30 })
     expect(restored.metadata.systemOutputConnections).toEqual(['playback:left', 'playback:right'])
     expect(transportFromDataset(dataset, graph.id)).toEqual(transport)

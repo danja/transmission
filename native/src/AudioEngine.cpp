@@ -212,6 +212,17 @@ std::vector<ProcessorTiming> AudioEngine::processorTimings() const {
         : std::vector<ProcessorTiming>{};
 }
 
+std::vector<NodeProcessorState> AudioEngine::processorStates(
+    std::string& error) {
+    std::scoped_lock lock(controlMutex_);
+    if (diagnostics_.running) {
+        error = "stop audio before capturing processor state";
+        return {};
+    }
+    if (!routedAudioGraph_) return {};
+    return routedAudioGraph_->processorStates(error);
+}
+
 void AudioEngine::process(const float* const* inputs, float* const* outputs,
                           std::size_t channels, std::size_t frames) noexcept {
     if (renderAheadBlocks_ == 0)

@@ -63,6 +63,7 @@ public:
     TransportAdvance advanceTransport(std::size_t frames) noexcept;
     Diagnostics diagnostics() const;
     std::vector<ProcessorTiming> processorTimings() const;
+    std::vector<NodeProcessorState> processorStates(std::string& error);
     void process(const float* const* inputs, float* const* outputs,
                  std::size_t channels, std::size_t frames) noexcept override;
     void handleMidi(const MidiEvent& event) noexcept override;

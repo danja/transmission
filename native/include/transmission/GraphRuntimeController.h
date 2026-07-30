@@ -30,6 +30,7 @@ public:
     bool running() const;
     Diagnostics diagnostics() const;
     std::vector<ProcessorTiming> processorTimings() const;
+    std::vector<NodeProcessorState> processorStates(std::string& error);
 
 private:
     GraphRuntimeCompiler compiler_;

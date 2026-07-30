@@ -4,11 +4,17 @@ Transmission is being designed to be a generative music workstation.
 
 It is actually a modular Linux VST3 transmission host primarily intended to use generative plugins such as those of [Downspout](https://danja.github.io/downspout/)
 
-The project is split between a Node.js control plane and a C++ real-time engine. RDF/Turtle projects are parsed into a typed graph, compiled and then supplied to the native engine through a control-rate bridge.
+
 
 ## Implemented foundation
 
+The project is split between a Node.js control plane and a C++ real-time engine. RDF/Turtle projects are parsed into a typed graph, compiled and then supplied to the native engine through a control-rate bridge.
+
 It draws on an existing project : [Transmissions](https://github.com/danja/transmissions) which is a pipeline processing framework I put together largely for text processing. However for audio it needed to be realtime and native. 
+
+The current control, persistence, threading, and audio paths are described in
+[docs/architecture.md](docs/architecture.md), with a standalone
+[Mermaid diagram](docs/architecture.mermaid).
 
 - RDF/Turtle graph parsing, validation, compilation, and persistence
 - Modular plugin registry and VST3 bundle discovery
@@ -77,7 +83,10 @@ The File menu provides New, Open, Save, Save As, and Quit, with the usual
 keyboard shortcuts. Transmission projects use RDF Turtle (`.ttl`) as their
 canonical format. Saving and loading preserve plugin bundle paths, typed graph
 connections and ports, editor positions, tempo/loop settings, and requested
-JACK input/output connections. GTK exchanges a small validated snapshot with
+JACK input/output connections. Normalized plugin parameters and opaque VST3
+component/controller state are also stored; state blobs are base64-encoded in
+Turtle and captured only after audio processing has stopped. GTK exchanges a
+small validated snapshot with
 the existing Node project session, which performs RDF parsing and atomic file
 writes on the control thread; the native audio callback never parses RDF or
 accesses the filesystem.

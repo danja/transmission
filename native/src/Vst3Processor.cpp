@@ -6,7 +6,9 @@
 #include "public.sdk/source/vst/hosting/plugprovider.h"
 #include "public.sdk/source/vst/hosting/processdata.h"
 #include "public.sdk/source/vst/hosting/eventlist.h"
+#include "public.sdk/source/common/memorystream.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
+#include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "pluginterfaces/vst/ivstprocesscontext.h"
 
 #include <algorithm>
@@ -24,6 +26,7 @@ struct Vst3Processor::Impl {
     std::unique_ptr<Steinberg::Vst::PlugProvider> provider;
     Steinberg::IPtr<Steinberg::Vst::IComponent> component;
     Steinberg::FUnknownPtr<Steinberg::Vst::IAudioProcessor> processor;
+    Steinberg::IPtr<Steinberg::Vst::IEditController> controller;
     Steinberg::Vst::HostProcessData processData;
     Steinberg::Vst::EventList inputEvents{256};
     Steinberg::Vst::EventList outputEvents{256};
@@ -52,6 +55,7 @@ struct Vst3Processor::Impl {
         processData.unprepare();
         // Release queried interfaces before the provider unloads the module.
         processor = nullptr;
+        controller = nullptr;
         component = nullptr;
         provider.reset();
         module.reset();
@@ -107,6 +111,7 @@ bool Vst3Processor::initialize(const std::string& modulePath,
     candidate->component = candidate->provider->getComponentPtr();
     candidate->processor = Steinberg::FUnknownPtr<Steinberg::Vst::IAudioProcessor>(
         candidate->component);
+    candidate->controller = candidate->provider->getController();
     if (!candidate->component || !candidate->processor) {
         error = "VST3 component does not expose IAudioProcessor";
         return false;
@@ -216,6 +221,97 @@ bool Vst3Processor::setParameter(std::uint32_t parameterId, double normalizedVal
         error = "VST3 parameter queue is full";
         return false;
     }
+    return true;
+}
+
+bool Vst3Processor::captureState(ProcessorState& state, std::string& error) {
+    state = {};
+    if (!ready()) {
+        error = "VST3 processor is not initialized";
+        return false;
+    }
+    Steinberg::MemoryStream componentStream;
+    if (impl_->component->getState(&componentStream) ==
+        Steinberg::kResultTrue) {
+        const auto size = static_cast<std::size_t>(
+            componentStream.getSize());
+        const auto* data = reinterpret_cast<const std::uint8_t*>(
+            componentStream.getData());
+        if (data && size != 0)
+            state.component.assign(data, data + size);
+    }
+    if (impl_->controller) {
+        Steinberg::MemoryStream controllerStream;
+        if (impl_->controller->getState(&controllerStream) ==
+            Steinberg::kResultTrue) {
+            const auto size = static_cast<std::size_t>(
+                controllerStream.getSize());
+            const auto* data = reinterpret_cast<const std::uint8_t*>(
+                controllerStream.getData());
+            if (data && size != 0)
+                state.controller.assign(data, data + size);
+        }
+    }
+    return true;
+}
+
+bool Vst3Processor::restoreState(const ProcessorState& state,
+                                 std::string& error) {
+    if (!ready()) {
+        error = "VST3 processor is not initialized";
+        return false;
+    }
+    if (state.component.empty() && state.controller.empty()) return true;
+    if (impl_->processing) {
+        impl_->processor->setProcessing(false);
+        impl_->processing = false;
+    }
+    if (impl_->active) {
+        impl_->component->setActive(false);
+        impl_->active = false;
+    }
+    if (!state.component.empty()) {
+        Steinberg::MemoryStream stream(
+            const_cast<std::uint8_t*>(state.component.data()),
+            static_cast<Steinberg::TSize>(state.component.size()));
+        if (impl_->component->setState(&stream) !=
+            Steinberg::kResultTrue) {
+            error = "VST3 component rejected saved state";
+            return false;
+        }
+        if (impl_->controller) {
+            stream.seek(0, Steinberg::IBStream::kIBSeekSet, nullptr);
+            if (impl_->controller->setComponentState(&stream) !=
+                    Steinberg::kResultTrue &&
+                !state.controller.empty()) {
+                error = "VST3 controller rejected component state";
+                return false;
+            }
+        }
+    }
+    if (impl_->controller && !state.controller.empty()) {
+        Steinberg::MemoryStream stream(
+            const_cast<std::uint8_t*>(state.controller.data()),
+            static_cast<Steinberg::TSize>(state.controller.size()));
+        if (impl_->controller->setState(&stream) !=
+            Steinberg::kResultTrue) {
+            error = "VST3 controller rejected saved state";
+            return false;
+        }
+    }
+    if (impl_->component->setActive(true) != Steinberg::kResultTrue) {
+        error = "VST3 component activation failed after restoring state";
+        return false;
+    }
+    impl_->active = true;
+    const auto processingResult = impl_->processor->setProcessing(true);
+    if (processingResult != Steinberg::kResultOk &&
+        processingResult != Steinberg::kNotImplemented &&
+        processingResult != Steinberg::kInvalidArgument) {
+        error = "VST3 processor activation failed after restoring state";
+        return false;
+    }
+    impl_->processing = true;
     return true;
 }
 

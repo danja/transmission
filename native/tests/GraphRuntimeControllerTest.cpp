@@ -23,6 +23,12 @@ public:
         return true;
     }
 
+    bool captureState(transmission::ProcessorState& state,
+                      std::string&) override {
+        state = {{1, 3, 5}, {2, 4}};
+        return true;
+    }
+
     std::uint32_t lastId = 0;
     double lastValue = 0.0;
 };
@@ -67,8 +73,18 @@ int main() {
     assert(device.render(inputs, outputs));
     assert(output[3] == input[3]);
     assert(runtime.diagnostics().processedBlocks == 1);
+    std::string runningStateError;
+    assert(runtime.processorStates(runningStateError).empty());
+    assert(runningStateError ==
+           "stop audio before capturing processor state");
     runtime.stop();
     assert(!runtime.running());
+    const auto states = runtime.processorStates(error);
+    assert(error.empty());
+    assert(states.size() == 1);
+    assert(states[0].nodeId == "parameter");
+    assert(states[0].state.component ==
+           std::vector<std::uint8_t>({1, 3, 5}));
 
     transmission::RuntimeGraphSnapshot invalid;
     assert(!runtime.start(invalid, device, config, {}, error));

@@ -20,6 +20,11 @@ struct ProcessorTiming {
     double maximumMicroseconds = 0.0;
 };
 
+struct NodeProcessorState {
+    std::string nodeId;
+    ProcessorState state;
+};
+
 /**
  * Preallocated DAG runtime. Control-plane code creates nodes and connects
  * them; prepare() resolves execution order and allocates all block storage.
@@ -58,6 +63,10 @@ public:
                                        std::size_t capacity) noexcept;
     void setTimingEnabled(bool enabled) noexcept { timingEnabled_ = enabled; }
     std::vector<ProcessorTiming> processorTimings() const;
+    std::vector<NodeProcessorState> processorStates(std::string& error);
+    bool restoreProcessorState(const std::string& nodeId,
+                               const ProcessorState& state,
+                               std::string& error);
     bool configureProcessingThreads(std::size_t requestedThreads);
 
     std::size_t nodeCount() const noexcept { return nodes_.size(); }

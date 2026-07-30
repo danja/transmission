@@ -91,6 +91,13 @@ std::unique_ptr<RoutedAudioGraph> GraphRuntimeCompiler::compile(
             error = "unable to add runtime graph node: " + node.id;
             return nullptr;
         }
+        if ((!node.state.component.empty() ||
+             !node.state.controller.empty()) &&
+            !graph->restoreProcessorState(node.id, node.state, error)) {
+            if (error.empty())
+                error = "unable to restore processor state: " + node.id;
+            return nullptr;
+        }
         for (const auto& parameter : node.parameters) {
             if (!graph->setParameter(node.id, parameter.id,
                                      parameter.normalizedValue, error)) {

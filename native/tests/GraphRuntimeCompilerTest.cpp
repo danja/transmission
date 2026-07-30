@@ -46,9 +46,23 @@ public:
         return true;
     }
 
+    bool captureState(transmission::ProcessorState& state,
+                      std::string&) override {
+        state = capturedState;
+        return true;
+    }
+
+    bool restoreState(const transmission::ProcessorState& state,
+                      std::string&) override {
+        restoredState = state;
+        return true;
+    }
+
     std::size_t received = 0;
     std::uint32_t lastParameterId = 0;
     double lastParameterValue = 0.0;
+    transmission::ProcessorState restoredState;
+    transmission::ProcessorState capturedState{{9, 8, 7}, {6, 5}};
 };
 
 transmission::RuntimeGraphSnapshot validSnapshot() {
@@ -100,10 +114,20 @@ int main() {
     std::string error;
     auto parameterized = validSnapshot();
     parameterized.nodes[2].parameters.push_back({42, 0.75});
+    parameterized.nodes[2].state = {{1, 2, 3}, {4, 5}};
     auto graph = compiler.compile(parameterized, config, error);
     assert(graph);
     assert(capture && capture->lastParameterId == 42);
     assert(capture->lastParameterValue == 0.75);
+    assert(capture->restoredState.component ==
+           parameterized.nodes[2].state.component);
+    std::string stateError;
+    const auto states = graph->processorStates(stateError);
+    assert(stateError.empty());
+    assert(states.size() == 1);
+    assert(states[0].nodeId == "capture");
+    assert(states[0].state.controller ==
+           capture->capturedState.controller);
     assert(graph->prepare(config.channels, config.blockSize));
     const float input[] = {0.25F, 0.5F, 0.75F, 1.0F};
     float output[4] = {};
@@ -130,6 +154,11 @@ int main() {
     cycle.connections.push_back({"capture", "generator",
                                  transmission::RuntimeConnectionKind::Midi});
     assert(!compiler.compile(cycle, config, error));
+
+    auto unsupportedState = validSnapshot();
+    unsupportedState.nodes[0].state.component = {1};
+    assert(!compiler.compile(unsupportedState, config, error));
+    assert(error == "processor does not expose opaque state");
 
     auto failure = validSnapshot();
     failure.nodes.push_back({"factory-failure",

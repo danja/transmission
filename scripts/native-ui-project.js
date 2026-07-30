@@ -60,7 +60,8 @@ function decodeProject(text) {
     const fields = line.split('\t')
     const invalid = () => { throw new Error(`Invalid native UI project interchange at line ${index + 1}`) }
     if (!header) {
-      if (fields.length !== 2 || fields[0] !== 'TRANSMISSION_UI' || fields[1] !== '1') invalid()
+      if (fields.length !== 2 || fields[0] !== 'TRANSMISSION_UI' ||
+          !['1', '2'].includes(fields[1])) invalid()
       header = true
       continue
     }
@@ -106,8 +107,23 @@ function decodeProject(text) {
         settings: resource
           ? { [kind >= 4 ? 'externalPort' : 'pluginPath']: resource }
           : {},
+        parameters: [],
+        state: { component: '', controller: '' },
         metadata: { x: finiteNumber(fields[8]), y: finiteNumber(fields[9]) }
       })
+    } else if (fields[0] === 'PARAM' && fields.length === 4) {
+      const node = project.nodes.find(candidate => candidate.id === fullId(hexDecode(fields[1])))
+      const id = integer(fields[2])
+      const normalizedValue = finiteNumber(fields[3])
+      if (!node || normalizedValue < 0 || normalizedValue > 1) invalid()
+      node.parameters.push({ id, normalizedValue })
+    } else if (fields[0] === 'STATE' && fields.length === 4) {
+      const node = project.nodes.find(candidate => candidate.id === fullId(hexDecode(fields[1])))
+      if (!node) invalid()
+      node.state = {
+        component: hexDecodeBuffer(fields[2]).toString('base64'),
+        controller: hexDecodeBuffer(fields[3]).toString('base64')
+      }
     } else if (fields[0] === 'EDGE' && fields.length === 6) {
       const kind = integer(fields[3])
       if (kind < 0 || kind > 1) invalid()
@@ -130,7 +146,7 @@ function encodeProject(session) {
   const graph = session.graph
   const transport = session.transport.toJSON()
   const lines = [
-    'TRANSMISSION_UI\t1',
+    'TRANSMISSION_UI\t2',
     `PROJECT\t${hexEncode(shortId(graph.id))}\t${hexEncode(graph.label)}`,
     `TRANSPORT\t${transport.tempoMap[0]?.bpm ?? 120}\t${(transport.loop?.endBeat ?? 16) / 4}\t${transport.loop?.enabled ? 1 : 0}`
   ]
@@ -155,6 +171,19 @@ function encodeProject(session) {
       finiteNumber(node.metadata.x ?? 0), finiteNumber(node.metadata.y ?? 0),
       hexEncode(resource)
     ].join('\t'))
+    for (const parameter of node.parameters ?? []) {
+      const id = integer(String(parameter.id))
+      const normalizedValue = finiteNumber(parameter.normalizedValue)
+      if (normalizedValue < 0 || normalizedValue > 1)
+        throw new Error(`Invalid normalized parameter value: ${normalizedValue}`)
+      lines.push(`PARAM\t${hexEncode(shortId(node.id))}\t${id}\t${normalizedValue}`)
+    }
+    const component = decodeBase64(node.state?.component ?? '')
+    const controller = decodeBase64(node.state?.controller ?? '')
+    if (component.length || controller.length) {
+      lines.push(
+        `STATE\t${hexEncode(shortId(node.id))}\t${hexEncodeBuffer(component)}\t${hexEncodeBuffer(controller)}`)
+    }
   }
   for (const connection of graph.connections) {
     lines.push([
@@ -200,4 +229,21 @@ function hexDecode(value) {
   if (value === '-') return ''
   if (!/^(?:[0-9a-fA-F]{2})+$/.test(value)) throw new Error('Invalid hexadecimal string')
   return Buffer.from(value, 'hex').toString('utf8')
+}
+
+function hexEncodeBuffer(value) {
+  return value.length ? value.toString('hex') : '-'
+}
+
+function hexDecodeBuffer(value) {
+  if (value === '-') return Buffer.alloc(0)
+  if (!/^(?:[0-9a-fA-F]{2})+$/.test(value)) throw new Error('Invalid hexadecimal string')
+  return Buffer.from(value, 'hex')
+}
+
+function decodeBase64(value) {
+  if (!value) return Buffer.alloc(0)
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value))
+    throw new Error('Invalid base64 plugin state')
+  return Buffer.from(value, 'base64')
 }

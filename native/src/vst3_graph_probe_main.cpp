@@ -48,6 +48,18 @@ int main(int argc, char** argv) {
     const auto pluginName = vst->pluginName();
     vst->process(inputPointers.data(), inputChannels, outputPointers.data(),
                  outputChannels, frames);
+    transmission::ProcessorState state;
+    if (!vst->captureState(state, error)) {
+        std::cerr << "VST3 state capture failed: " << error << "\n";
+        return 1;
+    }
+    auto restored = std::make_unique<transmission::Vst3Processor>();
+    if (!restored->initialize(argv[1], inputChannels, outputChannels,
+                              frames, sampleRate, error) ||
+        !restored->restoreState(state, error)) {
+        std::cerr << "VST3 state restoration failed: " << error << "\n";
+        return 1;
+    }
 
     double energy = 0.0;
     for (const auto& channel : output)
@@ -57,6 +69,8 @@ int main(int argc, char** argv) {
               << "inputChannels=" << inputChannels << "\n"
               << "outputChannels=" << outputChannels << "\n"
               << "frames=" << frames << "\n"
+              << "componentStateBytes=" << state.component.size() << "\n"
+              << "controllerStateBytes=" << state.controller.size() << "\n"
               << "outputRms=" << std::sqrt(
                      energy / std::max<std::size_t>(1, outputChannels * frames))
               << "\n";

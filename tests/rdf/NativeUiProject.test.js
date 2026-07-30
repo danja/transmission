@@ -16,7 +16,7 @@ describe('native UI Turtle project helper', () => {
     temporaryDirectories.push(directory)
     const filePath = join(directory, 'drums.ttl')
     const interchange = [
-      'TRANSMISSION_UI\t1',
+      'TRANSMISSION_UI\t2',
       `PROJECT\t${hex('main')}\t${hex('Drum graph')}`,
       'TRANSPORT\t132\t8\t1',
       `INPUT\t0\t${hex('capture:left')}`,
@@ -25,6 +25,8 @@ describe('native UI Turtle project helper', () => {
       `OUTPUT\t1\t${hex('playback:right')}`,
       `NODE\t${hex('system-input')}\t${hex('System Input')}\t0\t0\t2\t0\t1\t20\t40\t-`,
       `NODE\t${hex('drumgen')}\t${hex('drumgen')}\t3\t0\t2\t1\t1\t260\t40\t${hex('/home/test/drumgen.vst3')}`,
+      `PARAM\t${hex('drumgen')}\t42\t0.75`,
+      `STATE\t${hex('drumgen')}\t000102ff\t1020`,
       `NODE\t${hex('drumkit')}\t${hex('drumkit')}\t3\t2\t2\t1\t1\t500\t40\t${hex('/home/test/drumkit.vst3')}`,
       `NODE\t${hex('midi-output-1')}\t${hex('MIDI Output')}\t5\t0\t0\t1\t0\t620\t180\t${hex('synth-42:midi_in')}`,
       `NODE\t${hex('system-output')}\t${hex('System Output')}\t1\t2\t0\t1\t0\t740\t40\t-`,
@@ -41,14 +43,21 @@ describe('native UI Turtle project helper', () => {
     expect(turtle).toContain(':connections')
     expect(turtle).toContain('/home/test/drumgen.vst3')
     expect(turtle).toContain('playback:left')
+    expect(turtle).toContain(':parameterId 42')
+    expect(turtle).toContain(':normalizedValue 0.75')
+    expect(turtle).toContain(':componentState "AAEC/w=="')
+    expect(turtle).toContain(':controllerState "ECA="')
 
     const restored = await runHelper('load', filePath)
+    expect(restored).toContain('TRANSMISSION_UI\t2')
     expect(restored).toContain('TRANSPORT\t132\t8\t1')
     expect(restored).toContain(`NODE\t${hex('drumgen')}`)
     expect(restored).toContain(`EDGE\t${hex('drumgen')}\t${hex('drumkit')}\t1\t0\t0`)
     expect(restored).toContain(`NODE\t${hex('midi-output-1')}\t${hex('MIDI Output')}\t5`)
     expect(restored).toContain(hex('synth-42:midi_in'))
     expect(restored).toContain(`OUTPUT\t0\t${hex('playback:left')}`)
+    expect(restored).toContain(`PARAM\t${hex('drumgen')}\t42\t0.75`)
+    expect(restored).toContain(`STATE\t${hex('drumgen')}\t000102ff\t1020`)
   }, 15_000)
 
   it('rejects a Turtle file without a Transmission project', async () => {

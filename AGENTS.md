@@ -25,6 +25,9 @@ Build Transmission as a maintainable Linux VST3 host with a Node.js control plan
 
 ## Change workflow
 
+Add newly identified work items to `docs/todo.md`. Remove each item when its
+implementation and verification are complete.
+
 Before editing:
 
 1. Inspect the relevant model, bridge, compiler, and test contracts.

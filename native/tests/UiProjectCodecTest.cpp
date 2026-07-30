@@ -24,12 +24,22 @@ int main() {
     project.connections = {
         {"drumgen", "system-output",
          transmission::UiProjectConnectionKind::Audio, 0, 1}};
+    project.nodes[1].parameters = {{7, 0.25}, {42, 0.75}};
+    project.nodes[1].componentState = {0x00, 0x7f, 0xff};
+    project.nodes[1].controllerState = {0x10, 0x20};
     const auto encoded = transmission::encodeUiProject(project);
     transmission::UiProject decoded;
     std::string error;
     assert(transmission::decodeUiProject(encoded, decoded, error));
     assert(decoded.label == project.label);
     assert(decoded.nodes[1].pluginPath == project.nodes[1].pluginPath);
+    assert(decoded.nodes[1].parameters.size() == 2);
+    assert(decoded.nodes[1].parameters[1].id == 42);
+    assert(decoded.nodes[1].parameters[1].normalizedValue == 0.75);
+    assert(decoded.nodes[1].componentState ==
+           project.nodes[1].componentState);
+    assert(decoded.nodes[1].controllerState ==
+           project.nodes[1].controllerState);
     assert(decoded.nodes[2].externalPort == project.nodes[2].externalPort);
     assert(decoded.nodes[0].x == project.nodes[0].x);
     assert(decoded.connections[0].toPort == 1);
@@ -40,5 +50,14 @@ int main() {
     assert(!transmission::decodeUiProject("not a project\n", decoded, error));
     assert(!transmission::decodeUiProject(
         "TRANSMISSION_UI\t1\nNODE\tbroken\nEND\n", decoded, error));
+    assert(!transmission::decodeUiProject(
+        "TRANSMISSION_UI\t2\n"
+        "NODE\t6e\t6e\t3\t0\t2\t0\t0\t0\t0\t2f702e76737433\n"
+        "PARAM\t6e\t7\t1.5\n"
+        "END\n", decoded, error));
+    assert(transmission::decodeUiProject(
+        "TRANSMISSION_UI\t1\n"
+        "NODE\t6e\t6e\t3\t0\t2\t0\t0\t0\t0\t2f702e76737433\n"
+        "END\n", decoded, error));
     return 0;
 }

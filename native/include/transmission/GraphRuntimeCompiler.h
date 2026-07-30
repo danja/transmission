@@ -30,6 +30,7 @@ struct RuntimeGraphNode {
     std::size_t audioInputs = 0;
     std::size_t audioOutputs = 0;
     std::vector<RuntimeParameterValue> parameters;
+    ProcessorState state;
 };
 
 struct RuntimeGraphConnection {

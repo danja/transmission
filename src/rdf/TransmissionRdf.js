@@ -33,6 +33,15 @@ export function graphFromDataset(dataset, transmissionId) {
         midiOutputs: numeric(first(dataset, node, ns.trn.midiOutputs))
       },
       settings: settingsObject(dataset, first(dataset, node, ns.trn.settings)),
+      parameters: list(dataset, first(dataset, node, ns.trn.parameters))
+        .map(parameter => ({
+          id: numeric(first(dataset, parameter, ns.trn.parameterId)),
+          normalizedValue: numeric(first(dataset, parameter, ns.trn.normalizedValue))
+        })),
+      state: {
+        component: first(dataset, node, ns.trn.componentState)?.value ?? '',
+        controller: first(dataset, node, ns.trn.controllerState)?.value ?? ''
+      },
       metadata: {
         x: numeric(first(dataset, node, ns.trn.editorX)),
         y: numeric(first(dataset, node, ns.trn.editorY))
@@ -133,6 +142,15 @@ export function serializeGraph(graph, transport = null) {
       })
       lines.push(`    :settings [ ${properties.join(' ; ')} ] ;`)
     }
+    if (node.parameters?.length) {
+      const parameters = node.parameters.map(parameter =>
+        `[ :parameterId ${parameter.id} ; :normalizedValue ${parameter.normalizedValue} ]`)
+      lines.push(`    :parameters ( ${parameters.join(' ')} ) ;`)
+    }
+    if (node.state?.component)
+      lines.push(`    :componentState ${literal(node.state.component)} ;`)
+    if (node.state?.controller)
+      lines.push(`    :controllerState ${literal(node.state.controller)} ;`)
     lines[lines.length - 1] = lines[lines.length - 1].replace(/ ;$/, ' .')
     lines.push('')
   }

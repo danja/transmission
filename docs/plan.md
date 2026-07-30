@@ -168,9 +168,14 @@ block. The GTK model also retains the latest edited values and supplies them
 when the graph is compiled again, covering edits made before Play and runtime
 rebuilds.
 
-Full component-state synchronization and persistence of editor parameter values
-in Turtle remain separate work; this path handles ordinary parameter edits, not
-opaque plugin state or preset files.
+Normalized parameter values and opaque VST3 component/controller state are now
+part of the project model. Saving stops audio before asking processors for
+state, keeping plugin calls off the JACK callback, and writes parameters plus
+base64-encoded state blobs to Turtle. Loading restores opaque state before
+applying explicit parameter values and starting processing. Native editors also
+receive the restored values when opened and return their latest state when
+closed. The version-2 native UI interchange carries these fields while
+remaining able to read version-1 projects.
 
 ## Audio deadline buffering and latency
 

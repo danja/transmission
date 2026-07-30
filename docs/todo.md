@@ -1,1 +1,0 @@
-Opaque plugin state and parameter persistence in saved Turtle files remain separate work.

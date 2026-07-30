@@ -45,6 +45,15 @@ function freezeNode(node) {
       midiOutputs: Number(node.ports?.midiOutputs ?? 0)
     }),
     settings: Object.freeze({ ...(node.settings ?? {}) }),
+    parameters: Object.freeze((node.parameters ?? []).map(parameter =>
+      Object.freeze({
+        id: Number(parameter.id),
+        normalizedValue: Number(parameter.normalizedValue)
+      }))),
+    state: Object.freeze({
+      component: String(node.state?.component ?? ''),
+      controller: String(node.state?.controller ?? '')
+    }),
     metadata: Object.freeze({ ...(node.metadata ?? {}) })
   })
 }

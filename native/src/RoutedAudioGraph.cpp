@@ -447,6 +447,36 @@ std::vector<ProcessorTiming> RoutedAudioGraph::processorTimings() const {
     return result;
 }
 
+std::vector<NodeProcessorState> RoutedAudioGraph::processorStates(
+    std::string& error) {
+    std::vector<NodeProcessorState> result;
+    result.reserve(nodes_.size());
+    for (auto& node : nodes_) {
+        ProcessorState state;
+        if (!node.processor->captureState(state, error)) {
+            if (error.empty())
+                error = "unable to capture processor state: " + node.id;
+            return {};
+        }
+        if (!state.component.empty() || !state.controller.empty())
+            result.push_back({node.id, std::move(state)});
+    }
+    return result;
+}
+
+bool RoutedAudioGraph::restoreProcessorState(
+    const std::string& nodeId, const ProcessorState& state,
+    std::string& error) {
+    auto node = std::find_if(
+        nodes_.begin(), nodes_.end(),
+        [&nodeId](const auto& candidate) { return candidate.id == nodeId; });
+    if (node == nodes_.end()) {
+        error = "native graph node does not exist";
+        return false;
+    }
+    return node->processor->restoreState(state, error);
+}
+
 void RoutedAudioGraph::setProcessContext(const AudioProcessContext& context) noexcept {
     for (auto& node : nodes_) node.processor->setProcessContext(context);
 }

@@ -84,6 +84,7 @@ struct GraphView {
     std::vector<std::string> pluginPaths;
     std::unordered_map<
         std::string, std::unordered_map<std::uint32_t, double>> parameterValues;
+    std::unordered_map<std::string, transmission::ProcessorState> pluginStates;
     std::size_t nextPluginId = 1;
     std::size_t nextMidiInputId = 1;
     std::size_t nextMidiOutputId = 1;
@@ -182,7 +183,26 @@ void stopRuntime(GraphView& view, const char* status = nullptr) {
     view.pendingOutputConnections.fill(false);
     view.pendingMidiConnections.clear();
 #if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
-    if (view.runtime) view.runtime->stop();
+    if (view.runtime) {
+        const bool hadRuntime = view.runtime->running();
+        view.runtime->stop();
+        if (hadRuntime) {
+            std::string stateError;
+            const auto states = view.runtime->processorStates(stateError);
+            if (stateError.empty()) {
+                for (const auto& state : states) {
+                    auto& target = view.pluginStates[state.nodeId];
+                    if (!state.state.component.empty())
+                        target.component = state.state.component;
+                    if (!state.state.controller.empty())
+                        target.controller = state.state.controller;
+                }
+            }
+            else
+                std::cerr << "VST3 state capture failed: "
+                          << stateError << '\n';
+        }
+    }
 #endif
     if (status) setStatus(view, status);
 }
@@ -202,7 +222,7 @@ transmission::RuntimeGraphSnapshot runtimeSnapshot(const GraphView& view) {
             externalMidiPort = midiOutputPort++;
         snapshot.nodes.push_back({
             node.id, kind, node.pluginPath, externalMidiPort,
-            node.audioInputs, node.audioOutputs, {}});
+            node.audioInputs, node.audioOutputs, {}, {}});
         const auto parameters = view.parameterValues.find(node.id);
         if (parameters != view.parameterValues.end()) {
             auto& runtimeParameters = snapshot.nodes.back().parameters;
@@ -210,6 +230,9 @@ transmission::RuntimeGraphSnapshot runtimeSnapshot(const GraphView& view) {
             for (const auto& [id, value] : parameters->second)
                 runtimeParameters.push_back({id, value});
         }
+        const auto state = view.pluginStates.find(node.id);
+        if (state != view.pluginStates.end())
+            snapshot.nodes.back().state = state->second;
     }
     snapshot.connections.reserve(view.edges.size());
     for (const auto& edge : view.edges) {
@@ -1099,6 +1122,16 @@ void destroyNodeMenuContext(GtkWidget*, gpointer data) {
 void openPluginEditor(GraphView& view, const Node& node) {
     if (!view.editorHost || node.pluginPath.empty()) return;
     const auto nodeId = node.id;
+    std::vector<std::pair<std::uint32_t, double>> parameters;
+    if (const auto values = view.parameterValues.find(nodeId);
+        values != view.parameterValues.end()) {
+        parameters.reserve(values->second.size());
+        for (const auto& [id, value] : values->second)
+            parameters.emplace_back(id, value);
+    }
+    const auto state = view.pluginStates.contains(nodeId)
+        ? view.pluginStates.at(nodeId)
+        : transmission::ProcessorState{};
     view.editorHost->open(
         node.pluginPath, node.label,
         [&view, nodeId](std::uint32_t parameterId, double normalizedValue) {
@@ -1112,7 +1145,15 @@ void openPluginEditor(GraphView& view, const Node& node) {
                               << nodeId << ": " << error << "\n";
             }
 #endif
-        });
+        },
+        [&view, nodeId](transmission::ProcessorState updatedState) {
+            auto& target = view.pluginStates[nodeId];
+            if (!updatedState.component.empty())
+                target.component = std::move(updatedState.component);
+            if (!updatedState.controller.empty())
+                target.controller = std::move(updatedState.controller);
+        },
+        state, parameters);
 }
 
 void editNodeFromMenu(GtkMenuItem*, gpointer data) {
@@ -1136,6 +1177,7 @@ void removeNodeFromMenu(GtkMenuItem*, gpointer data) {
     if (context->node >= view.nodes.size()) return;
     stopRuntime(view, "Graph changed — press Play to compile and start audio");
     view.parameterValues.erase(view.nodes[context->node].id);
+    view.pluginStates.erase(view.nodes[context->node].id);
     view.edges.erase(std::remove_if(view.edges.begin(), view.edges.end(), [&](const auto& edge) {
         return edge.from == context->node || edge.to == context->node;
     }), view.edges.end());
@@ -1379,7 +1421,24 @@ transmission::UiProject captureProject(const GraphView& view) {
         project.nodes.push_back({
             node.id, node.label, kind,
             node.audioInputs, node.audioOutputs, node.midiInputs, node.midiOutputs,
-            node.x, node.y, node.pluginPath, node.externalPort});
+            node.x, node.y, node.pluginPath, node.externalPort, {}, {}, {}});
+        auto& target = project.nodes.back();
+        const auto parameters = view.parameterValues.find(node.id);
+        if (parameters != view.parameterValues.end()) {
+            target.parameters.reserve(parameters->second.size());
+            for (const auto& [id, value] : parameters->second)
+                target.parameters.push_back({id, value});
+            std::sort(
+                target.parameters.begin(), target.parameters.end(),
+                [](const auto& left, const auto& right) {
+                    return left.id < right.id;
+                });
+        }
+        const auto state = view.pluginStates.find(node.id);
+        if (state != view.pluginStates.end()) {
+            target.componentState = state->second.component;
+            target.controllerState = state->second.controller;
+        }
     }
     project.connections.reserve(view.edges.size());
     for (const auto& edge : view.edges) {
@@ -1403,11 +1462,11 @@ transmission::UiProject defaultProject() {
     transmission::UiProject project;
     project.nodes = {
         {"system-input", "System Input", transmission::UiProjectNodeKind::SystemInput,
-         0, 2, 0, 1, 60.0, 150.0, "", ""},
+         0, 2, 0, 1, 60.0, 150.0, "", "", {}, {}, {}},
         {"gain", "AGain / VST3", transmission::UiProjectNodeKind::PassThrough,
-         2, 2, 1, 1, 340.0, 150.0, "", ""},
+         2, 2, 1, 1, 340.0, 150.0, "", "", {}, {}, {}},
         {"system-output", "System Output", transmission::UiProjectNodeKind::SystemOutput,
-         2, 0, 1, 0, 580.0, 150.0, "", ""}
+         2, 0, 1, 0, 580.0, 150.0, "", "", {}, {}, {}}
     };
     project.connections = {
         {"system-input", "gain", transmission::UiProjectConnectionKind::Audio, 0, 0},
@@ -1503,6 +1562,18 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
     view.nodes = std::move(nodes);
     view.edges = std::move(edges);
     view.parameterValues.clear();
+    view.pluginStates.clear();
+    for (const auto& source : normalized.nodes) {
+        if (!source.parameters.empty()) {
+            auto& parameters = view.parameterValues[source.id];
+            for (const auto& parameter : source.parameters)
+                parameters[parameter.id] = parameter.normalizedValue;
+        }
+        if (!source.componentState.empty() ||
+            !source.controllerState.empty())
+            view.pluginStates[source.id] = {
+                source.componentState, source.controllerState};
+    }
     view.systemInputConnections = normalized.systemInputConnections;
     view.systemOutputConnections = normalized.systemOutputConnections;
     view.dragging = static_cast<std::size_t>(-1);
@@ -1590,6 +1661,8 @@ bool runProjectHelper(const GraphView& view, const char* command,
 }
 
 bool saveProject(GraphView& view, const std::string& path) {
+    if (runtimeRunning(view))
+        stopRuntime(view, "Audio stopped to capture plugin state");
     const auto snapshot = transmission::encodeUiProject(captureProject(view));
     std::string output;
     std::string error;
@@ -1691,6 +1764,8 @@ void quitActivated(GtkMenuItem*, gpointer data) {
 
 gboolean confirmClose(GtkWidget*, GdkEvent*, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
+    if (runtimeRunning(view))
+        stopRuntime(view, "Audio stopped to capture plugin state");
     const auto current = transmission::encodeUiProject(captureProject(view));
     if (!view.lastSavedSnapshot.empty() && current == view.lastSavedSnapshot)
         return FALSE;

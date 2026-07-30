@@ -6,7 +6,7 @@ flowchart TB
 
     subgraph nodePlane["Node.js project control plane"]
         rdf["TransmissionRdf<br/>Vocabulary"]
-        graph["Graph model<br/>Transport"]
+        graphModel["Graph model<br/>Transport"]
         project["ProjectSession<br/>validation, undo/redo, atomic save"]
         compilerJs["GraphCompiler<br/>immutable compiled graph"]
         engineSession["EngineSession"]
@@ -45,8 +45,8 @@ flowchart TB
     user --> engineSession
 
     ttl -->|parse| rdf
-    rdf --> graph
-    graph --> project
+    rdf --> graphModel
+    graphModel --> project
     project --> compilerJs
     compilerJs --> engineSession
     engineSession --> bridge
@@ -105,7 +105,7 @@ flowchart TB
     classDef rt fill:#ffedd5,stroke:#ea580c,color:#431407
 
     class user,ttl,jack,vstBundles external
-    class rdf,graph,project,compilerJs,engineSession,bridge,helper node
+    class rdf,graphModel,project,compilerJs,engineSession,bridge,helper node
     class gtk,uiCodec,editor,connectionManager ui
     class napi,snapshot,runtimeController,compilerNative,inspector,engine control
     class jackDevice,inputQueue,renderWorker,routedGraph,workers,processors,outputQueue,transportClock rt

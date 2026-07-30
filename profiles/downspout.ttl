@@ -269,3 +269,111 @@ dsp:xoxolo a trn:PluginProfile ;
     trn:produces trn:Midi, trn:DrumMidi ;
     trn:requires trn:HostTransport ;
     trn:recommendedBefore dsp:drumkit .
+
+dsp:harmonic-atlas a trn:PluginProfile ;
+    rdfs:label "Harmonic Atlas" ;
+    rdfs:comment "Autonomous voice-led harmony generator with tonal, modal, chromatic-mediant, and neo-Riemannian-inspired movement." ;
+    trn:bundleName "harmonic_atlas.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiGenerator ;
+    trn:accepts trn:Midi, trn:ControlMidi ;
+    trn:produces trn:Midi, trn:HarmonyMidi ;
+    trn:requires trn:HostTransport ;
+    trn:recommendedBefore dsp:canticle .
+
+dsp:conductor a trn:PluginProfile ;
+    rdfs:label "Conductor" ;
+    rdfs:comment "Long-form section generator emitting bar-aligned section notes and scene, density, energy, mutation, and reset CC values." ;
+    trn:bundleName "conductor.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiGenerator, trn:Controller ;
+    trn:produces trn:Midi, trn:ControlMidi ;
+    trn:requires trn:HostTransport ;
+    trn:recommendedBefore dsp:harmonic-atlas .
+
+dsp:drift a trn:PluginProfile ;
+    rdfs:label "Drift" ;
+    rdfs:comment "Four-lane transport-synchronised MIDI CC modulator with LFO, sample-and-hold, random-walk, chaos, and envelope-follower modes." ;
+    trn:bundleName "drift.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiGenerator, trn:Controller, trn:AudioEffect ;
+    trn:accepts trn:Audio ;
+    trn:produces trn:Audio, trn:Midi, trn:ControlMidi ;
+    trn:requires trn:HostTransport ;
+    trn:caution "Its audio path is transparent; its musical contribution is primarily MIDI CC modulation." .
+
+dsp:mnemosyne a trn:PluginProfile ;
+    rdfs:label "Mnemosyne" ;
+    rdfs:comment "Fixed-capacity MIDI phrase memory that captures, recalls, transforms, and recombines motifs in listen, accompany, or autonomous modes." ;
+    trn:bundleName "mnemosyne.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiProcessor ;
+    trn:accepts trn:Midi, trn:MelodyMidi ;
+    trn:produces trn:Midi, trn:MelodyMidi ;
+    trn:requires trn:HostTransport ;
+    trn:recommendedBefore dsp:canticle .
+
+dsp:polymeter a trn:PluginProfile ;
+    rdfs:label "Polymeter" ;
+    rdfs:comment "Four-lane Euclidean MIDI generator with independent coprime lengths, rotations, probabilities, ratchets, accents, and phase drift." ;
+    trn:bundleName "polymeter.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:MidiGenerator ;
+    trn:produces trn:Midi, trn:DrumMidi ;
+    trn:requires trn:HostTransport ;
+    trn:recommendedBefore dsp:drumkit .
+
+dsp:oracle a trn:PluginProfile ;
+    rdfs:label "Oracle" ;
+    rdfs:comment "Audio and MIDI listener that extracts bounded musical features and emits mapped CC values plus optional guarded response notes." ;
+    trn:bundleName "oracle.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:AudioEffect, trn:MidiProcessor, trn:Controller ;
+    trn:accepts trn:Audio, trn:Midi ;
+    trn:produces trn:Audio, trn:Midi, trn:ControlMidi, trn:MelodyMidi ;
+    trn:caution "Response notes can form a feedback system when routed back toward the analysed source; keep the response guard enabled." .
+
+dsp:mosaic a trn:PluginProfile ;
+    rdfs:label "Mosaic" ;
+    rdfs:comment "Four-slot WAV sampler with deterministic slicing, pitch variation, reverse probability, stereo spread, and autonomous triggering." ;
+    trn:bundleName "mosaic.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:Instrument, trn:MidiGenerator ;
+    trn:accepts trn:Midi, trn:ControlMidi ;
+    trn:produces trn:Audio ;
+    trn:requires trn:HostTransport ;
+    trn:caution "Load at least one WAV sample through the native editor before expecting audio; sample paths persist in plugin state." .
+
+dsp:resonance-garden a trn:PluginProfile ;
+    rdfs:label "Resonance Garden" ;
+    rdfs:comment "Eight-voice damped resonator bank that turns stereo input into pitched material using MIDI tuning or an internal scale." ;
+    trn:bundleName "resonance_garden.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:AudioEffect ;
+    trn:accepts trn:Audio, trn:Midi, trn:HarmonyMidi ;
+    trn:produces trn:Audio ;
+    trn:recommendedAfter dsp:oracle ;
+    trn:caution "High decay, excitation, and wet settings can accumulate energy; place Guardian downstream in autonomous patches." .
+
+dsp:orbit a trn:PluginProfile ;
+    rdfs:label "Orbit" ;
+    rdfs:comment "Transport-aware stereo motion effect with seeded orbit, pendulum, random-walk, and figure-eight trajectories." ;
+    trn:bundleName "orbit.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:AudioEffect ;
+    trn:accepts trn:Audio ;
+    trn:produces trn:Audio ;
+    trn:requires trn:HostTransport ;
+    trn:recommendedBefore dsp:guardian ;
+    trn:caution "Orbit is a stereo spatial effect and does not claim binaural or HRTF processing." .
+
+dsp:guardian a trn:PluginProfile ;
+    rdfs:label "Guardian" ;
+    rdfs:comment "Output-safety processor with DC removal, look-ahead limiting, true-peak protection, soft clipping, and latched diagnostics." ;
+    trn:bundleName "guardian.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:AudioEffect, trn:Utility ;
+    trn:accepts trn:Audio ;
+    trn:produces trn:Audio ;
+    trn:recommendedAfter dsp:orbit ;
+    trn:caution "Guardian is intended for the end of autonomous audio chains and reports processing latency to the host." .

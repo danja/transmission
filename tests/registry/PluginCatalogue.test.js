@@ -7,7 +7,7 @@ const downspoutProfile = new URL('../../profiles/downspout.ttl', import.meta.url
 describe('PluginCatalogue', () => {
   it('loads Downspout RDF profiles and merges authoritative semantics with discovered facts', async () => {
     const catalogue = new PluginCatalogue()
-    expect(await catalogue.loadProfileFile(downspoutProfile)).toBe(26)
+    expect(await catalogue.loadProfileFile(downspoutProfile)).toBe(36)
     catalogue.replaceDiscoveries([{
       classId: 'drumgen-class',
       name: 'DrumGen',
@@ -62,5 +62,22 @@ describe('PluginCatalogue', () => {
     ])
     expect(validation.valid).toBe(false)
     expect(validation.links[0].message).toContain('No compatible')
+  })
+
+  it('validates the generative-suite test chains', async () => {
+    const catalogue = new PluginCatalogue()
+    await catalogue.loadProfileFile(downspoutProfile)
+    const profile = name =>
+      `http://purl.org/stuff/transmissions/plugins/downspout/${name}`
+    for (const chain of [
+      ['conductor', 'harmonic-atlas', 'canticle', 'orbit', 'guardian'],
+      ['polymeter', 'mnemosyne', 'drumkit', 'guardian'],
+      ['canticle', 'oracle', 'resonance-garden', 'drift', 'orbit', 'guardian'],
+      ['drift', 'mosaic', 'guardian']
+    ]) {
+      const validation = catalogue.validateChain(chain.map(profile))
+      expect(validation.valid, validation.links
+        .map(link => link.message).join('\n')).toBe(true)
+    }
   })
 })

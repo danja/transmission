@@ -1,4 +1,7 @@
 
+- [ ] Catalogue and validate the new Downspout generative suite, with focused
+  Turtle test topologies covering all ten plugins.
+
 ## Generative Audio Workstation plugin proposals
 
 These are proposed Downspout VST3 plugins for constructing autonomous,

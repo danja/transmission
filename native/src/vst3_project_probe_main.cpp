@@ -1,4 +1,6 @@
+#include "transmission/FakeAudioDevice.h"
 #include "transmission/GraphRuntimeCompiler.h"
+#include "transmission/GraphRuntimeController.h"
 #include "transmission/UiProjectCodec.h"
 #include "transmission/Vst3Processor.h"
 
@@ -15,6 +17,7 @@
 #include <memory>
 #include <numeric>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -29,6 +32,9 @@ struct Options {
     double seconds = 30.0;
     std::size_t blockSize = 1024;
     double sampleRate = 48000.0;
+    bool realtime = false;
+    double renderAheadMilliseconds = 200.0;
+    std::size_t processingThreads = 0;
 };
 
 struct AudioWindow {
@@ -52,19 +58,28 @@ bool positiveNumber(const char* text, double& value) {
 bool parseOptions(int argc, char** argv, Options& options) {
     if (argc < 2) return false;
     options.interchangePath = argv[1];
-    for (int index = 2; index < argc; index += 2) {
+    for (int index = 2; index < argc; ++index) {
+        const std::string argument(argv[index]);
+        if (argument == "--realtime") {
+            options.realtime = true;
+            continue;
+        }
         if (index + 1 >= argc) return false;
         double value = 0.0;
         if (!positiveNumber(argv[index + 1], value)) return false;
-        const std::string argument(argv[index]);
         if (argument == "--seconds")
             options.seconds = value;
         else if (argument == "--block-size")
             options.blockSize = static_cast<std::size_t>(value);
         else if (argument == "--sample-rate")
             options.sampleRate = value;
+        else if (argument == "--render-ahead-ms")
+            options.renderAheadMilliseconds = value;
+        else if (argument == "--threads")
+            options.processingThreads = static_cast<std::size_t>(value);
         else
             return false;
+        ++index;
     }
     return options.blockSize > 0;
 }
@@ -118,8 +133,8 @@ RuntimeGraphSnapshot snapshotFor(const transmission::UiProject& project) {
     return snapshot;
 }
 
-transmission::GraphRuntimeCompiler makeCompiler() {
-    return transmission::GraphRuntimeCompiler(
+transmission::RuntimeProcessorFactory processorFactory() {
+    return
         [](const RuntimeGraphNode& node,
            const transmission::AudioDeviceConfig& device,
            std::string& error)
@@ -138,7 +153,11 @@ transmission::GraphRuntimeCompiler makeCompiler() {
                 return std::make_unique<
                     transmission::MidiEndpointProcessor>();
             return std::make_unique<transmission::PassThroughProcessor>();
-        });
+        };
+}
+
+transmission::GraphRuntimeCompiler makeCompiler() {
+    return transmission::GraphRuntimeCompiler(processorFactory());
 }
 
 std::unique_ptr<transmission::RoutedAudioGraph> compile(
@@ -245,6 +264,85 @@ void printAudio(const std::string& nodeId,
     std::cout << std::defaultfloat << '\n';
 }
 
+bool runRealtime(const RuntimeGraphSnapshot& snapshot,
+                 const transmission::UiProject& project,
+                 const transmission::AudioDeviceConfig& config,
+                 const Options& options, std::string& error) {
+    transmission::GraphRuntimeController runtime(processorFactory());
+    const auto renderAheadBlocks = static_cast<std::size_t>(std::ceil(
+        options.renderAheadMilliseconds * 0.001 * config.sampleRate /
+        static_cast<double>(config.blockSize)));
+    if (!runtime.setRenderAheadBlocks(renderAheadBlocks) ||
+        !runtime.setProcessingThreadCount(options.processingThreads)) {
+        error = "invalid render-ahead or processing-thread configuration";
+        return false;
+    }
+    transmission::FakeAudioDevice device;
+    const transmission::RuntimeTransportConfig transport{
+        project.tempo, 0.0, project.loopBars * 4.0, project.loopEnabled};
+    if (!runtime.start(snapshot, device, config, transport, error))
+        return false;
+
+    Buffers buffers(config.channels, config.blockSize);
+    const auto desiredBlocks = static_cast<std::uint64_t>(std::ceil(
+        options.seconds * config.sampleRate /
+        static_cast<double>(config.blockSize)));
+    const auto callbackBlocks = desiredBlocks + renderAheadBlocks;
+    const auto period = std::chrono::duration_cast<
+        std::chrono::steady_clock::duration>(
+        std::chrono::duration<double>(
+            static_cast<double>(config.blockSize) / config.sampleRate));
+    auto deadline = std::chrono::steady_clock::now();
+    double sum = 0.0;
+    double energy = 0.0;
+    float peak = 0.0F;
+    std::uint64_t samples = 0;
+    for (std::uint64_t block = 0; block < callbackBlocks; ++block) {
+        if (!device.render(buffers.inputs.data(), buffers.outputs.data())) {
+            runtime.stop();
+            error = "fake audio device render failed";
+            return false;
+        }
+        if (block >= renderAheadBlocks) {
+            for (const auto sample : buffers.output) {
+                sum += sample;
+                energy += static_cast<double>(sample) * sample;
+                peak = std::max(peak, std::fabs(sample));
+                ++samples;
+            }
+        }
+        deadline += period;
+        std::this_thread::sleep_until(deadline);
+    }
+    const auto diagnostics = runtime.diagnostics();
+    const auto timings = runtime.processorTimings();
+    runtime.stop();
+    const auto mean =
+        samples == 0 ? 0.0 : sum / static_cast<double>(samples);
+    const auto rms = samples == 0
+        ? 0.0
+        : std::sqrt(energy / static_cast<double>(samples));
+    const auto acRms =
+        std::sqrt(std::max(0.0, rms * rms - mean * mean));
+    std::cout << "REALTIME renderAheadBlocks=" << renderAheadBlocks
+              << " processingThreads=" << diagnostics.processingThreads
+              << " underruns=" << diagnostics.underruns
+              << " lateBlocks=" << diagnostics.renderLateBlocks
+              << " queueDrops=" << diagnostics.renderQueueDrops
+              << " processedBlocks=" << diagnostics.processedBlocks
+              << " averageRenderUs="
+              << diagnostics.averageRenderMicroseconds
+              << " maximumRenderUs="
+              << diagnostics.maximumRenderMicroseconds
+              << " outputAcRms=" << acRms << " dc=" << mean
+              << " peak=" << peak << '\n';
+    for (const auto& timing : timings)
+        std::cout << "REALTIME_TIMING node=" << timing.nodeId
+                  << " averageUs=" << timing.averageMicroseconds
+                  << " maximumUs=" << timing.maximumMicroseconds << '\n';
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -252,7 +350,8 @@ int main(int argc, char** argv) {
     if (!parseOptions(argc, argv, options)) {
         std::cerr
             << "Usage: transmission_vst3_project_probe <interchange|-> "
-               "[--seconds N] [--block-size N] [--sample-rate N]\n";
+               "[--seconds N] [--block-size N] [--sample-rate N] "
+               "[--realtime] [--render-ahead-ms N] [--threads N]\n";
         return 2;
     }
     std::string encoded;
@@ -275,6 +374,13 @@ int main(int argc, char** argv) {
     std::cout << "PROJECT id=" << project.id << " seconds="
               << options.seconds << " blockSize=" << options.blockSize
               << " sampleRate=" << options.sampleRate << '\n';
+    if (options.realtime) {
+        if (!runRealtime(base, project, config, options, error)) {
+            std::cerr << "Real-time probe failed: " << error << '\n';
+            return 1;
+        }
+        return 0;
+    }
 
     auto graph = compile(base, config, error);
     if (!graph) {

@@ -79,14 +79,23 @@ Each action lists the compatible JACK MIDI ports, creates a typed graph
 endpoint, and persists the selected external port. MIDI endpoints use dedicated
 bounded JACK buffers and never contribute audio to the graph.
 
-The File menu provides New, Open, Save, Save As, and Quit, with the usual
-keyboard shortcuts. Transmission projects use RDF Turtle (`.ttl`) as their
-canonical format. Saving and loading preserve plugin bundle paths, typed graph
-connections and ports, editor positions, tempo/loop settings, and requested
-JACK input/output connections. Normalized plugin parameters and opaque VST3
-component/controller state are also stored; state blobs are base64-encoded in
-Turtle and captured only after audio processing has stopped. GTK exchanges a
-small validated snapshot with
+The File menu provides New, Open, Save, Save As, Render Audio, and Quit, with
+the usual keyboard shortcuts. Render Audio (`Ctrl+Shift+R`) runs the compiled
+graph faster than real time without JACK, starting at beat zero and following
+the current tempo and loop settings for the requested number of bars. It writes
+stereo 32-bit floating-point WAV directly. MP3 export renders the same lossless
+intermediate and then uses `ffmpeg` with the `libmp3lame` encoder; MP3 export
+therefore requires `ffmpeg` to be installed and available on `PATH`. Rendering
+runs on a cancellable worker, uses an automatically bounded number of graph
+processing threads, and atomically replaces the selected output only after
+successful completion.
+
+Transmission projects use RDF Turtle (`.ttl`) as their canonical format.
+Saving and loading preserve plugin bundle paths, typed graph connections and
+ports, editor positions, tempo/loop settings, and requested JACK input/output
+connections. Normalized plugin parameters and opaque VST3 component/controller
+state are also stored; state blobs are base64-encoded in Turtle and captured
+only after audio processing has stopped. GTK exchanges a small validated snapshot with
 the existing Node project session, which performs RDF parsing and atomic file
 writes on the control thread; the native audio callback never parses RDF or
 accesses the filesystem.
@@ -286,3 +295,10 @@ npm run probe:project -- patches/crystal-healing-vibratones.ttl --seconds 30
 
 Use `--block-size` or `--sample-rate` to reproduce a device configuration.
 The probe processes silent external input and never opens an audio device.
+Add `--realtime` to pace a fake device at wall-clock speed and exercise the
+production render-ahead and worker-thread path without JACK:
+
+```sh
+npm run probe:project -- patches/crystal-healing-vibratones.ttl \
+  --seconds 15 --realtime --render-ahead-ms 200
+```

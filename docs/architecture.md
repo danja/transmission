@@ -237,6 +237,24 @@ possible:
 - JACK probes cover live callback lifecycle, MIDI, routing, underruns, and late
   render diagnostics.
 
+## Offline audio export
+
+File → Render Audio captures the editor's current runtime snapshot after
+stopping live JACK processing, then hands that immutable snapshot to
+`OfflineAudioRenderer` on a worker thread. The renderer compiles through the
+same `GraphRuntimeCompiler` used by live playback, prepares fixed-size planar
+buffers, advances VST3 process context from beat zero, and takes audio only from
+the graph's System Output endpoint. It does not create or connect a JACK
+client.
+
+The render worker interleaves complete output blocks into a temporary stereo
+IEEE-float WAV and atomically renames the file after the requested bar count is
+complete. Cancellation and write failures remove the temporary file. MP3
+export uses this WAV as a lossless intermediate and invokes `ffmpeg` only after
+graph processing has finished; the temporary WAV and MP3 are removed on
+failure. Progress crosses to GTK through atomics and a UI timer, so neither
+plugin processing nor file writing touches GTK.
+
 ## Node.js surface: current capabilities and future uses
 
 The Node.js surface is usable today as a headless project and engine control

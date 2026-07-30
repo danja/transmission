@@ -21,6 +21,7 @@ add_library(transmission_engine STATIC
   src/GraphRuntimeCompiler.cpp
   src/GraphRuntimeController.cpp
   src/JackPortIdentity.cpp
+  src/OfflineAudioRenderer.cpp
   src/PluginScanner.cpp
   src/RoutedAudioGraph.cpp
   src/TransportClock.cpp
@@ -140,6 +141,12 @@ if(TRANSMISSION_BUILD_TESTS)
   add_executable(transmission_audio_device_test tests/AudioDeviceTest.cpp)
   target_link_libraries(transmission_audio_device_test PRIVATE transmission_engine)
   add_test(NAME transmission_audio_device_test COMMAND transmission_audio_device_test)
+  add_executable(transmission_offline_audio_renderer_test
+    tests/OfflineAudioRendererTest.cpp)
+  target_link_libraries(transmission_offline_audio_renderer_test
+    PRIVATE transmission_engine)
+  add_test(NAME transmission_offline_audio_renderer_test
+    COMMAND transmission_offline_audio_renderer_test)
   if(TRANSMISSION_WITH_JACK)
     add_executable(transmission_jack_audio_device_test tests/JackAudioDeviceTest.cpp)
     target_link_libraries(transmission_jack_audio_device_test PRIVATE transmission_engine)

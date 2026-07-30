@@ -5,6 +5,7 @@
 #include "transmission/GraphRuntimeController.h"
 #include "transmission/JackConnectionManager.h"
 #include "transmission/JackAudioDevice.h"
+#include "transmission/OfflineAudioRenderer.h"
 #include "transmission/UiProjectCodec.h"
 #include "transmission/Vst3EditorHost.h"
 #include "transmission/Vst3Inspector.h"
@@ -12,6 +13,9 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
@@ -19,6 +23,7 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -114,6 +119,15 @@ struct GraphView {
     std::size_t requestedBufferSize = 0;
     std::size_t renderAheadMilliseconds = 200;
     std::size_t processingThreads = 0;
+    std::thread renderThread;
+    std::atomic<bool> renderCancel{false};
+    std::atomic<double> renderProgress{0.0};
+    guint renderProgressTimer = 0;
+    std::mutex renderCompletionMutex;
+    guint renderCompletionSource = 0;
+    GtkWidget* renderDialog = nullptr;
+    GtkProgressBar* renderProgressBar = nullptr;
+    bool renderInProgress = false;
 };
 
 struct PluginDialogContext {
@@ -171,6 +185,31 @@ bool runtimeRunning(const GraphView& view) {
     (void)view;
     return false;
 #endif
+}
+
+transmission::RuntimeProcessorFactory uiProcessorFactory() {
+    return [](const transmission::RuntimeGraphNode& node,
+              const transmission::AudioDeviceConfig& config,
+              std::string& error)
+        -> std::unique_ptr<transmission::AudioProcessor> {
+        if (node.kind == transmission::RuntimeNodeKind::MidiInput ||
+            node.kind == transmission::RuntimeNodeKind::MidiOutput)
+            return std::make_unique<transmission::MidiEndpointProcessor>();
+        if (node.kind != transmission::RuntimeNodeKind::Plugin)
+            return std::make_unique<transmission::PassThroughProcessor>();
+#if defined(TRANSMISSION_UI_WITH_VST3)
+        auto processor = std::make_unique<transmission::Vst3Processor>();
+        if (!processor->initialize(
+                node.pluginPath, node.audioInputs, node.audioOutputs,
+                config.blockSize, config.sampleRate, error))
+            return nullptr;
+        return processor;
+#else
+        (void)config;
+        error = "This UI build does not include VST3 hosting support";
+        return nullptr;
+#endif
+    };
 }
 
 void stopRuntime(GraphView& view, const char* status = nullptr) {
@@ -1758,12 +1797,336 @@ void saveProjectAsActivated(GtkMenuItem*, gpointer data) {
     saveProjectAs(*static_cast<GraphView*>(data));
 }
 
+struct RenderCompletion {
+    GraphView* view = nullptr;
+    bool success = false;
+    std::string outputPath;
+    std::string error;
+    transmission::OfflineRenderResult result;
+};
+
+gboolean renderProgressTick(gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    if (!view.renderInProgress || !view.renderProgressBar) {
+        view.renderProgressTimer = 0;
+        return G_SOURCE_REMOVE;
+    }
+    gtk_progress_bar_set_fraction(
+        view.renderProgressBar,
+        std::clamp(view.renderProgress.load(std::memory_order_acquire),
+                   0.0, 1.0));
+    return G_SOURCE_CONTINUE;
+}
+
+void renderDialogResponse(GtkDialog* dialog, gint response, gpointer data) {
+    if (response != GTK_RESPONSE_CANCEL &&
+        response != GTK_RESPONSE_DELETE_EVENT)
+        return;
+    auto& view = *static_cast<GraphView*>(data);
+    view.renderCancel.store(true, std::memory_order_release);
+    gtk_window_set_title(GTK_WINDOW(dialog), "Cancelling Audio Render");
+    gtk_dialog_set_response_sensitive(
+        dialog, GTK_RESPONSE_CANCEL, FALSE);
+}
+
+void showRenderComplete(GraphView& view, const RenderCompletion& completion) {
+    const auto type = completion.success
+        ? GTK_MESSAGE_INFO : GTK_MESSAGE_ERROR;
+    const auto message = completion.success
+        ? "Audio render complete" : "Unable to render audio";
+    auto* dialog = gtk_message_dialog_new(
+        GTK_WINDOW(view.window),
+        static_cast<GtkDialogFlags>(
+            GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
+        type, GTK_BUTTONS_CLOSE, "%s", message);
+    if (completion.success) {
+        const auto detail =
+            completion.outputPath + "\n" +
+            std::to_string(completion.result.framesWritten) +
+            " frames; peak " + std::to_string(completion.result.peak);
+        gtk_message_dialog_format_secondary_text(
+            GTK_MESSAGE_DIALOG(dialog), "%s", detail.c_str());
+    } else {
+        gtk_message_dialog_format_secondary_text(
+            GTK_MESSAGE_DIALOG(dialog), "%s", completion.error.c_str());
+    }
+    g_signal_connect(
+        dialog, "response",
+        G_CALLBACK(+[](GtkDialog* current, gint, gpointer) {
+            gtk_widget_destroy(GTK_WIDGET(current));
+        }),
+        nullptr);
+    gtk_widget_show(dialog);
+}
+
+gboolean renderCompleted(gpointer data) {
+    auto& completion = *static_cast<RenderCompletion*>(data);
+    auto& view = *completion.view;
+    {
+        std::lock_guard lock(view.renderCompletionMutex);
+        view.renderCompletionSource = 0;
+    }
+    if (view.renderThread.joinable()) view.renderThread.join();
+    if (view.renderProgressTimer) {
+        g_source_remove(view.renderProgressTimer);
+        view.renderProgressTimer = 0;
+    }
+    if (view.renderDialog) {
+        gtk_widget_destroy(view.renderDialog);
+        view.renderDialog = nullptr;
+    }
+    view.renderProgressBar = nullptr;
+    view.renderInProgress = false;
+    showRenderComplete(view, completion);
+    return G_SOURCE_REMOVE;
+}
+
+bool encodeMp3(const std::string& wavePath, const std::string& outputPath,
+               std::string& error) {
+    const auto temporaryPath = outputPath + ".transmission-part.mp3";
+    GError* processError = nullptr;
+    auto* process = g_subprocess_new(
+        static_cast<GSubprocessFlags>(
+            G_SUBPROCESS_FLAGS_STDOUT_SILENCE |
+            G_SUBPROCESS_FLAGS_STDERR_PIPE),
+        &processError, "ffmpeg", "-y", "-loglevel", "error",
+        "-i", wavePath.c_str(), "-codec:a", "libmp3lame",
+        "-q:a", "2", temporaryPath.c_str(), nullptr);
+    if (!process) {
+        error = processError
+            ? processError->message
+            : "Unable to start ffmpeg";
+        g_clear_error(&processError);
+        return false;
+    }
+    gchar* standardError = nullptr;
+    const auto communicated = g_subprocess_communicate_utf8(
+        process, nullptr, nullptr, nullptr, &standardError, &processError);
+    const auto successful =
+        communicated && g_subprocess_get_successful(process);
+    if (!successful) {
+        error = standardError && *standardError
+            ? standardError
+            : processError ? processError->message
+                           : "ffmpeg was unable to encode the MP3 file";
+        while (!error.empty() &&
+               (error.back() == '\n' || error.back() == '\r'))
+            error.pop_back();
+    }
+    g_free(standardError);
+    g_clear_error(&processError);
+    g_object_unref(process);
+    if (!successful) {
+        std::error_code ignored;
+        std::filesystem::remove(temporaryPath, ignored);
+        return false;
+    }
+    std::error_code fileError;
+    std::filesystem::rename(temporaryPath, outputPath, fileError);
+    if (fileError) {
+        error = "Unable to replace the MP3 output file: " +
+                fileError.message();
+        std::filesystem::remove(temporaryPath, fileError);
+        return false;
+    }
+    return true;
+}
+
+void beginAudioRender(GraphView& view, std::string outputPath, bool mp3,
+                      double bars, double sampleRate) {
+    if (view.renderInProgress) return;
+    if (runtimeRunning(view))
+        stopRuntime(view, "Audio stopped for offline rendering");
+    const auto snapshot = runtimeSnapshot(view);
+    const auto tempo = gtk_spin_button_get_value(view.tempo);
+    transmission::OfflineRenderOptions options;
+    options.outputPath = outputPath;
+    options.channels = 2;
+    options.blockSize = 1024;
+    options.sampleRate = sampleRate;
+    options.totalFrames = static_cast<std::uint64_t>(std::ceil(
+        bars * 4.0 * 60.0 * sampleRate / tempo));
+    options.tempo = tempo;
+    options.loopStartBeat = 0.0;
+    options.loopEndBeat =
+        std::max(1.0, gtk_spin_button_get_value(view.loopBars)) * 4.0;
+    options.loopEnabled =
+        view.loop && gtk_toggle_button_get_active(view.loop);
+    options.processingThreads = view.processingThreads;
+
+    view.renderCancel.store(false, std::memory_order_release);
+    view.renderProgress.store(0.0, std::memory_order_release);
+    view.renderInProgress = true;
+    auto* dialog = gtk_dialog_new_with_buttons(
+        "Rendering Audio", GTK_WINDOW(view.window),
+        static_cast<GtkDialogFlags>(
+            GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
+        "_Cancel", GTK_RESPONSE_CANCEL, nullptr);
+    auto* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+    gtk_box_set_spacing(GTK_BOX(content), 10);
+    auto* label = gtk_label_new(
+        mp3 ? "Rendering WAV source and encoding MP3…"
+            : "Rendering WAV…");
+    auto* progress = GTK_PROGRESS_BAR(gtk_progress_bar_new());
+    gtk_widget_set_size_request(GTK_WIDGET(progress), 380, -1);
+    gtk_progress_bar_set_show_text(progress, TRUE);
+    gtk_box_pack_start(GTK_BOX(content), label, FALSE, FALSE, 0);
+    gtk_box_pack_start(
+        GTK_BOX(content), GTK_WIDGET(progress), FALSE, FALSE, 0);
+    view.renderDialog = dialog;
+    view.renderProgressBar = progress;
+    g_signal_connect(
+        dialog, "response", G_CALLBACK(renderDialogResponse), &view);
+    gtk_widget_show_all(dialog);
+    view.renderProgressTimer = g_timeout_add(50, renderProgressTick, &view);
+
+    view.renderThread = std::thread(
+        [&view, snapshot, options, outputPath = std::move(outputPath), mp3]() mutable {
+            auto completion = std::make_unique<RenderCompletion>();
+            completion->view = &view;
+            completion->outputPath = outputPath;
+            auto renderOptions = options;
+            std::string temporaryWave;
+            if (mp3) {
+                temporaryWave =
+                    (std::filesystem::temp_directory_path() /
+                     ("transmission-render-" +
+                      std::to_string(
+                          std::chrono::steady_clock::now()
+                              .time_since_epoch().count()) +
+                      ".wav")).string();
+                renderOptions.outputPath = temporaryWave;
+            }
+            transmission::OfflineAudioRenderer renderer(
+                uiProcessorFactory());
+            completion->success = renderer.renderWave(
+                snapshot, renderOptions, completion->result,
+                completion->error,
+                [&view, mp3](double progressValue) {
+                    view.renderProgress.store(
+                        mp3 ? progressValue * 0.9 : progressValue,
+                        std::memory_order_release);
+                    return !view.renderCancel.load(
+                        std::memory_order_acquire);
+                });
+            if (completion->success && mp3) {
+                if (view.renderCancel.load(std::memory_order_acquire)) {
+                    completion->success = false;
+                    completion->error = "Audio rendering was cancelled";
+                } else {
+                    completion->success =
+                        encodeMp3(
+                            temporaryWave, outputPath,
+                            completion->error);
+                }
+            }
+            if (!temporaryWave.empty()) {
+                std::error_code ignored;
+                std::filesystem::remove(temporaryWave, ignored);
+            }
+            if (completion->success)
+                view.renderProgress.store(1.0, std::memory_order_release);
+            {
+                std::lock_guard lock(view.renderCompletionMutex);
+                view.renderCompletionSource = g_idle_add_full(
+                    G_PRIORITY_DEFAULT, renderCompleted,
+                    completion.release(), +[](gpointer data) {
+                        delete static_cast<RenderCompletion*>(data);
+                    });
+            }
+        });
+}
+
+void renderAudioActivated(GtkMenuItem*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    if (view.renderInProgress) {
+        setStatus(view, "An audio render is already in progress", true);
+        return;
+    }
+    auto* dialog = gtk_file_chooser_dialog_new(
+        "Render Transmission Audio", GTK_WINDOW(view.window),
+        GTK_FILE_CHOOSER_ACTION_SAVE, "_Cancel", GTK_RESPONSE_CANCEL,
+        "_Render", GTK_RESPONSE_ACCEPT, nullptr);
+    gtk_file_chooser_set_do_overwrite_confirmation(
+        GTK_FILE_CHOOSER(dialog), TRUE);
+    gtk_file_chooser_set_current_name(
+        GTK_FILE_CHOOSER(dialog), "transmission.wav");
+    auto* waveFilter = gtk_file_filter_new();
+    gtk_file_filter_set_name(waveFilter, "WAV audio (*.wav)");
+    gtk_file_filter_add_pattern(waveFilter, "*.wav");
+    auto* mp3Filter = gtk_file_filter_new();
+    gtk_file_filter_set_name(mp3Filter, "MP3 audio (*.mp3)");
+    gtk_file_filter_add_pattern(mp3Filter, "*.mp3");
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), waveFilter);
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), mp3Filter);
+
+    auto* optionsGrid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(optionsGrid), 8);
+    gtk_grid_set_column_spacing(GTK_GRID(optionsGrid), 10);
+    auto* barsLabel = gtk_label_new("Length (bars)");
+    auto* bars = GTK_SPIN_BUTTON(
+        gtk_spin_button_new_with_range(1.0, 4096.0, 1.0));
+    gtk_spin_button_set_value(
+        bars, std::max(1.0, gtk_spin_button_get_value(view.loopBars)));
+    auto* rateLabel = gtk_label_new("Sample rate");
+    auto* rate = GTK_COMBO_BOX_TEXT(gtk_combo_box_text_new());
+    gtk_combo_box_text_append_text(rate, "44,100 Hz");
+    gtk_combo_box_text_append_text(rate, "48,000 Hz");
+    gtk_combo_box_text_append_text(rate, "96,000 Hz");
+    gtk_combo_box_set_active(GTK_COMBO_BOX(rate), 1);
+    gtk_grid_attach(GTK_GRID(optionsGrid), barsLabel, 0, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(optionsGrid), GTK_WIDGET(bars), 1, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(optionsGrid), rateLabel, 0, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(optionsGrid), GTK_WIDGET(rate), 1, 1, 1, 1);
+    gtk_widget_show_all(optionsGrid);
+    gtk_file_chooser_set_extra_widget(
+        GTK_FILE_CHOOSER(dialog), optionsGrid);
+
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        gchar* selected =
+            gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+        std::filesystem::path path = selected ? selected : "";
+        g_free(selected);
+        const auto selectedFilter =
+            gtk_file_chooser_get_filter(GTK_FILE_CHOOSER(dialog));
+        auto extension = path.extension().string();
+        std::transform(
+            extension.begin(), extension.end(), extension.begin(),
+            [](unsigned char character) {
+                return static_cast<char>(std::tolower(character));
+            });
+        const bool mp3 =
+            selectedFilter == mp3Filter || extension == ".mp3";
+        path.replace_extension(mp3 ? ".mp3" : ".wav");
+        constexpr std::array<double, 3> rates{
+            44100.0, 48000.0, 96000.0};
+        const auto selectedRate =
+            gtk_combo_box_get_active(GTK_COMBO_BOX(rate));
+        beginAudioRender(
+            view, path.string(), mp3,
+            gtk_spin_button_get_value(bars),
+            rates[selectedRate >= 0 &&
+                          static_cast<std::size_t>(selectedRate) < rates.size()
+                      ? static_cast<std::size_t>(selectedRate)
+                      : 1]);
+    }
+    gtk_widget_destroy(dialog);
+}
+
 void quitActivated(GtkMenuItem*, gpointer data) {
     gtk_window_close(GTK_WINDOW(static_cast<GraphView*>(data)->window));
 }
 
 gboolean confirmClose(GtkWidget*, GdkEvent*, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
+    if (view.renderInProgress) {
+        view.renderCancel.store(true, std::memory_order_release);
+        if (view.renderDialog)
+            gtk_window_set_title(
+                GTK_WINDOW(view.renderDialog), "Cancelling Audio Render");
+        return TRUE;
+    }
     if (runtimeRunning(view))
         stopRuntime(view, "Audio stopped to capture plugin state");
     const auto current = transmission::encodeUiProject(captureProject(view));
@@ -1803,21 +2166,7 @@ void activate(GtkApplication* application, gpointer) {
 #if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
     view->jackDevice = std::make_unique<transmission::JackAudioDevice>();
     view->runtime = std::make_unique<transmission::GraphRuntimeController>(
-        [](const transmission::RuntimeGraphNode& node,
-           const transmission::AudioDeviceConfig& config,
-           std::string& error) -> std::unique_ptr<transmission::AudioProcessor> {
-            if (node.kind == transmission::RuntimeNodeKind::MidiInput ||
-                node.kind == transmission::RuntimeNodeKind::MidiOutput)
-                return std::make_unique<transmission::MidiEndpointProcessor>();
-            if (node.kind != transmission::RuntimeNodeKind::Plugin)
-                return std::make_unique<transmission::PassThroughProcessor>();
-            auto processor = std::make_unique<transmission::Vst3Processor>();
-            if (!processor->initialize(
-                    node.pluginPath, node.audioInputs, node.audioOutputs,
-                    config.blockSize, config.sampleRate, error))
-                return nullptr;
-            return processor;
-        });
+        uiProcessorFactory());
 #endif
     const char* home = std::getenv("HOME");
     const auto pluginRoot = std::filesystem::path(home ? home : ".") / ".vst3";
@@ -1840,12 +2189,15 @@ void activate(GtkApplication* application, gpointer) {
     auto* openItem = gtk_menu_item_new_with_mnemonic("_Open…");
     auto* saveItem = gtk_menu_item_new_with_mnemonic("_Save");
     auto* saveAsItem = gtk_menu_item_new_with_mnemonic("Save _As…");
+    auto* renderItem =
+        gtk_menu_item_new_with_mnemonic("_Render Audio…");
     auto* separator = gtk_separator_menu_item_new();
     auto* quitItem = gtk_menu_item_new_with_mnemonic("_Quit");
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), newItem);
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), openItem);
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), saveItem);
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), saveAsItem);
+    gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), renderItem);
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), separator);
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), quitItem);
     gtk_menu_item_set_submenu(GTK_MENU_ITEM(fileItem), fileMenu);
@@ -1871,6 +2223,10 @@ void activate(GtkApplication* application, gpointer) {
                                GDK_CONTROL_MASK, GTK_ACCEL_VISIBLE);
     gtk_widget_add_accelerator(
         saveAsItem, "activate", accelerators, GDK_KEY_s,
+        static_cast<GdkModifierType>(GDK_CONTROL_MASK | GDK_SHIFT_MASK),
+        GTK_ACCEL_VISIBLE);
+    gtk_widget_add_accelerator(
+        renderItem, "activate", accelerators, GDK_KEY_r,
         static_cast<GdkModifierType>(GDK_CONTROL_MASK | GDK_SHIFT_MASK),
         GTK_ACCEL_VISIBLE);
     gtk_widget_add_accelerator(quitItem, "activate", accelerators, GDK_KEY_q,
@@ -1928,6 +2284,7 @@ void activate(GtkApplication* application, gpointer) {
     g_signal_connect(openItem, "activate", G_CALLBACK(openProjectActivated), view);
     g_signal_connect(saveItem, "activate", G_CALLBACK(saveProjectActivated), view);
     g_signal_connect(saveAsItem, "activate", G_CALLBACK(saveProjectAsActivated), view);
+    g_signal_connect(renderItem, "activate", G_CALLBACK(renderAudioActivated), view);
     g_signal_connect(audioSettingsItem, "activate",
                      G_CALLBACK(audioSettingsActivated), view);
     g_signal_connect(quitItem, "activate", G_CALLBACK(quitActivated), view);
@@ -1948,6 +2305,16 @@ void activate(GtkApplication* application, gpointer) {
         if (view->transportTimer) g_source_remove(view->transportTimer);
         if (view->externalConnectionTimer)
             g_source_remove(view->externalConnectionTimer);
+        view->renderCancel.store(true, std::memory_order_release);
+        if (view->renderThread.joinable()) view->renderThread.join();
+        {
+            std::lock_guard lock(view->renderCompletionMutex);
+            if (view->renderCompletionSource)
+                g_source_remove(view->renderCompletionSource);
+            view->renderCompletionSource = 0;
+        }
+        if (view->renderProgressTimer)
+            g_source_remove(view->renderProgressTimer);
         delete view;
     }), view);
     gtk_widget_show_all(window);

@@ -90,6 +90,15 @@ playback, built-in gain envelopes, GTK project interchange, and the canonical
 `projects/gen-omega.ttl` project. The installed Downspout plugins were smoke-tested
 at the opening, Techno Build, and final fade without an external sequencer.
 
+For live playback in Transmission, use **Audio Settings → Render ahead → 500 ms
+(high-load playback)**. The canonical graph shares one Ambo instance between
+the distant field parts and the terminal chord tail instead of running three
+identical reverbs continuously. At 48 kHz with a 1,024-frame JACK period, a
+62-second live-path probe through the opening, Techno Build, and start of the
+half-time section reported zero underruns, late blocks, or queue drops. The
+former three-Ambo graph exhausted its render queue and sounded as though it had
+cut out; per-node measurements showed no material DC offset.
+
 General scheduled VST3 automation and deterministic MIDI generator capture/freeze
 remain listed in `docs/todo.md`; neither is required for the accepted authored-MIDI
 Gen Omega arrangement.

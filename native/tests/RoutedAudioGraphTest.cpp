@@ -50,6 +50,30 @@ private:
     std::atomic<int>& maximum_;
 };
 
+class CountingMidiProcessor final : public transmission::AudioProcessor {
+public:
+    explicit CountingMidiProcessor(std::atomic<int>& calls) : calls_(calls) {}
+
+    void process(const float* const*, float* const* outputs,
+                 std::size_t channels, std::size_t frames) noexcept override {
+        calls_.fetch_add(1);
+        for (std::size_t channel = 0; channel < channels; ++channel)
+            std::fill_n(outputs[channel], frames, 0.0F);
+    }
+
+    void processWithMidi(
+        const float* const*, std::size_t, float* const* outputs,
+        std::size_t outputChannels, std::size_t frames,
+        const transmission::MidiEvent*, std::size_t) noexcept override {
+        calls_.fetch_add(1);
+        for (std::size_t channel = 0; channel < outputChannels; ++channel)
+            std::fill_n(outputs[channel], frames, 0.0F);
+    }
+
+private:
+    std::atomic<int>& calls_;
+};
+
 } // namespace
 
 int main() {
@@ -142,6 +166,28 @@ int main() {
     assert(scheduled.copyNodeMidiOutput("synth", &nodeEvent, 1) == 1);
     assert(nodeEvent.frameOffset == 2);
     assert(nodeEvent.data[1] == 64);
+
+    std::atomic<int> scheduledCalls{0};
+    transmission::RoutedAudioGraph sleepingScheduled;
+    assert(sleepingScheduled.addNode(
+        "instrument", std::make_unique<CountingMidiProcessor>(scheduledCalls),
+        0, 1));
+    assert(sleepingScheduled.setScheduledMidiEvents(
+        {{"instrument", 4.0, {0x90, 60, 100}},
+         {"instrument", 5.0, {0x80, 60, 0}}},
+        4.0, scheduleError));
+    assert(sleepingScheduled.prepare(1, 4));
+    sleepingScheduled.setProcessContext({0.0, 60.0, true});
+    sleepingScheduled.process(inputs, outputs, 1, 4);
+    assert(scheduledCalls.load() == 0);
+    sleepingScheduled.setProcessContext({4.0, 60.0, true});
+    sleepingScheduled.process(inputs, outputs, 1, 4);
+    assert(scheduledCalls.load() == 1);
+    sleepingScheduled.setProcessContext(
+        {5.0 + transmission::RoutedAudioGraph::scheduledInstrumentTailBeats,
+         60.0, true});
+    sleepingScheduled.process(inputs, outputs, 1, 4);
+    assert(scheduledCalls.load() == 1);
 
     transmission::RoutedAudioGraph asymmetric;
     assert(asymmetric.addNode(

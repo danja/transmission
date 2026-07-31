@@ -1026,11 +1026,12 @@ void audioSettingsActivated(GtkMenuItem*, gpointer data) {
     auto* renderRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     auto* renderLabel = gtk_label_new("Render ahead");
     auto* renderSelector = GTK_COMBO_BOX_TEXT(gtk_combo_box_text_new());
-    constexpr std::array<std::size_t, 4> renderDurations{0, 50, 100, 200};
+    constexpr std::array<std::size_t, 5> renderDurations{0, 50, 100, 200, 500};
     gtk_combo_box_text_append_text(renderSelector, "Off");
     gtk_combo_box_text_append_text(renderSelector, "50 ms");
     gtk_combo_box_text_append_text(renderSelector, "100 ms");
     gtk_combo_box_text_append_text(renderSelector, "200 ms (recommended)");
+    gtk_combo_box_text_append_text(renderSelector, "500 ms (high-load playback)");
     const auto renderSelected = std::find(
         renderDurations.begin(), renderDurations.end(),
         view.renderAheadMilliseconds);

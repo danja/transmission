@@ -33,14 +33,12 @@ export function createGenOmegaProject() {
   }
 
   plugin('field-drums', 'Field Drums — DrumKit', 'drumkit', 40, 40, true)
-  plugin('field-space', 'Field Space — Ambo', 'ambo', 270, 40)
-  gain('field-gain', 'Field Drums Gain', -12, 500, 40)
-  stereo('field-drums', 'field-space'); stereo('field-space', 'field-gain')
+  gain('field-gain', 'Field Drums Gain', -12, 270, 40)
+  stereo('field-drums', 'field-gain')
 
   plugin('fife', 'Fife — Canticle', 'canticle', 40, 170, true)
-  plugin('fife-space', 'Fife Space — Ambo', 'ambo', 270, 170)
-  gain('fife-gain', 'Fife Gain', -12, 500, 170)
-  stereo('fife', 'fife-space'); stereo('fife-space', 'fife-gain')
+  gain('fife-gain', 'Fife Gain', -12, 270, 170)
+  stereo('fife', 'fife-gain')
 
   plugin('main-drums', 'Main Drums — DrumKit', 'drumkit', 40, 300, true)
   gain('main-gain', 'Main Drums Gain', -6, 500, 300)
@@ -56,15 +54,18 @@ export function createGenOmegaProject() {
 
   plugin('chords', 'Kraut Chords — Canticle', 'canticle', 40, 690, true)
   plugin('chord-bloom', 'Chord Bloom — Orchid', 'orchid', 270, 690)
-  plugin('chord-space', 'Chord Space — Ambo', 'ambo', 500, 690)
-  gain('chords-gain', 'Kraut Chords Gain', -12, 730, 690)
-  stereo('chords', 'chord-bloom'); stereo('chord-bloom', 'chord-space'); stereo('chord-space', 'chords-gain')
+  gain('chords-gain', 'Kraut Chords Gain', -12, 500, 690)
+  stereo('chords', 'chord-bloom'); stereo('chord-bloom', 'chords-gain')
+
+  plugin('shared-space', 'Shared Space — Ambo', 'ambo', 650, 170)
+  for (const role of ['field-gain', 'fife-gain', 'chords-gain'])
+    stereo(role, 'shared-space')
 
   gain('master-gain', 'Master Gain / Fade', -3, 850, 330)
   nodes.push({ id: `${BASE}system-output`, type: `${BASE}AudioOutput`, label: 'System Output',
     ports: { audioInputs: 2 }, metadata: { x: 1080, y: 330 } })
   positions.set('system-output', `${BASE}system-output`)
-  for (const role of ['field-gain', 'fife-gain', 'main-gain', 'bass-gain', 'acid-gain', 'chords-gain'])
+  for (const role of ['shared-space', 'main-gain', 'bass-gain', 'acid-gain'])
     stereo(role, 'master-gain')
   stereo('master-gain', 'system-output')
 

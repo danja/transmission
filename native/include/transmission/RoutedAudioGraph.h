@@ -38,6 +38,8 @@ struct ScheduledMidiEvent {
  */
 class RoutedAudioGraph {
 public:
+    static constexpr double scheduledInstrumentTailBeats = 8.0;
+
     RoutedAudioGraph() = default;
     ~RoutedAudioGraph();
 
@@ -58,6 +60,11 @@ public:
                       double normalizedValue, std::string& error);
     bool enqueueParameter(const std::string& nodeId, std::uint32_t parameterId,
                           double normalizedValue) noexcept;
+    /**
+     * Schedule direct MIDI for instrument nodes. Inputless nodes driven only
+     * by this schedule sleep before their first event and after the fixed tail
+     * following their last event; audio-routed and live-MIDI nodes never sleep.
+     */
     bool setScheduledMidiEvents(std::vector<ScheduledMidiEvent> events,
                                 double sampleRate, std::string& error);
     bool prepare(std::size_t channels, std::size_t frames) noexcept;
@@ -130,6 +137,10 @@ private:
         bool inheritDeviceChannels = false;
         bool externalAudioInput = false;
         bool externalAudioOutput = false;
+        double scheduledMidiFirstBeat = 0.0;
+        double scheduledMidiLastBeat = 0.0;
+        bool hasScheduledMidi = false;
+        bool sleepOutsideScheduledMidi = false;
     };
 
     struct CompiledMidiEvent {

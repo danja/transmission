@@ -7,7 +7,6 @@ As necessary read material from :
 /home/danny/github/transmission
 /home/danny/github/downspout
 
-The piece, called Gen Omega, will be 3 minutes long and begin with distant fife and drums, 140 bpm, like an 19th century army battalion coming over a hill. There will then be a classic techno build and drop, which will introduce a dubstep-style wub bass and looping dub style percussion. After a little time in half-tempo, a more driving 4x4 techno bass line will take over, with a hypnotic acid house-style repetitive melody. This will devolve into an extreme hardcore industrial beat, with a chordal base with hypnotic Krautrock influences before fading to oblivion.
 
 ## First arrangement pass
 
@@ -28,8 +27,6 @@ Run `npm run --silent gen:omega` to emit a deterministic JSON recipe. Its clips 
 `create_midi_clip`, so they can be applied when the REAPER connector is healthy.
 The recipe keeps fife, drums, bass, acid, and chords on separate editable tracks
 and names the intended Downspout instruments and effects for each one.
-Run `npm run gen:omega:project` to regenerate the native Transmission project at
-`projects/gen-omega.ttl`.
 
 ## Downspout mapping
 
@@ -42,37 +39,20 @@ Run `npm run gen:omega:project` to regenerate the native Transmission project at
   editable. E-Mix provides rhythmic gating, while PaunchLad supplies dub space.
 - Rift is reserved for the build/drop and acid-to-industrial transitions.
 
-## Gaps found and implemented
+## Gaps found
 
 The available plugins cover the requested sound roles. The principal missing
 pieces are in Transmission's composition control plane:
 
-1. Transmission now persists beat-domain MIDI clips and compiles their note-on
-   and note-off events into immutable native schedules. The callback injects
-   bounded, sample-offset MIDI directly into each target graph node, and the same
-   path is used for live and offline processing.
-2. Built-in gain nodes now persist static gain and step/linear beat-domain
-   envelopes. This covers role balance and the nine-bar master fade without
-   requiring general VST3 automation.
-3. Projects still cannot persist or schedule general VST3 parameter and bypass automation.
+1. Projects cannot persist and schedule MIDI clips on a song timeline. Live MIDI
+   can be forwarded, but this arrangement cannot yet be played end-to-end by a
+   Transmission project without an external sequencer.
+2. Projects cannot persist or schedule VST3 parameter and bypass automation.
    The graph supports bounded immediate parameter changes, but not the filter,
-   wobble-rate, distortion, and effect-send curves listed as
+   wobble-rate, distortion, effect-send, and master-fade curves listed as
    `productionCues` in the recipe.
-4. Generated MIDI needs a capture/freeze path if DrumGen or Xoxolo performances
+3. Generated MIDI needs a capture/freeze path if DrumGen or Xoxolo performances
    are to become deterministic, editable clips.
-
-## Native Transmission result
-
-`projects/gen-omega.ttl` is a self-contained 140 BPM performance definition with
-420 beats, 17 clips, 2,059 notes, six instrument roles, per-role gain nodes, and
-a master fade ending at -120 dB. GTK project interchange v3 preserves the
-arrangement and defaults the render dialog to its full 105-bar length.
-
-The VST3 project probe verified the installed Downspout bundles without an
-external MIDI sequencer. At the start of the Techno Build, Main Drums Gain measured
-0.0802 RMS and Master Gain measured 0.0568 RMS. A probe starting at the final
-nine-bar section measured Master Gain falling from 0.0500 RMS in its first second
-to 1.22e-8 RMS in its last second.
 
 ## Live REAPER result
 

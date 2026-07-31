@@ -192,6 +192,24 @@ bool RoutedAudioGraph::setScheduledMidiEvents(
         return left.data < right.data;
     });
     scheduledMidiEvents_ = std::move(compiled);
+    for (auto& node : nodes_) {
+        node.scheduledMidiFirstBeat = 0.0;
+        node.scheduledMidiLastBeat = 0.0;
+        node.hasScheduledMidi = false;
+    }
+    for (const auto& event : scheduledMidiEvents_) {
+        auto& node = nodes_[event.node];
+        if (!node.hasScheduledMidi) {
+            node.scheduledMidiFirstBeat = event.beat;
+            node.scheduledMidiLastBeat = event.beat;
+            node.hasScheduledMidi = true;
+        } else {
+            node.scheduledMidiFirstBeat =
+                std::min(node.scheduledMidiFirstBeat, event.beat);
+            node.scheduledMidiLastBeat =
+                std::max(node.scheduledMidiLastBeat, event.beat);
+        }
+    }
     sampleRate_ = sampleRate;
     return true;
 }
@@ -218,6 +236,14 @@ bool RoutedAudioGraph::prepare(std::size_t channels, std::size_t frames) noexcep
                 nodes_[index].audioInputs = channels;
                 nodes_[index].audioOutputs = channels;
             }
+            nodes_[index].sleepOutsideScheduledMidi =
+                nodes_[index].hasScheduledMidi &&
+                nodes_[index].audioInputs == 0 &&
+                nodes_[index].incoming.empty() &&
+                nodes_[index].midiIncoming.empty() &&
+                nodes_[index].externalMidiInputPort ==
+                    static_cast<std::size_t>(-1) &&
+                !nodes_[index].externalAudioInput;
             nodes_[index].input.assign(nodes_[index].audioInputs * frames, 0.0F);
             nodes_[index].output.assign(nodes_[index].audioOutputs * frames, 0.0F);
             nodes_[index].inputPointers.resize(nodes_[index].audioInputs);
@@ -337,6 +363,14 @@ void RoutedAudioGraph::processNode(std::size_t index) noexcept {
                 node.input.data() + channel * currentFrames_,
                 currentInputs_[channel],
                 currentFrames_ * sizeof(float));
+    }
+    if (processContext_.playing && node.sleepOutsideScheduledMidi &&
+        node.midiInputCount == 0 &&
+        (processContext_.projectTimeMusic < node.scheduledMidiFirstBeat ||
+         processContext_.projectTimeMusic >=
+             node.scheduledMidiLastBeat + scheduledInstrumentTailBeats)) {
+        node.midiOutputCount = 0;
+        return;
     }
     if (timingEnabled_) {
         const auto started = std::chrono::steady_clock::now();

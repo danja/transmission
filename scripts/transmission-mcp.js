@@ -22,8 +22,11 @@ const profilePaths = options.pluginProfiles.length
 const pluginRoots = options.pluginRoots.length
   ? options.pluginRoots
   : [join(homedir(), '.vst3')]
+const packagedInspectorPath = join(repositoryRoot, 'bin/transmission_vst3_inspect')
 const inspectorPath = options.vst3Inspector ??
-  join(repositoryRoot, 'native/build-ui-jack-vst3/transmission_vst3_inspect')
+  (existsSync(packagedInspectorPath)
+    ? packagedInspectorPath
+    : join(repositoryRoot, 'native/build-ui-jack-vst3/transmission_vst3_inspect'))
 const discovery = existsSync(inspectorPath)
   ? new Vst3Discovery({
       inspectorPath,

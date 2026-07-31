@@ -1,0 +1,124 @@
+name: Release binaries
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  VST3_SDK_TAG: v3.8.0_build_66
+  VST3_SDK_COMMIT: 9fad9770f2ae8542ab1a548a68c1ad1ac690abe0
+
+jobs:
+  linux-x86_64:
+    name: Ubuntu 24.04 x86-64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out Transmission
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends \
+            build-essential cmake pkg-config libgtk-3-dev libjack-jackd2-dev
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Check and test the control plane
+        run: |
+          npm run check
+          npm test
+
+      - name: Check out the VST3 SDK
+        run: |
+          git clone --branch "$VST3_SDK_TAG" --depth 1 \
+            --recurse-submodules --shallow-submodules \
+            https://github.com/steinbergmedia/vst3sdk.git "$RUNNER_TEMP/vst3sdk"
+          test "$(git -C "$RUNNER_TEMP/vst3sdk" rev-parse HEAD)" = \
+            "$VST3_SDK_COMMIT"
+
+      - name: Configure the native release
+        run: |
+          node_include="$(node -p \
+            "require('path').resolve(process.execPath, '../../include/node')")"
+          cmake -S native -B native/build-release \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DTRANSMISSION_BUILD_TESTS=ON \
+            -DTRANSMISSION_WITH_GTK_UI=ON \
+            -DTRANSMISSION_WITH_JACK=ON \
+            -DTRANSMISSION_WITH_NAPI=ON \
+            -DTRANSMISSION_WITH_VST3=ON \
+            -DNODE_API_INCLUDE_DIR="$node_include" \
+            -DVST3_SDK_ROOT="$RUNNER_TEMP/vst3sdk"
+
+      - name: Build and test the native release
+        run: |
+          cmake --build native/build-release --parallel
+          ctest --test-dir native/build-release --output-on-failure
+
+      - name: Package
+        id: package
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="snapshot-${GITHUB_SHA::12}"
+          fi
+          scripts/package-release.sh \
+            native/build-release "$version" "$RUNNER_TEMP/vst3sdk/LICENSE.txt"
+          archive="$(find dist -maxdepth 1 -name '*.tar.gz' -print -quit)"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+          echo "checksum=$archive.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: transmission-linux-x86_64
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.checksum }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    if: github.ref_type == 'tag'
+    needs: linux-x86_64
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download tested release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: transmission-linux-x86_64
+          path: dist
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --generate-notes \
+            dist/*.tar.gz \
+            dist/*.sha256 \
+            --repo "$GITHUB_REPOSITORY"

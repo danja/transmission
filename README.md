@@ -79,6 +79,7 @@ See [MCP setup](docs/installation.md#mcp-setup) and the
 ## Documentation
 
 - [Installation, building, MCP setup, and troubleshooting](docs/installation.md)
+- [Maintainer release builds](docs/releasing.md)
 - [Architecture](docs/architecture.md) and
   [Mermaid diagram](docs/architecture.mermaid)
 - [RDF plugin profiles](docs/plugin-profiles.md)

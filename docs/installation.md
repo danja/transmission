@@ -5,6 +5,10 @@ with VST3 and JACK-compatible audio. The normal build produces the GTK graph
 editor, native VST3 hosting, JACK audio/MIDI support, offline rendering tools,
 and the Node.js control plane.
 
+Prebuilt Ubuntu x86-64 archives may also be attached to tagged
+[GitHub Releases](https://github.com/danja/transmission/releases). Each archive
+contains runtime instructions and a SHA-256 checksum.
+
 ## Requirements
 
 - A C++20 compiler and standard build tools

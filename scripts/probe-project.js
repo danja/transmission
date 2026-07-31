@@ -26,6 +26,7 @@ if (!projectPath || (probeOption >= 0 && !explicitProbe)) {
 const candidates = explicitProbe
   ? [resolve(explicitProbe)]
   : [
+      join(repositoryRoot, 'bin/transmission_vst3_project_probe'),
       join(repositoryRoot, 'native/build-ui-jack-vst3/transmission_vst3_project_probe'),
       join(repositoryRoot, 'native/build-vst3/transmission_vst3_project_probe')
     ]

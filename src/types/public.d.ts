@@ -32,6 +32,33 @@ export interface GraphDefinition {
   metadata?: Record<string, unknown>
 }
 
+export interface MidiNote {
+  startBeat: number
+  durationBeats: number
+  pitch: number
+  velocity: number
+  channel: number
+}
+
+export interface MidiClip {
+  id: string
+  targetNodeId: string
+  startBeat: number
+  lengthBeats: number
+  notes: MidiNote[]
+}
+
+export interface GainLane {
+  targetNodeId: string
+  points: Array<{ beat: number, valueDb: number, shape: 'step' | 'linear' }>
+}
+
+export interface ArrangementDefinition {
+  lengthBeats: number
+  midiClips: MidiClip[]
+  gainLanes: GainLane[]
+}
+
 export interface CompiledGraph extends GraphDefinition {
   version: 1
   executionOrder: string[]
@@ -81,9 +108,9 @@ export interface TransmissionStatus {
 
 export interface TransmissionControlApi {
   status(): TransmissionStatus
-  describeProject(): TransmissionStatus & { graph: GraphDefinition, executionOrder: string[] }
+  describeProject(): TransmissionStatus & { graph: GraphDefinition, arrangement: ArrangementDefinition, executionOrder: string[] }
   projectTurtle(): string
-  newProject(definition: GraphDefinition): unknown
+  newProject(definition: GraphDefinition & { arrangement?: ArrangementDefinition }): unknown
   openProject(filePath: string): Promise<unknown>
   saveProject(filePath?: string | null): Promise<unknown>
   applyGraphChanges(input: { expectedRevision: number, operations: GraphOperation[], dryRun?: boolean }): unknown

@@ -35,10 +35,14 @@ export function createGenOmegaArrangement({ tempo = DEFAULT_TEMPO } = {}) {
     return {
       name,
       section,
+      startBeat: definition.startBar * BEATS_PER_BAR,
+      lengthBeats: definition.bars * BEATS_PER_BAR,
       start_position: definition.start,
       length: definition.length,
       notes: notes.map(note => ({
         ...note,
+        startBeat: note.start,
+        durationBeats: note.length,
         start: seconds(note.start),
         length: seconds(note.length)
       }))
@@ -138,7 +142,7 @@ export function createGenOmegaArrangement({ tempo = DEFAULT_TEMPO } = {}) {
       cue(105, 'Master', 'fade', 0, 'Reach digital silence at exactly three minutes.')
     ],
     limitations: [
-      'Transmission cannot yet persist or schedule these MIDI clips on a project timeline.',
+      'Transmission persists and schedules this authored MIDI, but does not yet provide a timeline editor.',
       'Transmission cannot yet persist sample-accurate VST3 parameter or bypass automation.',
       'Transmission cannot yet capture or freeze MIDI generator performances as editable clips.'
     ]

@@ -74,7 +74,10 @@ std::unique_ptr<RoutedAudioGraph> GraphRuntimeCompiler::compile(
 
     auto graph = std::make_unique<RoutedAudioGraph>();
     for (const auto& node : snapshot.nodes) {
-        auto processor = processorFactory_(node, config, error);
+        auto processor = node.kind == RuntimeNodeKind::Gain
+            ? std::unique_ptr<AudioProcessor>(std::make_unique<GainProcessor>(
+                  config.sampleRate, node.gainDb, node.gainEnvelope))
+            : processorFactory_(node, config, error);
         if (!processor) {
             if (error.empty()) error = "unable to create processor for node: " + node.id;
             return nullptr;
@@ -149,6 +152,9 @@ std::unique_ptr<RoutedAudioGraph> GraphRuntimeCompiler::compile(
             return nullptr;
         }
     }
+    if (!graph->setScheduledMidiEvents(snapshot.scheduledMidiEvents,
+                                       config.sampleRate, error))
+        return nullptr;
     return graph;
 }
 

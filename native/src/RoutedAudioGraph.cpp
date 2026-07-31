@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <cmath>
 #include <thread>
 
 namespace transmission {
@@ -166,6 +167,35 @@ bool RoutedAudioGraph::enqueueParameter(const std::string& nodeId, std::uint32_t
            node->processor->enqueueParameter(parameterId, normalizedValue);
 }
 
+bool RoutedAudioGraph::setScheduledMidiEvents(
+    std::vector<ScheduledMidiEvent> events, double sampleRate,
+    std::string& error) {
+    if (preparedChannels_ != 0 || !std::isfinite(sampleRate) || sampleRate <= 0.0) {
+        error = "scheduled MIDI must be configured before graph preparation";
+        return false;
+    }
+    std::vector<CompiledMidiEvent> compiled;
+    compiled.reserve(events.size());
+    for (const auto& event : events) {
+        const auto node = std::find_if(nodes_.begin(), nodes_.end(), [&](const auto& candidate) {
+            return candidate.id == event.targetNodeId;
+        });
+        if (node == nodes_.end() || !std::isfinite(event.beat) || event.beat < 0.0) {
+            error = "scheduled MIDI event has an invalid target or beat";
+            return false;
+        }
+        compiled.push_back({static_cast<std::size_t>(node - nodes_.begin()), event.beat, event.data});
+    }
+    std::sort(compiled.begin(), compiled.end(), [](const auto& left, const auto& right) {
+        if (left.beat != right.beat) return left.beat < right.beat;
+        if (left.node != right.node) return left.node < right.node;
+        return left.data < right.data;
+    });
+    scheduledMidiEvents_ = std::move(compiled);
+    sampleRate_ = sampleRate;
+    return true;
+}
+
 bool RoutedAudioGraph::prepare(std::size_t channels, std::size_t frames) noexcept {
     if (channels == 0 || frames == 0 || nodes_.empty()) return false;
     try {
@@ -258,6 +288,25 @@ void RoutedAudioGraph::processWithMidi(const float* const* inputs, float* const*
                 if (events[event].port == node.externalMidiInputPort)
                     node.midiInput[node.midiInputCount++] = events[event];
             }
+        }
+    }
+    if (processContext_.playing && processContext_.tempo > 0.0) {
+        const auto startBeat = processContext_.projectTimeMusic;
+        const auto endBeat = startBeat + static_cast<double>(frames) *
+            processContext_.tempo / (60.0 * sampleRate_);
+        const auto firstEvent = std::lower_bound(
+            scheduledMidiEvents_.begin(), scheduledMidiEvents_.end(), startBeat,
+            [](const auto& event, double beat) { return event.beat < beat; });
+        for (auto event = firstEvent;
+             event != scheduledMidiEvents_.end() && event->beat < endBeat; ++event) {
+            auto& target = nodes_[event->node];
+            if (target.midiInputCount >= target.midiInput.size()) continue;
+            auto& midi = target.midiInput[target.midiInputCount++];
+            midi.size = 3;
+            midi.data = event->data;
+            const auto offset = (event->beat - startBeat) * 60.0 * sampleRate_ /
+                                processContext_.tempo;
+            midi.frameOffset = std::min(frames - 1, static_cast<std::size_t>(std::max(0.0, std::floor(offset + 0.5))));
         }
     }
     currentInputs_ = inputs;
@@ -508,6 +557,7 @@ bool RoutedAudioGraph::restoreProcessorState(
 }
 
 void RoutedAudioGraph::setProcessContext(const AudioProcessContext& context) noexcept {
+    processContext_ = context;
     for (auto& node : nodes_) node.processor->setProcessContext(context);
 }
 

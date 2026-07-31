@@ -4,6 +4,8 @@ export interface GenOmegaNote {
   length: number
   velocity: number
   channel: number
+  startBeat: number
+  durationBeats: number
 }
 
 export interface GenOmegaClip {
@@ -11,6 +13,8 @@ export interface GenOmegaClip {
   section: string
   start_position: number
   length: number
+  startBeat: number
+  lengthBeats: number
   notes: GenOmegaNote[]
 }
 

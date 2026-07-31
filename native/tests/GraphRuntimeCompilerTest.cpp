@@ -115,6 +115,8 @@ int main() {
     auto parameterized = validSnapshot();
     parameterized.nodes[2].parameters.push_back({42, 0.75});
     parameterized.nodes[2].state = {{1, 2, 3}, {4, 5}};
+    parameterized.scheduledMidiEvents.push_back(
+        {"capture", 0.0, {0x90, 60, 100}});
     auto graph = compiler.compile(parameterized, config, error);
     assert(graph);
     assert(capture && capture->lastParameterId == 42);
@@ -133,8 +135,9 @@ int main() {
     float output[4] = {};
     const float* inputs[] = {input};
     float* outputs[] = {output};
+    graph->setProcessContext({0.0, 120.0, true});
     graph->processWithMidi(inputs, outputs, 1, 4, nullptr, 0);
-    assert(capture && capture->received == 1);
+    assert(capture && capture->received == 2);
     assert(output[3] == input[3]);
 
     auto duplicate = validSnapshot();

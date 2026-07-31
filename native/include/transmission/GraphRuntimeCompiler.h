@@ -13,7 +13,7 @@
 namespace transmission {
 
 enum class RuntimeNodeKind {
-    SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput
+    SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput, Gain
 };
 enum class RuntimeConnectionKind { Audio, Midi };
 
@@ -31,6 +31,8 @@ struct RuntimeGraphNode {
     std::size_t audioOutputs = 0;
     std::vector<RuntimeParameterValue> parameters;
     ProcessorState state;
+    double gainDb = 0.0;
+    std::vector<GainEnvelopePoint> gainEnvelope;
 };
 
 struct RuntimeGraphConnection {
@@ -44,6 +46,7 @@ struct RuntimeGraphConnection {
 struct RuntimeGraphSnapshot {
     std::vector<RuntimeGraphNode> nodes;
     std::vector<RuntimeGraphConnection> connections;
+    std::vector<ScheduledMidiEvent> scheduledMidiEvents;
 };
 
 using RuntimeProcessorFactory = std::function<std::unique_ptr<AudioProcessor>(

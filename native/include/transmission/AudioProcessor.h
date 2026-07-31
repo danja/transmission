@@ -100,4 +100,27 @@ private:
     std::size_t midiInputCount_ = 0;
 };
 
+struct GainEnvelopePoint {
+    double beat = 0.0;
+    double valueDb = 0.0;
+    bool linear = true;
+};
+
+/** Built-in sample-accurate gain with an immutable beat-domain envelope. */
+class GainProcessor final : public AudioProcessor {
+public:
+    GainProcessor(double sampleRate, double gainDb,
+                  std::vector<GainEnvelopePoint> points = {});
+    void process(const float* const* inputs, float* const* outputs,
+                 std::size_t channels, std::size_t frames) noexcept override;
+    void setProcessContext(const AudioProcessContext& context) noexcept override;
+
+private:
+    double gainAt(double beat) const noexcept;
+    double sampleRate_ = 48000.0;
+    double gainDb_ = 0.0;
+    std::vector<GainEnvelopePoint> points_;
+    AudioProcessContext context_;
+};
+
 } // namespace transmission

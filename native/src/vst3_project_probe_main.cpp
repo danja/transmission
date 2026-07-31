@@ -35,6 +35,7 @@ struct Options {
     bool realtime = false;
     double renderAheadMilliseconds = 200.0;
     std::size_t processingThreads = 0;
+    double startBeat = 0.0;
 };
 
 struct AudioWindow {
@@ -77,6 +78,8 @@ bool parseOptions(int argc, char** argv, Options& options) {
             options.renderAheadMilliseconds = value;
         else if (argument == "--threads")
             options.processingThreads = static_cast<std::size_t>(value);
+        else if (argument == "--start-beat")
+            options.startBeat = value;
         else
             return false;
         ++index;
@@ -104,6 +107,7 @@ RuntimeNodeKind runtimeKind(transmission::UiProjectNodeKind kind) {
     case UiKind::Plugin: return RuntimeNodeKind::Plugin;
     case UiKind::MidiInput: return RuntimeNodeKind::MidiInput;
     case UiKind::MidiOutput: return RuntimeNodeKind::MidiOutput;
+    case UiKind::Gain: return RuntimeNodeKind::Gain;
     }
     return RuntimeNodeKind::PassThrough;
 }
@@ -121,6 +125,14 @@ RuntimeGraphSnapshot snapshotFor(const transmission::UiProject& project) {
             runtime.parameters.push_back({parameter.id,
                                           parameter.normalizedValue});
         runtime.state = {node.componentState, node.controllerState};
+        runtime.gainDb = node.gainDb;
+        const auto lane = std::find_if(
+            project.gainLanes.begin(), project.gainLanes.end(),
+            [&](const auto& candidate) {
+                return candidate.targetNodeId == node.id;
+            });
+        if (lane != project.gainLanes.end())
+            runtime.gainEnvelope = lane->points;
         snapshot.nodes.push_back(std::move(runtime));
     }
     for (const auto& connection : project.connections)
@@ -130,6 +142,19 @@ RuntimeGraphSnapshot snapshotFor(const transmission::UiProject& project) {
                  ? RuntimeConnectionKind::Audio
                  : RuntimeConnectionKind::Midi,
              connection.fromPort, connection.toPort});
+    for (const auto& clip : project.midiClips) {
+        for (const auto& note : clip.notes) {
+            snapshot.scheduledMidiEvents.push_back({
+                clip.targetNodeId, clip.startBeat + note.startBeat,
+                {static_cast<std::uint8_t>(0x90U | note.channel),
+                 note.pitch, note.velocity}});
+            snapshot.scheduledMidiEvents.push_back({
+                clip.targetNodeId,
+                clip.startBeat + note.startBeat + note.durationBeats,
+                {static_cast<std::uint8_t>(0x80U | note.channel),
+                 note.pitch, 0}});
+        }
+    }
     return snapshot;
 }
 
@@ -351,7 +376,7 @@ int main(int argc, char** argv) {
         std::cerr
             << "Usage: transmission_vst3_project_probe <interchange|-> "
                "[--seconds N] [--block-size N] [--sample-rate N] "
-               "[--realtime] [--render-ahead-ms N] [--threads N]\n";
+               "[--start-beat N] [--realtime] [--render-ahead-ms N] [--threads N]\n";
         return 2;
     }
     std::string encoded;
@@ -434,7 +459,7 @@ int main(int argc, char** argv) {
     const auto deadlineNanoseconds = static_cast<std::uint64_t>(
         1.0e9 * static_cast<double>(config.blockSize) /
         config.sampleRate);
-    double beat = 0.0;
+    double beat = options.startBeat;
     while (rendered < totalFrames) {
         graph->setProcessContext({beat, project.tempo, true});
         const auto started = std::chrono::steady_clock::now();

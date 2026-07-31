@@ -27,6 +27,26 @@ public:
     }
 };
 
+class MidiReactiveProcessor final : public transmission::AudioProcessor {
+public:
+    void process(const float* const*, float* const* outputs,
+                 std::size_t channels, std::size_t frames) noexcept override {
+        for (std::size_t channel = 0; channel < channels; ++channel)
+            std::fill_n(outputs[channel], frames, 0.0F);
+    }
+    void processWithMidi(const float* const*, float* const* outputs,
+                         std::size_t channels, std::size_t frames,
+                         const transmission::MidiEvent* events,
+                         std::size_t eventCount) noexcept override {
+        process(nullptr, outputs, channels, frames);
+        for (std::size_t event = 0; event < eventCount; ++event)
+            if ((events[event].data[0] & 0xf0U) == 0x90U)
+                for (std::size_t channel = 0; channel < channels; ++channel)
+                    std::fill(outputs[channel] + events[event].frameOffset,
+                              outputs[channel] + frames, 0.5F);
+    }
+};
+
 transmission::RuntimeGraphSnapshot snapshot() {
     using Kind = transmission::RuntimeNodeKind;
     using Edge = transmission::RuntimeConnectionKind;
@@ -55,6 +75,8 @@ int main() {
         [](const transmission::RuntimeGraphNode& node,
            const transmission::AudioDeviceConfig&, std::string&)
             -> std::unique_ptr<transmission::AudioProcessor> {
+            if (node.pluginPath == "/midi.vst3")
+                return std::make_unique<MidiReactiveProcessor>();
             if (node.kind == transmission::RuntimeNodeKind::Plugin)
                 return std::make_unique<ConstantProcessor>();
             return std::make_unique<transmission::PassThroughProcessor>();
@@ -93,6 +115,19 @@ int main() {
         reinterpret_cast<const float*>(bytes.data() + 44);
     for (std::size_t index = 0; index < 12; ++index)
         assert(std::fabs(samples[index] - 0.25F) < 1.0e-6F);
+    std::filesystem::remove(path);
+
+    auto scheduled = snapshot();
+    scheduled.nodes[0].pluginPath = "/midi.vst3";
+    scheduled.nodes[0].audioInputs = 2;
+    scheduled.scheduledMidiEvents.push_back(
+        {"source", 0.5, {0x90, 60, 100}});
+    options.sampleRate = 4.0;
+    options.tempo = 60.0;
+    options.blockSize = 4;
+    options.totalFrames = 4;
+    assert(renderer.renderWave(scheduled, options, result, error));
+    assert(result.peak == 0.5F);
     std::filesystem::remove(path);
 
     options.totalFrames = 0;

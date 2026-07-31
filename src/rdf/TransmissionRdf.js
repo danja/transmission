@@ -4,6 +4,7 @@ import { Readable } from 'node:stream'
 import rdf from 'rdf-ext'
 import Parser from '@rdfjs/parser-n3'
 import { Graph } from '../model/Graph.js'
+import { Arrangement } from '../model/Arrangement.js'
 import { vocabulary as ns } from './Vocabulary.js'
 
 export async function parseTurtle(text) {
@@ -95,7 +96,36 @@ export function transportFromDataset(dataset, transmissionId) {
   return state
 }
 
-export function serializeGraph(graph, transport = null) {
+export function arrangementFromDataset(dataset, transmissionId, graph = null) {
+  const subject = rdf.namedNode(transmissionId)
+  const definition = {
+    lengthBeats: numeric(first(dataset, subject, ns.trn.arrangementLength)),
+    midiClips: list(dataset, first(dataset, subject, ns.trn.midiClips)).map(clip => ({
+      id: first(dataset, clip, ns.trn.clipId)?.value ?? '',
+      targetNodeId: first(dataset, clip, ns.trn.targetNode)?.value ?? '',
+      startBeat: numeric(first(dataset, clip, ns.trn.startBeat)),
+      lengthBeats: numeric(first(dataset, clip, ns.trn.lengthBeats)),
+      notes: list(dataset, first(dataset, clip, ns.trn.notes)).map(note => ({
+        startBeat: numeric(first(dataset, note, ns.trn.startBeat)),
+        durationBeats: numeric(first(dataset, note, ns.trn.durationBeats)),
+        pitch: numeric(first(dataset, note, ns.trn.pitch)),
+        velocity: numeric(first(dataset, note, ns.trn.velocity)),
+        channel: numeric(first(dataset, note, ns.trn.channel))
+      }))
+    })),
+    gainLanes: list(dataset, first(dataset, subject, ns.trn.gainLanes)).map(lane => ({
+      targetNodeId: first(dataset, lane, ns.trn.targetNode)?.value ?? '',
+      points: list(dataset, first(dataset, lane, ns.trn.points)).map(point => ({
+        beat: numeric(first(dataset, point, ns.trn.atBeat)),
+        valueDb: numeric(first(dataset, point, ns.trn.valueDb)),
+        shape: first(dataset, point, ns.trn.shape)?.value ?? 'linear'
+      }))
+    }))
+  }
+  return new Arrangement(definition, graph)
+}
+
+export function serializeGraph(graph, transport = null, arrangement = null) {
   const base = 'http://purl.org/stuff/transmissions/'
   const nodeNames = new Map([...graph.nodes.keys()].map(id => [id, compact(id, base)]))
   const subject = compact(graph.id, base)
@@ -110,6 +140,25 @@ export function serializeGraph(graph, transport = null) {
     lines.push(`    :loopStart ${transport.loop.startBeat} ;`)
     lines.push(`    :loopEnd ${transport.loop.endBeat} ;`)
     lines.push(`    :loopEnabled ${transport.loop.enabled !== false} ;`)
+  }
+  const performance = arrangement?.toJSON?.() ?? arrangement
+  if (performance?.lengthBeats > 0)
+    lines.push(`    :arrangementLength ${performance.lengthBeats} ;`)
+  if (performance?.midiClips?.length) {
+    const clips = performance.midiClips.map(clip => {
+      const notes = clip.notes.map(note =>
+        `[ :startBeat ${note.startBeat} ; :durationBeats ${note.durationBeats} ; :pitch ${note.pitch} ; :velocity ${note.velocity} ; :channel ${note.channel} ]`).join(' ')
+      return `[ :clipId ${literal(clip.id)} ; :targetNode ${nodeNames.get(clip.targetNodeId) ?? term(clip.targetNodeId, base)} ; :startBeat ${clip.startBeat} ; :lengthBeats ${clip.lengthBeats} ; :notes ( ${notes} ) ]`
+    }).join(' ')
+    lines.push(`    :midiClips ( ${clips} ) ;`)
+  }
+  if (performance?.gainLanes?.length) {
+    const lanes = performance.gainLanes.map(lane => {
+      const points = lane.points.map(point =>
+        `[ :atBeat ${point.beat} ; :valueDb ${point.valueDb} ; :shape ${literal(point.shape)} ]`).join(' ')
+      return `[ :targetNode ${nodeNames.get(lane.targetNodeId) ?? term(lane.targetNodeId, base)} ; :points ( ${points} ) ]`
+    }).join(' ')
+    lines.push(`    :gainLanes ( ${lanes} ) ;`)
   }
   const inputConnections = graph.metadata?.systemInputConnections ?? []
   const outputConnections = graph.metadata?.systemOutputConnections ?? []

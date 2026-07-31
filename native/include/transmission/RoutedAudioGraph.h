@@ -25,6 +25,12 @@ struct NodeProcessorState {
     ProcessorState state;
 };
 
+struct ScheduledMidiEvent {
+    std::string targetNodeId;
+    double beat = 0.0;
+    std::array<std::uint8_t, 3> data{};
+};
+
 /**
  * Preallocated DAG runtime. Control-plane code creates nodes and connects
  * them; prepare() resolves execution order and allocates all block storage.
@@ -52,6 +58,8 @@ public:
                       double normalizedValue, std::string& error);
     bool enqueueParameter(const std::string& nodeId, std::uint32_t parameterId,
                           double normalizedValue) noexcept;
+    bool setScheduledMidiEvents(std::vector<ScheduledMidiEvent> events,
+                                double sampleRate, std::string& error);
     bool prepare(std::size_t channels, std::size_t frames) noexcept;
     void process(const float* const* inputs, float* const* outputs,
                  std::size_t channels, std::size_t frames) noexcept;
@@ -124,6 +132,12 @@ private:
         bool externalAudioOutput = false;
     };
 
+    struct CompiledMidiEvent {
+        std::size_t node = 0;
+        double beat = 0.0;
+        std::array<std::uint8_t, 3> data{};
+    };
+
     void stopProcessingThreads() noexcept;
     void processingWorkerLoop(std::size_t lane) noexcept;
     void processNode(std::size_t index) noexcept;
@@ -148,6 +162,9 @@ private:
     std::array<MidiEvent, maxMidiEventsPerBlock> externalMidiOutput_{};
     std::size_t externalMidiOutputCount_ = 0;
     bool timingEnabled_ = false;
+    std::vector<CompiledMidiEvent> scheduledMidiEvents_;
+    double sampleRate_ = 48000.0;
+    AudioProcessContext processContext_;
 };
 
 } // namespace transmission

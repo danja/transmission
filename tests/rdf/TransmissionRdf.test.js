@@ -2,7 +2,8 @@
 
 import { describe, expect, it } from 'vitest'
 import { Graph } from '../../src/model/Graph.js'
-import { graphFromDataset, parseTurtle, serializeGraph, transportFromDataset } from '../../src/rdf/TransmissionRdf.js'
+import { arrangementFromDataset, graphFromDataset, parseTurtle, serializeGraph, transportFromDataset } from '../../src/rdf/TransmissionRdf.js'
+import { Arrangement } from '../../src/model/Arrangement.js'
 
 describe('Transmission RDF adapter', () => {
   it('parses an RDF list into a typed graph', async () => {
@@ -54,7 +55,15 @@ describe('Transmission RDF adapter', () => {
       tempoMap: [{ beat: 0, bpm: 128 }],
       loop: { startBeat: 0, endBeat: 32, enabled: true }
     }
-    const dataset = await parseTurtle(serializeGraph(graph, transport))
+    const arrangement = new Arrangement({
+      lengthBeats: 16,
+      midiClips: [{ id: 'intro', targetNodeId: `${base}drumgen`, startBeat: 0, lengthBeats: 4,
+        notes: [{ startBeat: 0.5, durationBeats: 0.25, pitch: 36, velocity: 100, channel: 9 }] }],
+      gainLanes: [{ targetNodeId: `${base}output`, points: [
+        { beat: 12, valueDb: 0, shape: 'linear' }, { beat: 16, valueDb: -120, shape: 'linear' }
+      ] }]
+    }, graph)
+    const dataset = await parseTurtle(serializeGraph(graph, transport, arrangement))
     const restored = graphFromDataset(dataset, graph.id)
     expect(restored.connections).toEqual(graph.connections)
     expect(restored.node(`${base}drumgen`).settings[`${base}pluginPath`]).toEqual(['/home/test/drumgen.vst3'])
@@ -67,5 +76,6 @@ describe('Transmission RDF adapter', () => {
     expect(restored.node(`${base}drumgen`).metadata).toEqual({ x: 240, y: 30 })
     expect(restored.metadata.systemOutputConnections).toEqual(['playback:left', 'playback:right'])
     expect(transportFromDataset(dataset, graph.id)).toEqual(transport)
+    expect(arrangementFromDataset(dataset, graph.id, graph).toJSON()).toEqual(arrangement.toJSON())
   })
 })

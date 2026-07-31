@@ -27,6 +27,14 @@ int main() {
     project.nodes[1].parameters = {{7, 0.25}, {42, 0.75}};
     project.nodes[1].componentState = {0x00, 0x7f, 0xff};
     project.nodes[1].controllerState = {0x10, 0x20};
+    project.nodes.push_back({
+        "master-gain", "Master Gain", transmission::UiProjectNodeKind::Gain,
+        2, 2, 0, 0, 600.0, 30.0, "", "", {}, {}, {}, -3.0});
+    project.arrangementLengthBeats = 16.0;
+    project.midiClips = {{"clip-1", "drumgen", 4.0, 4.0,
+                          {{0.5, 0.25, 36, 100, 9}}}};
+    project.gainLanes = {{"master-gain",
+                          {{12.0, 0.0, true}, {16.0, -120.0, true}}}};
     const auto encoded = transmission::encodeUiProject(project);
     transmission::UiProject decoded;
     std::string error;
@@ -46,6 +54,10 @@ int main() {
     assert(decoded.systemOutputConnections == project.systemOutputConnections);
     assert(decoded.tempo == 128.0);
     assert(decoded.loopEnabled);
+    assert(decoded.arrangementLengthBeats == 16.0);
+    assert(decoded.midiClips[0].notes[0].channel == 9);
+    assert(decoded.gainLanes[0].points[1].valueDb == -120.0);
+    assert(decoded.nodes.back().gainDb == -3.0);
 
     assert(!transmission::decodeUiProject("not a project\n", decoded, error));
     assert(!transmission::decodeUiProject(

@@ -131,6 +131,18 @@ int main() {
     assert(nodeEvent.data == inputEvent.data);
     assert(midi.copyNodeMidiOutput("missing", &nodeEvent, 1) == 0);
 
+    transmission::RoutedAudioGraph scheduled;
+    assert(scheduled.addNode("synth", std::make_unique<transmission::PassThroughProcessor>()));
+    std::string scheduleError;
+    assert(scheduled.setScheduledMidiEvents(
+        {{"synth", 0.5, {0x90, 64, 110}}}, 4.0, scheduleError));
+    assert(scheduled.prepare(1, 4));
+    scheduled.setProcessContext({0.0, 60.0, true});
+    scheduled.process(inputs, outputs, 1, 4);
+    assert(scheduled.copyNodeMidiOutput("synth", &nodeEvent, 1) == 1);
+    assert(nodeEvent.frameOffset == 2);
+    assert(nodeEvent.data[1] == 64);
+
     transmission::RoutedAudioGraph asymmetric;
     assert(asymmetric.addNode(
         "input", std::make_unique<transmission::PassThroughProcessor>(), 2, 2));

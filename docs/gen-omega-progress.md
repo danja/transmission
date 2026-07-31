@@ -85,6 +85,11 @@ as `140/4`. The saved RPP is the authoritative source and contains `TEMPO 140 4
 
 ## Remaining Transmission gaps
 
-The plugin set covers the requested sounds. Transmission itself still lacks a
-persisted MIDI-clip timeline, scheduled VST3 automation, and deterministic MIDI
-generator capture/freeze. These remain listed in `docs/todo.md`.
+Transmission now has a persisted beat-domain MIDI arrangement, native scheduled
+playback, built-in gain envelopes, GTK project interchange, and the canonical
+`projects/gen-omega.ttl` project. The installed Downspout plugins were smoke-tested
+at the opening, Techno Build, and final fade without an external sequencer.
+
+General scheduled VST3 automation and deterministic MIDI generator capture/freeze
+remain listed in `docs/todo.md`; neither is required for the accepted authored-MIDI
+Gen Omega arrangement.

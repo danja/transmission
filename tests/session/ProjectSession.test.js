@@ -52,7 +52,9 @@ describe('ProjectSession', () => {
     directories.push(directory)
     const filePath = join(directory, 'project.ttl')
     const session = new ProjectSession()
-    session.open({ ...base, transport: { tempoMap: [{ beat: 0, bpm: 90 }, { beat: 4, bpm: 120 }], loop: { startBeat: 2, endBeat: 6 } } })
+    session.open({ ...base, transport: { tempoMap: [{ beat: 0, bpm: 90 }, { beat: 4, bpm: 120 }], loop: { startBeat: 2, endBeat: 6 } },
+      arrangement: { lengthBeats: 8, midiClips: [{ id: 'note', targetNodeId: 'out', startBeat: 0, lengthBeats: 4,
+        notes: [{ startBeat: 1, durationBeats: 1, pitch: 60, velocity: 100, channel: 0 }] }] } })
     await session.save(filePath)
     const loaded = await ProjectSession.load(filePath)
     expect(loaded.graph.nodes.size).toBe(2)
@@ -60,5 +62,6 @@ describe('ProjectSession', () => {
     expect(loaded.transport.tempoAt(0)).toBe(90)
     expect(loaded.transport.tempoAt(4)).toBe(120)
     expect(loaded.transport.loop).toMatchObject({ startBeat: 2, endBeat: 6, enabled: true })
+    expect(loaded.arrangement.toJSON().midiClips[0].notes[0].pitch).toBe(60)
   })
 })

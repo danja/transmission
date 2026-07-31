@@ -77,7 +77,7 @@ bool number(std::string_view text, double& result) {
 
 std::string encodeUiProject(const UiProject& project) {
     std::ostringstream output;
-    output << "TRANSMISSION_UI\t2\n";
+    output << "TRANSMISSION_UI\t3\n";
     output << "PROJECT\t" << hexEncode(project.id) << '\t'
            << hexEncode(project.label) << '\n';
     output << "TRANSPORT\t" << project.tempo << '\t' << project.loopBars
@@ -112,12 +112,34 @@ std::string encodeUiProject(const UiProject& project) {
                    << hexEncode(component) << '\t'
                    << hexEncode(controller) << '\n';
         }
+        if (node.kind == UiProjectNodeKind::Gain)
+            output << "NODE_GAIN\t" << hexEncode(node.id) << '\t'
+                   << node.gainDb << '\n';
     }
     for (const auto& connection : project.connections) {
         output << "EDGE\t" << hexEncode(connection.from) << '\t'
                << hexEncode(connection.to) << '\t'
                << static_cast<int>(connection.kind) << '\t' << connection.fromPort
                << '\t' << connection.toPort << '\n';
+    }
+    output << "ARRANGEMENT\t" << project.arrangementLengthBeats << '\n';
+    for (const auto& clip : project.midiClips) {
+        output << "CLIP\t" << hexEncode(clip.id) << '\t'
+               << hexEncode(clip.targetNodeId) << '\t' << clip.startBeat
+               << '\t' << clip.lengthBeats << '\n';
+        for (const auto& note : clip.notes)
+            output << "NOTE\t" << hexEncode(clip.id) << '\t'
+                   << note.startBeat << '\t' << note.durationBeats << '\t'
+                   << static_cast<unsigned>(note.pitch) << '\t'
+                   << static_cast<unsigned>(note.velocity) << '\t'
+                   << static_cast<unsigned>(note.channel) << '\n';
+    }
+    for (const auto& lane : project.gainLanes) {
+        output << "GAIN_LANE\t" << hexEncode(lane.targetNodeId) << '\n';
+        for (const auto& point : lane.points)
+            output << "GAIN_POINT\t" << hexEncode(lane.targetNodeId) << '\t'
+                   << point.beat << '\t' << point.valueDb << '\t'
+                   << (point.linear ? 1 : 0) << '\n';
     }
     output << "END\n";
     return output.str();
@@ -141,7 +163,7 @@ bool decodeUiProject(const std::string& text, UiProject& project,
         };
         if (!header) {
             if (values.size() != 2 || values[0] != "TRANSMISSION_UI" ||
-                (values[1] != "1" && values[1] != "2")) return fail();
+                (values[1] != "1" && values[1] != "2" && values[1] != "3")) return fail();
             header = true;
             continue;
         }
@@ -176,7 +198,7 @@ bool decodeUiProject(const std::string& text, UiProject& project,
             std::string resource;
             if (values.size() != 11 || !hexDecode(values[1], node.id) ||
                 !hexDecode(values[2], node.label) || !integer(values[3], kind) ||
-                kind < 0 || kind > static_cast<int>(UiProjectNodeKind::MidiOutput) ||
+                kind < 0 || kind > static_cast<int>(UiProjectNodeKind::Gain) ||
                 !integer(values[4], node.audioInputs) ||
                 !integer(values[5], node.audioOutputs) ||
                 !integer(values[6], node.midiInputs) ||
@@ -223,6 +245,16 @@ bool decodeUiProject(const std::string& text, UiProject& project,
             if (node == candidate.nodes.end()) return fail();
             node->componentState.assign(component.begin(), component.end());
             node->controllerState.assign(controller.begin(), controller.end());
+        } else if (values[0] == "NODE_GAIN") {
+            std::string nodeId;
+            double gainDb = 0.0;
+            if (values.size() != 3 || !hexDecode(values[1], nodeId) ||
+                !number(values[2], gainDb)) return fail();
+            const auto node = std::find_if(candidate.nodes.begin(), candidate.nodes.end(),
+                [&](const auto& current) { return current.id == nodeId; });
+            if (node == candidate.nodes.end() || node->kind != UiProjectNodeKind::Gain)
+                return fail();
+            node->gainDb = gainDb;
         } else if (values[0] == "EDGE") {
             UiProjectConnection connection;
             int kind = 0;
@@ -234,6 +266,54 @@ bool decodeUiProject(const std::string& text, UiProject& project,
                 connection.from.empty() || connection.to.empty()) return fail();
             connection.kind = static_cast<UiProjectConnectionKind>(kind);
             candidate.connections.push_back(std::move(connection));
+        } else if (values[0] == "ARRANGEMENT") {
+            if (values.size() != 2 || !number(values[1], candidate.arrangementLengthBeats) ||
+                candidate.arrangementLengthBeats < 0.0) return fail();
+        } else if (values[0] == "CLIP") {
+            UiProjectMidiClip clip;
+            if (values.size() != 5 || !hexDecode(values[1], clip.id) ||
+                !hexDecode(values[2], clip.targetNodeId) ||
+                !number(values[3], clip.startBeat) || !number(values[4], clip.lengthBeats) ||
+                clip.id.empty() || clip.targetNodeId.empty() || clip.startBeat < 0.0 ||
+                clip.lengthBeats <= 0.0) return fail();
+            candidate.midiClips.push_back(std::move(clip));
+        } else if (values[0] == "NOTE") {
+            std::string clipId;
+            UiProjectMidiNote note;
+            unsigned pitch = 0, velocity = 0, channel = 0;
+            if (values.size() != 7 || !hexDecode(values[1], clipId) ||
+                !number(values[2], note.startBeat) || !number(values[3], note.durationBeats) ||
+                !integer(values[4], pitch) || !integer(values[5], velocity) ||
+                !integer(values[6], channel) || note.startBeat < 0.0 ||
+                note.durationBeats <= 0.0 || pitch > 127 || velocity == 0 ||
+                velocity > 127 || channel > 15) return fail();
+            const auto clip = std::find_if(candidate.midiClips.begin(), candidate.midiClips.end(),
+                [&](const auto& current) { return current.id == clipId; });
+            if (clip == candidate.midiClips.end() ||
+                note.startBeat + note.durationBeats > clip->lengthBeats) return fail();
+            note.pitch = static_cast<std::uint8_t>(pitch);
+            note.velocity = static_cast<std::uint8_t>(velocity);
+            note.channel = static_cast<std::uint8_t>(channel);
+            clip->notes.push_back(note);
+        } else if (values[0] == "GAIN_LANE") {
+            UiProjectGainLane lane;
+            if (values.size() != 2 || !hexDecode(values[1], lane.targetNodeId) ||
+                lane.targetNodeId.empty()) return fail();
+            candidate.gainLanes.push_back(std::move(lane));
+        } else if (values[0] == "GAIN_POINT") {
+            std::string nodeId;
+            GainEnvelopePoint point;
+            int linear = 0;
+            if (values.size() != 5 || !hexDecode(values[1], nodeId) ||
+                !number(values[2], point.beat) || !number(values[3], point.valueDb) ||
+                !integer(values[4], linear) || point.beat < 0.0 ||
+                (linear != 0 && linear != 1)) return fail();
+            const auto lane = std::find_if(candidate.gainLanes.begin(), candidate.gainLanes.end(),
+                [&](const auto& current) { return current.targetNodeId == nodeId; });
+            if (lane == candidate.gainLanes.end() ||
+                (!lane->points.empty() && point.beat <= lane->points.back().beat)) return fail();
+            point.linear = linear == 1;
+            lane->points.push_back(point);
         } else {
             return fail();
         }
@@ -241,6 +321,30 @@ bool decodeUiProject(const std::string& text, UiProject& project,
     if (!header || !ended || candidate.nodes.empty()) {
         error = "native UI project interchange is incomplete";
         return false;
+    }
+    for (std::size_t left = 0; left < candidate.midiClips.size(); ++left) {
+        const auto& clip = candidate.midiClips[left];
+        const auto target = std::find_if(candidate.nodes.begin(), candidate.nodes.end(),
+            [&](const auto& node) { return node.id == clip.targetNodeId; });
+        const auto duplicate = std::find_if(candidate.midiClips.begin(),
+            candidate.midiClips.begin() + static_cast<std::ptrdiff_t>(left),
+            [&](const auto& previous) { return previous.id == clip.id; });
+        if (target == candidate.nodes.end() || duplicate != candidate.midiClips.begin() + static_cast<std::ptrdiff_t>(left) ||
+            (candidate.arrangementLengthBeats > 0.0 &&
+             clip.startBeat + clip.lengthBeats > candidate.arrangementLengthBeats)) {
+            error = "native UI project arrangement is invalid";
+            return false;
+        }
+    }
+    for (const auto& lane : candidate.gainLanes) {
+        const auto target = std::find_if(candidate.nodes.begin(), candidate.nodes.end(),
+            [&](const auto& node) {
+                return node.id == lane.targetNodeId && node.kind == UiProjectNodeKind::Gain;
+            });
+        if (target == candidate.nodes.end()) {
+            error = "native UI project gain lane target is invalid";
+            return false;
+        }
     }
     project = std::move(candidate);
     return true;

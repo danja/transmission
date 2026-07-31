@@ -38,7 +38,7 @@ constexpr double minimumNodeHeight = 70.0;
 constexpr double portSpacing = 18.0;
 
 enum class NodeKind {
-    SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput
+    SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput, Gain
 };
 
 struct Node {
@@ -55,6 +55,7 @@ struct Node {
     std::string externalPort;
     std::vector<std::string> audioInputLabels;
     std::vector<std::string> audioOutputLabels;
+    double gainDb = 0.0;
 };
 
 enum class PortKind { Audio, Midi };
@@ -90,6 +91,9 @@ struct GraphView {
     std::unordered_map<
         std::string, std::unordered_map<std::uint32_t, double>> parameterValues;
     std::unordered_map<std::string, transmission::ProcessorState> pluginStates;
+    double arrangementLengthBeats = 0.0;
+    std::vector<transmission::UiProjectMidiClip> midiClips;
+    std::vector<transmission::UiProjectGainLane> gainLanes;
     std::size_t nextPluginId = 1;
     std::size_t nextMidiInputId = 1;
     std::size_t nextMidiOutputId = 1;
@@ -261,7 +265,13 @@ transmission::RuntimeGraphSnapshot runtimeSnapshot(const GraphView& view) {
             externalMidiPort = midiOutputPort++;
         snapshot.nodes.push_back({
             node.id, kind, node.pluginPath, externalMidiPort,
-            node.audioInputs, node.audioOutputs, {}, {}});
+            node.audioInputs, node.audioOutputs, {}, {}, 0.0, {}});
+        snapshot.nodes.back().gainDb = node.gainDb;
+        const auto gainLane = std::find_if(
+            view.gainLanes.begin(), view.gainLanes.end(),
+            [&](const auto& lane) { return lane.targetNodeId == node.id; });
+        if (gainLane != view.gainLanes.end())
+            snapshot.nodes.back().gainEnvelope = gainLane->points;
         const auto parameters = view.parameterValues.find(node.id);
         if (parameters != view.parameterValues.end()) {
             auto& runtimeParameters = snapshot.nodes.back().parameters;
@@ -282,6 +292,19 @@ transmission::RuntimeGraphSnapshot runtimeSnapshot(const GraphView& view) {
                 ? transmission::RuntimeConnectionKind::Audio
                 : transmission::RuntimeConnectionKind::Midi,
             edge.fromPort, edge.toPort});
+    }
+    for (const auto& clip : view.midiClips) {
+        for (const auto& note : clip.notes) {
+            const auto status = static_cast<std::uint8_t>(0x90U | note.channel);
+            const auto noteOff = static_cast<std::uint8_t>(0x80U | note.channel);
+            snapshot.scheduledMidiEvents.push_back({
+                clip.targetNodeId, clip.startBeat + note.startBeat,
+                {status, note.pitch, note.velocity}});
+            snapshot.scheduledMidiEvents.push_back({
+                clip.targetNodeId,
+                clip.startBeat + note.startBeat + note.durationBeats,
+                {noteOff, note.pitch, 0}});
+        }
     }
     return snapshot;
 }
@@ -1460,7 +1483,7 @@ transmission::UiProject captureProject(const GraphView& view) {
         project.nodes.push_back({
             node.id, node.label, kind,
             node.audioInputs, node.audioOutputs, node.midiInputs, node.midiOutputs,
-            node.x, node.y, node.pluginPath, node.externalPort, {}, {}, {}});
+            node.x, node.y, node.pluginPath, node.externalPort, {}, {}, {}, node.gainDb});
         auto& target = project.nodes.back();
         const auto parameters = view.parameterValues.find(node.id);
         if (parameters != view.parameterValues.end()) {
@@ -1494,6 +1517,9 @@ transmission::UiProject captureProject(const GraphView& view) {
     project.tempo = gtk_spin_button_get_value(view.tempo);
     project.loopBars = gtk_spin_button_get_value(view.loopBars);
     project.loopEnabled = gtk_toggle_button_get_active(view.loop);
+    project.arrangementLengthBeats = view.arrangementLengthBeats;
+    project.midiClips = view.midiClips;
+    project.gainLanes = view.gainLanes;
     return project;
 }
 
@@ -1546,6 +1572,21 @@ bool validateProject(const transmission::UiProject& project, std::string& error)
             return false;
         }
     }
+    std::unordered_set<std::string> clipIds;
+    for (const auto& clip : project.midiClips) {
+        if (!nodes.contains(clip.targetNodeId) || !clipIds.emplace(clip.id).second ||
+            clip.startBeat + clip.lengthBeats > project.arrangementLengthBeats) {
+            error = "The arrangement contains an invalid MIDI clip";
+            return false;
+        }
+    }
+    for (const auto& lane : project.gainLanes) {
+        const auto target = nodes.find(lane.targetNodeId);
+        if (target == nodes.end() || target->second->kind != transmission::UiProjectNodeKind::Gain) {
+            error = "The arrangement contains an invalid gain lane";
+            return false;
+        }
+    }
     return true;
 }
 
@@ -1586,7 +1627,7 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
             source.id, label, kind,
             source.audioInputs, source.audioOutputs, source.midiInputs, source.midiOutputs,
             source.x, source.y, source.pluginPath, source.externalPort,
-            inputLabels[source.id], outputLabels[source.id]});
+            inputLabels[source.id], outputLabels[source.id], source.gainDb});
     }
     std::vector<Edge> edges;
     edges.reserve(normalized.connections.size());
@@ -1615,6 +1656,9 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
     }
     view.systemInputConnections = normalized.systemInputConnections;
     view.systemOutputConnections = normalized.systemOutputConnections;
+    view.arrangementLengthBeats = normalized.arrangementLengthBeats;
+    view.midiClips = normalized.midiClips;
+    view.gainLanes = normalized.gainLanes;
     view.dragging = static_cast<std::size_t>(-1);
     view.connectingFrom = static_cast<std::size_t>(-1);
     view.nextPluginId = 1;
@@ -2068,7 +2112,9 @@ void renderAudioActivated(GtkMenuItem*, gpointer data) {
     auto* bars = GTK_SPIN_BUTTON(
         gtk_spin_button_new_with_range(1.0, 4096.0, 1.0));
     gtk_spin_button_set_value(
-        bars, std::max(1.0, gtk_spin_button_get_value(view.loopBars)));
+        bars, view.arrangementLengthBeats > 0.0
+            ? view.arrangementLengthBeats / 4.0
+            : std::max(1.0, gtk_spin_button_get_value(view.loopBars)));
     auto* rateLabel = gtk_label_new("Sample rate");
     auto* rate = GTK_COMBO_BOX_TEXT(gtk_combo_box_text_new());
     gtk_combo_box_text_append_text(rate, "44,100 Hz");

@@ -47,13 +47,14 @@ export class TransmissionControlService {
     return {
       ...this.status(),
       graph: this.project.graph.toJSON(),
+      arrangement: this.project.arrangement.toJSON(),
       executionOrder: [...this.project.compiledGraph.executionOrder]
     }
   }
 
   projectTurtle() {
     this.#requireProject()
-    return serializeGraph(this.project.graph, this.project.transport.toJSON())
+    return serializeGraph(this.project.graph, this.project.transport.toJSON(), this.project.arrangement)
   }
 
   newProject(definition) {
@@ -63,7 +64,8 @@ export class TransmissionControlService {
       nodes: definition.nodes ?? [],
       connections: definition.connections ?? [],
       metadata: definition.metadata ?? {},
-      transport: definition.transport
+      transport: definition.transport,
+      arrangement: definition.arrangement
     }
     if (this.engine) this.engine.open(normalized)
     else this.project.open(normalized)
@@ -76,7 +78,8 @@ export class TransmissionControlService {
     const loaded = await ProjectSession.load(resolvedPath, { compiler: this.project.compiler })
     const definition = {
       ...loaded.graph.toJSON(),
-      transport: loaded.transport.toJSON()
+      transport: loaded.transport.toJSON(),
+      arrangement: loaded.arrangement.toJSON()
     }
     if (this.engine) this.engine.open(definition, resolvedPath)
     else this.project.open(definition, resolvedPath)

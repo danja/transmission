@@ -25,17 +25,34 @@ try {
       nodes: project.nodes,
       connections: project.connections,
       metadata: project.metadata,
-      transport: project.transport
+      transport: project.transport,
+      arrangement: project.arrangement
     })
     await session.save(filePath)
   } else {
     await readFile(filePath, 'utf8')
     const session = await ProjectSession.load(filePath)
-    writeSync(1, encodeProject(session))
+    writeAll(1, encodeProject(session))
   }
 } catch (error) {
   writeSync(2, `${error instanceof Error ? error.message : String(error)}\n`)
   process.exitCode = 1
+}
+
+function writeAll(descriptor, content) {
+  const buffer = Buffer.from(content, 'utf8')
+  const pause = new Int32Array(new SharedArrayBuffer(4))
+  let offset = 0
+  while (offset < buffer.length) {
+    try {
+      const written = writeSync(descriptor, buffer, offset, buffer.length - offset)
+      if (written <= 0) throw new Error('Unable to write native UI project interchange')
+      offset += written
+    } catch (error) {
+      if (error?.code !== 'EAGAIN' && error?.code !== 'EINTR') throw error
+      Atomics.wait(pause, 0, 0, 1)
+    }
+  }
 }
 
 function decodeProject(text) {
@@ -51,7 +68,8 @@ function decodeProject(text) {
     transport: {
       tempoMap: [{ beat: 0, bpm: 120 }],
       loop: { startBeat: 0, endBeat: 16, enabled: false }
-    }
+    },
+    arrangement: { lengthBeats: 0, midiClips: [], gainLanes: [] }
   }
   let header = false
   let ended = false
@@ -61,7 +79,7 @@ function decodeProject(text) {
     const invalid = () => { throw new Error(`Invalid native UI project interchange at line ${index + 1}`) }
     if (!header) {
       if (fields.length !== 2 || fields[0] !== 'TRANSMISSION_UI' ||
-          !['1', '2'].includes(fields[1])) invalid()
+          !['1', '2', '3'].includes(fields[1])) invalid()
       header = true
       continue
     }
@@ -91,9 +109,9 @@ function decodeProject(text) {
     } else if (fields[0] === 'NODE' && fields.length === 11) {
       const kind = integer(fields[3])
       const id = hexDecode(fields[1])
-      if (kind < 0 || kind > 5 || !id) invalid()
+      if (kind < 0 || kind > 6 || !id) invalid()
       const resource = hexDecode(fields[10])
-      const type = ['AudioInput', 'AudioOutput', 'PassThrough', 'VST3Plugin', 'MidiInput', 'MidiOutput'][kind]
+      const type = ['AudioInput', 'AudioOutput', 'PassThrough', 'VST3Plugin', 'MidiInput', 'MidiOutput', 'Gain'][kind]
       project.nodes.push({
         id: fullId(id),
         label: hexDecode(fields[2]),
@@ -124,6 +142,10 @@ function decodeProject(text) {
         component: hexDecodeBuffer(fields[2]).toString('base64'),
         controller: hexDecodeBuffer(fields[3]).toString('base64')
       }
+    } else if (fields[0] === 'NODE_GAIN' && fields.length === 3) {
+      const node = project.nodes.find(candidate => candidate.id === fullId(hexDecode(fields[1])))
+      if (!node || shortId(node.type) !== 'Gain') invalid()
+      node.settings.gainDb = finiteNumber(fields[2])
     } else if (fields[0] === 'EDGE' && fields.length === 6) {
       const kind = integer(fields[3])
       if (kind < 0 || kind > 1) invalid()
@@ -134,6 +156,35 @@ function decodeProject(text) {
         fromPort: integer(fields[4]),
         toPort: integer(fields[5])
       })
+    } else if (fields[0] === 'ARRANGEMENT' && fields.length === 2) {
+      project.arrangement.lengthBeats = finiteNumber(fields[1])
+      if (project.arrangement.lengthBeats < 0) invalid()
+    } else if (fields[0] === 'CLIP' && fields.length === 5) {
+      const clip = {
+        id: hexDecode(fields[1]), targetNodeId: fullId(hexDecode(fields[2])),
+        startBeat: finiteNumber(fields[3]), lengthBeats: finiteNumber(fields[4]), notes: []
+      }
+      if (!clip.id || clip.startBeat < 0 || clip.lengthBeats <= 0) invalid()
+      project.arrangement.midiClips.push(clip)
+    } else if (fields[0] === 'NOTE' && fields.length === 7) {
+      const clip = project.arrangement.midiClips.find(candidate => candidate.id === hexDecode(fields[1]))
+      const note = {
+        startBeat: finiteNumber(fields[2]), durationBeats: finiteNumber(fields[3]),
+        pitch: integer(fields[4]), velocity: integer(fields[5]), channel: integer(fields[6])
+      }
+      if (!clip || note.startBeat < 0 || note.durationBeats <= 0 ||
+          note.startBeat + note.durationBeats > clip.lengthBeats || note.pitch > 127 ||
+          note.velocity < 1 || note.velocity > 127 || note.channel > 15) invalid()
+      clip.notes.push(note)
+    } else if (fields[0] === 'GAIN_LANE' && fields.length === 2) {
+      project.arrangement.gainLanes.push({ targetNodeId: fullId(hexDecode(fields[1])), points: [] })
+    } else if (fields[0] === 'GAIN_POINT' && fields.length === 5) {
+      const targetNodeId = fullId(hexDecode(fields[1]))
+      const lane = project.arrangement.gainLanes.find(candidate => candidate.targetNodeId === targetNodeId)
+      const point = { beat: finiteNumber(fields[2]), valueDb: finiteNumber(fields[3]),
+        shape: fields[4] === '1' ? 'linear' : fields[4] === '0' ? 'step' : invalid() }
+      if (!lane || point.beat < 0 || (lane.points.length && point.beat <= lane.points.at(-1).beat)) invalid()
+      lane.points.push(point)
     } else {
       invalid()
     }
@@ -146,7 +197,7 @@ function encodeProject(session) {
   const graph = session.graph
   const transport = session.transport.toJSON()
   const lines = [
-    'TRANSMISSION_UI\t2',
+    'TRANSMISSION_UI\t3',
     `PROJECT\t${hexEncode(shortId(graph.id))}\t${hexEncode(graph.label)}`,
     `TRANSPORT\t${transport.tempoMap[0]?.bpm ?? 120}\t${(transport.loop?.endBeat ?? 16) / 4}\t${transport.loop?.enabled ? 1 : 0}`
   ]
@@ -160,7 +211,7 @@ function encodeProject(session) {
     const type = shortId(node.type)
     const kind = {
       AudioInput: 0, AudioOutput: 1, PassThrough: 2,
-      VST3Plugin: 3, MidiInput: 4, MidiOutput: 5
+      VST3Plugin: 3, MidiInput: 4, MidiOutput: 5, Gain: 6
     }[type]
     if (kind === undefined) throw new Error(`Unsupported native UI node type: ${node.type}`)
     const resource = firstSetting(node.settings, kind >= 4 ? 'externalPort' : 'pluginPath')
@@ -184,6 +235,8 @@ function encodeProject(session) {
       lines.push(
         `STATE\t${hexEncode(shortId(node.id))}\t${hexEncodeBuffer(component)}\t${hexEncodeBuffer(controller)}`)
     }
+    if (kind === 6)
+      lines.push(`NODE_GAIN\t${hexEncode(shortId(node.id))}\t${finiteNumber(firstSetting(node.settings, 'gainDb') || 0)}`)
   }
   for (const connection of graph.connections) {
     lines.push([
@@ -191,6 +244,18 @@ function encodeProject(session) {
       connection.kind === 'audio' ? 0 : 1,
       connection.fromPort ?? 0, connection.toPort ?? 0
     ].join('\t'))
+  }
+  const arrangement = session.arrangement.toJSON()
+  lines.push(`ARRANGEMENT\t${arrangement.lengthBeats}`)
+  for (const clip of arrangement.midiClips) {
+    lines.push(`CLIP\t${hexEncode(clip.id)}\t${hexEncode(shortId(clip.targetNodeId))}\t${clip.startBeat}\t${clip.lengthBeats}`)
+    for (const note of clip.notes)
+      lines.push(`NOTE\t${hexEncode(clip.id)}\t${note.startBeat}\t${note.durationBeats}\t${note.pitch}\t${note.velocity}\t${note.channel}`)
+  }
+  for (const lane of arrangement.gainLanes) {
+    lines.push(`GAIN_LANE\t${hexEncode(shortId(lane.targetNodeId))}`)
+    for (const point of lane.points)
+      lines.push(`GAIN_POINT\t${hexEncode(shortId(lane.targetNodeId))}\t${point.beat}\t${point.valueDb}\t${point.shape === 'linear' ? 1 : 0}`)
   }
   lines.push('END')
   return `${lines.join('\n')}\n`

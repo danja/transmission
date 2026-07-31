@@ -4,8 +4,9 @@ import { readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import { Graph } from '../model/Graph.js'
+import { Arrangement } from '../model/Arrangement.js'
 import { compileGraph } from '../compiler/GraphCompiler.js'
-import { graphFromDataset, parseTurtle, serializeGraph, transportFromDataset } from '../rdf/TransmissionRdf.js'
+import { arrangementFromDataset, graphFromDataset, parseTurtle, serializeGraph, transportFromDataset } from '../rdf/TransmissionRdf.js'
 import { Transport } from '../transport/Transport.js'
 
 export class ProjectSession {
@@ -19,12 +20,16 @@ export class ProjectSession {
     this.history = []
     this.future = []
     this.transport = new Transport()
+    this.arrangement = new Arrangement()
   }
 
   open(definition, filePath = null) {
     this.graph = definition instanceof Graph ? definition : new Graph(definition)
     this.transport = new Transport()
     if (!(definition instanceof Graph) && definition.transport) this.transport.load(definition.transport)
+    this.arrangement = new Arrangement(
+      definition instanceof Graph ? {} : definition.arrangement,
+      this.graph)
     this.compiledGraph = this.compiler(this.graph)
     this.filePath = filePath
     this.revision = 0
@@ -38,10 +43,12 @@ export class ProjectSession {
     if (!this.graph) throw new Error('No project is open')
     const nextDefinition = mutator(this.graph.toJSON())
     const next = nextDefinition instanceof Graph ? nextDefinition : new Graph(nextDefinition)
+    const arrangement = new Arrangement(this.arrangement.toJSON(), next)
     const compiled = this.compiler(next)
     this.history.push(this.graph)
     this.future = []
     this.graph = next
+    this.arrangement = arrangement
     this.compiledGraph = compiled
     this.revision += 1
     return compiled
@@ -76,8 +83,8 @@ export class ProjectSession {
     if (!filePath) throw new Error('A project file path is required')
     await mkdir(dirname(filePath), { recursive: true })
     const temporaryPath = join(dirname(filePath), `.${filePath.split('/').pop()}.${process.pid}.tmp`)
-    const definition = { ...this.graph.toJSON(), transport: this.transport.toJSON() }
-    const content = filePath.endsWith('.ttl') ? serializeGraph(this.graph, this.transport.toJSON()) : `${JSON.stringify(definition, null, 2)}\n`
+    const definition = { ...this.graph.toJSON(), transport: this.transport.toJSON(), arrangement: this.arrangement.toJSON() }
+    const content = filePath.endsWith('.ttl') ? serializeGraph(this.graph, this.transport.toJSON(), this.arrangement) : `${JSON.stringify(definition, null, 2)}\n`
     await writeFile(temporaryPath, content, 'utf8')
     await rename(temporaryPath, filePath)
     this.filePath = filePath
@@ -91,9 +98,11 @@ export class ProjectSession {
       const dataset = await parseTurtle(await readFile(filePath, 'utf8'))
       const transmission = [...dataset.match(null)].find(quad => quad.predicate.value === 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type' && quad.object.value === 'http://purl.org/stuff/transmissions/Transmission')
       if (!transmission) throw new Error(`No transmission found in ${filePath}`)
+      const graph = graphFromDataset(dataset, transmission.subject.value)
       session.open({
-        ...graphFromDataset(dataset, transmission.subject.value).toJSON(),
-        transport: transportFromDataset(dataset, transmission.subject.value)
+        ...graph.toJSON(),
+        transport: transportFromDataset(dataset, transmission.subject.value),
+        arrangement: arrangementFromDataset(dataset, transmission.subject.value, graph).toJSON()
       }, filePath)
     } else {
       session.open(JSON.parse(await readFile(filePath, 'utf8')), filePath)

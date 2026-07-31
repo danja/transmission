@@ -174,7 +174,8 @@ function matches(profile, discovery) {
   if (profile.vstClassId && profile.vstClassId === discovery.classId) return true
   if (profile.bundleName && profile.bundleName.toLowerCase() === discovery.bundleName.toLowerCase()) return true
   return profile.name.toLowerCase() === discovery.name.toLowerCase() &&
-    (!profile.vendor || profile.vendor.toLowerCase() === discovery.vendor.toLowerCase())
+    (!profile.vendor ||
+      profile.vendor.toLowerCase() === (discovery.vendor ?? '').toLowerCase())
 }
 
 function validateLink(source, target) {

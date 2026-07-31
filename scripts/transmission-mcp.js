@@ -55,34 +55,58 @@ if (options.project) await control.openProject(options.project)
 
 const server = createTransmissionMcpServer(control)
 const transport = new StdioServerTransport()
+server.server.onerror = error => {
+  console.error(`Transmission MCP server error: ${error.message}`)
+}
+let initialPluginScan = Promise.resolve()
+server.server.oninitialized = () => {
+  if (!discovery || options.noPluginScan) return
+  initialPluginScan = pluginCatalogue.startScan(
+    pluginRoots.map(root => resolve(root))
+  ).then(scan => {
+    console.error(`Transmission plugin catalogue: ${scan.discovered} classes, ${scan.profiled} profiled, ${scan.failures.length} scan failures`)
+  }).catch(error => {
+    console.error(`Transmission plugin catalogue scan failed: ${errorMessage(error)}`)
+  })
+}
+let disposed = false
+const disposeControl = () => {
+  if (disposed) return
+  disposed = true
+  control.dispose()
+}
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, async () => {
-    control.dispose()
+    disposeControl()
     await server.close()
     process.exit(0)
   })
 }
+process.once('exit', disposeControl)
 
 await server.connect(transport)
 console.error(`Transmission MCP server ready (${engine ? 'native audio enabled' : 'project-only mode'})`)
-const initialPluginScan = discovery && !options.noPluginScan
-  ? pluginCatalogue.startScan(pluginRoots.map(root => resolve(root))).then(scan => {
-      console.error(`Transmission plugin catalogue: ${scan.discovered} classes, ${scan.profiled} profiled, ${scan.failures.length} scan failures`)
-    })
-  : Promise.resolve()
-process.stdin.resume()
-await new Promise(resolveInputEnd => {
-  if (process.stdin.readableEnded) resolveInputEnd()
-  else process.stdin.once('end', resolveInputEnd)
-})
-await initialPluginScan
-control.dispose()
-await server.close()
+// A pending Promise does not keep Node alive when the SDK's stdio pipe is idle.
+const keepAlive = setInterval(() => {}, 60_000)
+try {
+  await new Promise(resolveInputEnd => {
+    process.stdin.once('end', resolveInputEnd)
+  })
+  await initialPluginScan
+} finally {
+  clearInterval(keepAlive)
+  disposeControl()
+  await server.close()
+}
 
 function loadNativeAddon(filePath) {
   const require = createRequire(import.meta.url)
   return require(resolve(filePath))
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function parseArguments(arguments_) {

@@ -74,8 +74,14 @@ export function parseInspectorOutput(text, modulePath) {
     }
   }
   if (descriptor) descriptors.push(descriptor)
+  if (!descriptors.length) {
+    throw new Error('inspector output did not contain a plugin descriptor')
+  }
   const processorDescriptors = descriptors.filter(item => item.category === 'Audio Module Class')
   return (processorDescriptors.length ? processorDescriptors : descriptors).map(item => {
+    if (!item.classId || !item.name) {
+      throw new Error('inspector output requires non-empty id and name fields')
+    }
     const facts = {
       ...item,
       modulePath: item.modulePath || modulePath,

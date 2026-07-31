@@ -8,7 +8,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "node --check src/model/Graph.js && node --check src/compiler/GraphCompiler.js && node --check src/bridge/NativeBridge.js && node --check src/rdf/TransmissionRdf.js && node --check src/rdf/PluginProfileRdf.js && node --check src/registry/PluginCatalogue.js && node --check src/registry/Vst3Discovery.js && node --check src/control/TransmissionControlService.js && node --check src/mcp/TransmissionMcpServer.js && node --check scripts/native-ui-project.js && node --check scripts/probe-project.js && node --check scripts/transmission-mcp.js",
+    "check": "node --check src/model/Graph.js && node --check src/compiler/GraphCompiler.js && node --check src/bridge/NativeBridge.js && node --check src/rdf/TransmissionRdf.js && node --check src/rdf/PluginProfileRdf.js && node --check src/registry/PluginCatalogue.js && node --check src/registry/Vst3Discovery.js && node --check src/control/TransmissionControlService.js && node --check src/mcp/TransmissionMcpServer.js && node --check scripts/native-ui-project.js && node --check scripts/probe-project.js && node --check scripts/transmission-mcp.js && node --check scripts/gen-omega-arrangement.js",
+    "gen:omega": "node scripts/gen-omega-arrangement.js",
     "mcp:start": "node scripts/transmission-mcp.js",
     "mcp:smoke": "node scripts/test-mcp-stdio.js",
     "probe:project": "node scripts/probe-project.js",

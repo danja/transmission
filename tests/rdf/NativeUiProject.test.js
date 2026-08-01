@@ -16,7 +16,7 @@ describe('native UI Turtle project helper', () => {
     temporaryDirectories.push(directory)
     const filePath = join(directory, 'drums.ttl')
     const interchange = [
-      'TRANSMISSION_UI\t3',
+      'TRANSMISSION_UI\t4',
       `PROJECT\t${hex('main')}\t${hex('Drum graph')}`,
       'TRANSPORT\t132\t8\t1',
       `INPUT\t0\t${hex('capture:left')}`,
@@ -31,7 +31,7 @@ describe('native UI Turtle project helper', () => {
       `NODE\t${hex('midi-output-1')}\t${hex('MIDI Output')}\t5\t0\t0\t1\t0\t620\t180\t${hex('synth-42:midi_in')}`,
       `NODE\t${hex('system-output')}\t${hex('System Output')}\t1\t2\t0\t1\t0\t740\t40\t-`,
       `NODE\t${hex('master-gain')}\t${hex('Master Gain')}\t6\t2\t2\t0\t0\t620\t40\t-`,
-      `NODE_GAIN\t${hex('master-gain')}\t-3`,
+      `NODE_GAIN\t${hex('master-gain')}\t-3\t-0.25`,
       `EDGE\t${hex('system-input')}\t${hex('drumgen')}\t1\t0\t0`,
       `EDGE\t${hex('drumgen')}\t${hex('drumkit')}\t1\t0\t0`,
       `EDGE\t${hex('drumgen')}\t${hex('midi-output-1')}\t1\t0\t0`,
@@ -57,7 +57,7 @@ describe('native UI Turtle project helper', () => {
     expect(turtle).toContain(':controllerState "ECA="')
 
     const restored = await runHelper('load', filePath)
-    expect(restored).toContain('TRANSMISSION_UI\t3')
+    expect(restored).toContain('TRANSMISSION_UI\t4')
     expect(restored).toContain('TRANSPORT\t132\t8\t1')
     expect(restored).toContain(`NODE\t${hex('drumgen')}`)
     expect(restored).toContain(`EDGE\t${hex('drumgen')}\t${hex('drumkit')}\t1\t0\t0`)
@@ -66,6 +66,7 @@ describe('native UI Turtle project helper', () => {
     expect(restored).toContain(`OUTPUT\t0\t${hex('playback:left')}`)
     expect(restored).toContain(`PARAM\t${hex('drumgen')}\t42\t0.75`)
     expect(restored).toContain(`STATE\t${hex('drumgen')}\t000102ff\t1020`)
+    expect(restored).toContain(`NODE_GAIN\t${hex('master-gain')}\t-3\t-0.25`)
     expect(restored).toContain(`NOTE\t${hex('intro')}\t0.5\t0.25\t36\t100\t9`)
     expect(restored).toContain(`GAIN_POINT\t${hex('master-gain')}\t16\t-120\t1`)
   }, 15_000)

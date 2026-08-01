@@ -67,8 +67,10 @@ to `scripts/native-ui-project.js`.
 
 On save, the helper decodes the interchange into a Node `Graph` and asks
 `ProjectSession` to serialize Turtle. On open, it loads Turtle through
-`ProjectSession` and returns the versioned interchange to GTK. Version 2 carries
-parameters and opaque state; the decoder remains compatible with version 1.
+`ProjectSession` and returns the versioned interchange to GTK. Version 2 added
+parameters and opaque state, version 3 added arrangements, and version 4 adds
+persisted Gain/Pan balance. The decoder remains compatible with versions 1–3;
+older readers should reject version 4 rather than silently discard pan.
 GTK validates node identifiers, endpoints, and port indices before replacing
 the visible project.
 
@@ -78,7 +80,8 @@ that VST3 state methods are never called concurrently with audio processing.
 ## Editing and runtime compilation
 
 The GTK canvas owns mutable editor state: visible nodes, cables, positions,
-requested external ports, current parameter values, and cached plugin state.
+native Gain/Pan settings, requested external ports, current parameter values,
+and cached plugin state.
 It never mutates a running `RoutedAudioGraph`.
 
 When Play is pressed:
@@ -88,8 +91,9 @@ When Play is pressed:
 2. `GraphRuntimeController` asks `GraphRuntimeCompiler` to validate node IDs,
    endpoints, port indices, and audio/MIDI cycles and to normalize duplicate
    connections.
-3. A processor factory creates a `Vst3Processor`, `PassThroughProcessor`, or
-   `MidiEndpointProcessor` for each node.
+3. The compiler creates native `GainProcessor` nodes directly; a processor
+   factory creates `Vst3Processor`, `PassThroughProcessor`, or
+   `MidiEndpointProcessor` instances for the remaining nodes.
 4. Opaque plugin state is restored before explicit parameter values.
 5. `RoutedAudioGraph::prepare` computes dependency levels and preallocates node
    audio buffers, MIDI storage, channel pointers, and routing data.

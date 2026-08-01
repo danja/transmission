@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -109,16 +110,29 @@ struct GainEnvelopePoint {
 /** Built-in sample-accurate gain with an immutable beat-domain envelope. */
 class GainProcessor final : public AudioProcessor {
 public:
+    static constexpr std::uint32_t gainParameterId = 0;
+    static constexpr std::uint32_t panParameterId = 1;
+    static constexpr double minimumGainDb = -120.0;
+    static constexpr double maximumGainDb = 12.0;
+
     GainProcessor(double sampleRate, double gainDb,
-                  std::vector<GainEnvelopePoint> points = {});
+                  std::vector<GainEnvelopePoint> points = {},
+                  double pan = 0.0);
+    bool setParameter(std::uint32_t parameterId, double normalizedValue,
+                      std::string& error) override;
+    bool enqueueParameter(std::uint32_t parameterId,
+                          double normalizedValue) noexcept override;
     void process(const float* const* inputs, float* const* outputs,
                  std::size_t channels, std::size_t frames) noexcept override;
     void setProcessContext(const AudioProcessContext& context) noexcept override;
 
 private:
-    double gainAt(double beat) const noexcept;
+    double gainAt(double beat, double gainDb) const noexcept;
+    bool applyNormalizedParameter(std::uint32_t parameterId,
+                                  double normalizedValue) noexcept;
     double sampleRate_ = 48000.0;
-    double gainDb_ = 0.0;
+    std::atomic<double> gainDb_{0.0};
+    std::atomic<double> pan_{0.0};
     std::vector<GainEnvelopePoint> points_;
     AudioProcessContext context_;
 };

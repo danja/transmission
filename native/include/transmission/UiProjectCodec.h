@@ -36,6 +36,7 @@ struct UiProjectNode {
     std::vector<std::uint8_t> componentState;
     std::vector<std::uint8_t> controllerState;
     double gainDb = 0.0;
+    double pan = 0.0;
 };
 
 struct UiProjectConnection {

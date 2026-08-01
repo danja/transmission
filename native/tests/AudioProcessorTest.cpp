@@ -20,5 +20,26 @@ int main() {
     gain.process(inputs, outputs, 1, 4);
     assert(std::fabs(output[0] - input[0]) < 0.0001F);
     assert(std::fabs(output[3]) < std::fabs(input[3]) * 0.001F);
+
+    const float left[] = {1.0F, 1.0F};
+    const float right[] = {1.0F, 1.0F};
+    const float* stereoInputs[] = {left, right};
+    float leftOutput[2]{};
+    float rightOutput[2]{};
+    float* stereoOutputs[] = {leftOutput, rightOutput};
+    transmission::GainProcessor balance(48000.0, 0.0);
+    std::string parameterError;
+    assert(balance.setParameter(
+        transmission::GainProcessor::panParameterId, 1.0, parameterError));
+    balance.process(stereoInputs, stereoOutputs, 2, 2);
+    assert(std::fabs(leftOutput[0]) < 0.0001F);
+    assert(std::fabs(rightOutput[0] - 1.0F) < 0.0001F);
+    assert(balance.enqueueParameter(
+        transmission::GainProcessor::gainParameterId, 0.0));
+    balance.process(stereoInputs, stereoOutputs, 2, 2);
+    assert(std::fabs(rightOutput[0]) < 0.00001F);
+    assert(!balance.setParameter(99, 0.5, parameterError));
+    assert(!balance.enqueueParameter(
+        transmission::GainProcessor::panParameterId, 1.5));
     return 0;
 }

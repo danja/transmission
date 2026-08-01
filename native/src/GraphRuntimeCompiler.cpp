@@ -76,7 +76,7 @@ std::unique_ptr<RoutedAudioGraph> GraphRuntimeCompiler::compile(
     for (const auto& node : snapshot.nodes) {
         auto processor = node.kind == RuntimeNodeKind::Gain
             ? std::unique_ptr<AudioProcessor>(std::make_unique<GainProcessor>(
-                  config.sampleRate, node.gainDb, node.gainEnvelope))
+                  config.sampleRate, node.gainDb, node.gainEnvelope, node.pan))
             : processorFactory_(node, config, error);
         if (!processor) {
             if (error.empty()) error = "unable to create processor for node: " + node.id;

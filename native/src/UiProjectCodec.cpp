@@ -77,7 +77,7 @@ bool number(std::string_view text, double& result) {
 
 std::string encodeUiProject(const UiProject& project) {
     std::ostringstream output;
-    output << "TRANSMISSION_UI\t3\n";
+    output << "TRANSMISSION_UI\t4\n";
     output << "PROJECT\t" << hexEncode(project.id) << '\t'
            << hexEncode(project.label) << '\n';
     output << "TRANSPORT\t" << project.tempo << '\t' << project.loopBars
@@ -114,7 +114,7 @@ std::string encodeUiProject(const UiProject& project) {
         }
         if (node.kind == UiProjectNodeKind::Gain)
             output << "NODE_GAIN\t" << hexEncode(node.id) << '\t'
-                   << node.gainDb << '\n';
+                   << node.gainDb << '\t' << node.pan << '\n';
     }
     for (const auto& connection : project.connections) {
         output << "EDGE\t" << hexEncode(connection.from) << '\t'
@@ -163,7 +163,8 @@ bool decodeUiProject(const std::string& text, UiProject& project,
         };
         if (!header) {
             if (values.size() != 2 || values[0] != "TRANSMISSION_UI" ||
-                (values[1] != "1" && values[1] != "2" && values[1] != "3")) return fail();
+                (values[1] != "1" && values[1] != "2" &&
+                 values[1] != "3" && values[1] != "4")) return fail();
             header = true;
             continue;
         }
@@ -248,13 +249,21 @@ bool decodeUiProject(const std::string& text, UiProject& project,
         } else if (values[0] == "NODE_GAIN") {
             std::string nodeId;
             double gainDb = 0.0;
-            if (values.size() != 3 || !hexDecode(values[1], nodeId) ||
-                !number(values[2], gainDb)) return fail();
+            double pan = 0.0;
+            if ((values.size() != 3 && values.size() != 4) ||
+                !hexDecode(values[1], nodeId) ||
+                !number(values[2], gainDb) ||
+                (values.size() == 4 && !number(values[3], pan)) ||
+                gainDb < GainProcessor::minimumGainDb ||
+                gainDb > GainProcessor::maximumGainDb ||
+                pan < -1.0 || pan > 1.0)
+                return fail();
             const auto node = std::find_if(candidate.nodes.begin(), candidate.nodes.end(),
                 [&](const auto& current) { return current.id == nodeId; });
             if (node == candidate.nodes.end() || node->kind != UiProjectNodeKind::Gain)
                 return fail();
             node->gainDb = gainDb;
+            node->pan = pan;
         } else if (values[0] == "EDGE") {
             UiProjectConnection connection;
             int kind = 0;

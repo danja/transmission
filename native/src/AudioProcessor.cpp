@@ -84,42 +84,86 @@ std::size_t MidiEndpointProcessor::takeOutputMidi(
 }
 
 GainProcessor::GainProcessor(double sampleRate, double gainDb,
-                             std::vector<GainEnvelopePoint> points)
-    : sampleRate_(sampleRate), gainDb_(gainDb), points_(std::move(points)) {}
+                             std::vector<GainEnvelopePoint> points,
+                             double pan)
+    : sampleRate_(sampleRate),
+      gainDb_(std::clamp(gainDb, minimumGainDb, maximumGainDb)),
+      pan_(std::clamp(pan, -1.0, 1.0)), points_(std::move(points)) {}
+
+bool GainProcessor::applyNormalizedParameter(
+    std::uint32_t parameterId, double normalizedValue) noexcept {
+    if (!std::isfinite(normalizedValue) || normalizedValue < 0.0 ||
+        normalizedValue > 1.0)
+        return false;
+    if (parameterId == gainParameterId) {
+        gainDb_.store(
+            minimumGainDb +
+                normalizedValue * (maximumGainDb - minimumGainDb),
+            std::memory_order_release);
+        return true;
+    }
+    if (parameterId == panParameterId) {
+        pan_.store(normalizedValue * 2.0 - 1.0,
+                   std::memory_order_release);
+        return true;
+    }
+    return false;
+}
+
+bool GainProcessor::setParameter(std::uint32_t parameterId,
+                                 double normalizedValue,
+                                 std::string& error) {
+    if (applyNormalizedParameter(parameterId, normalizedValue)) return true;
+    error = "gain/pan parameter id or normalized value is invalid";
+    return false;
+}
+
+bool GainProcessor::enqueueParameter(
+    std::uint32_t parameterId, double normalizedValue) noexcept {
+    return applyNormalizedParameter(parameterId, normalizedValue);
+}
 
 void GainProcessor::setProcessContext(const AudioProcessContext& context) noexcept {
     context_ = context;
 }
 
-double GainProcessor::gainAt(double beat) const noexcept {
-    if (points_.empty()) return std::pow(10.0, gainDb_ / 20.0);
+double GainProcessor::gainAt(double beat, double gainDb) const noexcept {
+    if (points_.empty()) return std::pow(10.0, gainDb / 20.0);
     if (beat <= points_.front().beat)
-        return std::pow(10.0, (gainDb_ + points_.front().valueDb) / 20.0);
+        return std::pow(10.0, (gainDb + points_.front().valueDb) / 20.0);
     const auto next = std::upper_bound(
         points_.begin(), points_.end(), beat,
         [](double value, const auto& point) { return value < point.beat; });
     if (next == points_.end())
-        return std::pow(10.0, (gainDb_ + points_.back().valueDb) / 20.0);
+        return std::pow(10.0, (gainDb + points_.back().valueDb) / 20.0);
     const auto& previous = *(next - 1);
     auto valueDb = previous.valueDb;
     if (previous.linear) {
         const auto amount = (beat - previous.beat) / (next->beat - previous.beat);
         valueDb += (next->valueDb - previous.valueDb) * amount;
     }
-    return std::pow(10.0, (gainDb_ + valueDb) / 20.0);
+    return std::pow(10.0, (gainDb + valueDb) / 20.0);
 }
 
 void GainProcessor::process(const float* const* inputs, float* const* outputs,
                             std::size_t channels, std::size_t frames) noexcept {
     if (!inputs || !outputs) return;
+    const auto gainDb = gainDb_.load(std::memory_order_acquire);
+    const auto pan = pan_.load(std::memory_order_acquire);
+    const auto leftBalance = pan <= 0.0 ? 1.0 : std::cos(pan * M_PI_2);
+    const auto rightBalance = pan >= 0.0 ? 1.0 : std::cos(-pan * M_PI_2);
     const auto beatsPerSample = context_.playing && sampleRate_ > 0.0
         ? context_.tempo / (60.0 * sampleRate_) : 0.0;
     for (std::size_t frame = 0; frame < frames; ++frame) {
         const auto gain = static_cast<float>(gainAt(
-            context_.projectTimeMusic + beatsPerSample * static_cast<double>(frame)));
+            context_.projectTimeMusic + beatsPerSample * static_cast<double>(frame),
+            gainDb));
         for (std::size_t channel = 0; channel < channels; ++channel)
             if (inputs[channel] && outputs[channel])
-                outputs[channel][frame] = inputs[channel][frame] * gain;
+                outputs[channel][frame] = inputs[channel][frame] * gain *
+                    static_cast<float>(
+                        channel == 0 ? leftBalance
+                        : channel == 1 ? rightBalance : 1.0);
     }
 }
 

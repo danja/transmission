@@ -126,6 +126,7 @@ RuntimeGraphSnapshot snapshotFor(const transmission::UiProject& project) {
                                           parameter.normalizedValue});
         runtime.state = {node.componentState, node.controllerState};
         runtime.gainDb = node.gainDb;
+        runtime.pan = node.pan;
         const auto lane = std::find_if(
             project.gainLanes.begin(), project.gainLanes.end(),
             [&](const auto& candidate) {

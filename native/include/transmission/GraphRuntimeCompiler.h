@@ -33,6 +33,7 @@ struct RuntimeGraphNode {
     ProcessorState state;
     double gainDb = 0.0;
     std::vector<GainEnvelopePoint> gainEnvelope;
+    double pan = 0.0;
 };
 
 struct RuntimeGraphConnection {

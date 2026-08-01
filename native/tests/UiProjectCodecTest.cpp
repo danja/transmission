@@ -29,13 +29,14 @@ int main() {
     project.nodes[1].controllerState = {0x10, 0x20};
     project.nodes.push_back({
         "master-gain", "Master Gain", transmission::UiProjectNodeKind::Gain,
-        2, 2, 0, 0, 600.0, 30.0, "", "", {}, {}, {}, -3.0});
+        2, 2, 0, 0, 600.0, 30.0, "", "", {}, {}, {}, -3.0, -0.25});
     project.arrangementLengthBeats = 16.0;
     project.midiClips = {{"clip-1", "drumgen", 4.0, 4.0,
                           {{0.5, 0.25, 36, 100, 9}}}};
     project.gainLanes = {{"master-gain",
                           {{12.0, 0.0, true}, {16.0, -120.0, true}}}};
     const auto encoded = transmission::encodeUiProject(project);
+    assert(encoded.starts_with("TRANSMISSION_UI\t4\n"));
     transmission::UiProject decoded;
     std::string error;
     assert(transmission::decodeUiProject(encoded, decoded, error));
@@ -58,6 +59,7 @@ int main() {
     assert(decoded.midiClips[0].notes[0].channel == 9);
     assert(decoded.gainLanes[0].points[1].valueDb == -120.0);
     assert(decoded.nodes.back().gainDb == -3.0);
+    assert(decoded.nodes.back().pan == -0.25);
 
     assert(!transmission::decodeUiProject("not a project\n", decoded, error));
     assert(!transmission::decodeUiProject(
@@ -66,6 +68,11 @@ int main() {
         "TRANSMISSION_UI\t2\n"
         "NODE\t6e\t6e\t3\t0\t2\t0\t0\t0\t0\t2f702e76737433\n"
         "PARAM\t6e\t7\t1.5\n"
+        "END\n", decoded, error));
+    assert(!transmission::decodeUiProject(
+        "TRANSMISSION_UI\t4\n"
+        "NODE\t6761696e\t6761696e\t6\t2\t2\t0\t0\t0\t0\t-\n"
+        "NODE_GAIN\t6761696e\t0\t2\n"
         "END\n", decoded, error));
     assert(transmission::decodeUiProject(
         "TRANSMISSION_UI\t1\n"

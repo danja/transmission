@@ -79,7 +79,7 @@ function decodeProject(text) {
     const invalid = () => { throw new Error(`Invalid native UI project interchange at line ${index + 1}`) }
     if (!header) {
       if (fields.length !== 2 || fields[0] !== 'TRANSMISSION_UI' ||
-          !['1', '2', '3'].includes(fields[1])) invalid()
+          !['1', '2', '3', '4'].includes(fields[1])) invalid()
       header = true
       continue
     }
@@ -142,10 +142,13 @@ function decodeProject(text) {
         component: hexDecodeBuffer(fields[2]).toString('base64'),
         controller: hexDecodeBuffer(fields[3]).toString('base64')
       }
-    } else if (fields[0] === 'NODE_GAIN' && fields.length === 3) {
+    } else if (fields[0] === 'NODE_GAIN' && [3, 4].includes(fields.length)) {
       const node = project.nodes.find(candidate => candidate.id === fullId(hexDecode(fields[1])))
       if (!node || shortId(node.type) !== 'Gain') invalid()
       node.settings.gainDb = finiteNumber(fields[2])
+      node.settings.pan = fields.length === 4 ? finiteNumber(fields[3]) : 0
+      if (node.settings.gainDb < -120 || node.settings.gainDb > 12 ||
+          node.settings.pan < -1 || node.settings.pan > 1) invalid()
     } else if (fields[0] === 'EDGE' && fields.length === 6) {
       const kind = integer(fields[3])
       if (kind < 0 || kind > 1) invalid()
@@ -197,7 +200,7 @@ function encodeProject(session) {
   const graph = session.graph
   const transport = session.transport.toJSON()
   const lines = [
-    'TRANSMISSION_UI\t3',
+    'TRANSMISSION_UI\t4',
     `PROJECT\t${hexEncode(shortId(graph.id))}\t${hexEncode(graph.label)}`,
     `TRANSPORT\t${transport.tempoMap[0]?.bpm ?? 120}\t${(transport.loop?.endBeat ?? 16) / 4}\t${transport.loop?.enabled ? 1 : 0}`
   ]
@@ -236,7 +239,7 @@ function encodeProject(session) {
         `STATE\t${hexEncode(shortId(node.id))}\t${hexEncodeBuffer(component)}\t${hexEncodeBuffer(controller)}`)
     }
     if (kind === 6)
-      lines.push(`NODE_GAIN\t${hexEncode(shortId(node.id))}\t${finiteNumber(firstSetting(node.settings, 'gainDb') || 0)}`)
+      lines.push(`NODE_GAIN\t${hexEncode(shortId(node.id))}\t${finiteNumber(firstSetting(node.settings, 'gainDb') || 0)}\t${finiteNumber(firstSetting(node.settings, 'pan') || 0)}`)
   }
   for (const connection of graph.connections) {
     lines.push([

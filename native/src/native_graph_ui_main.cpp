@@ -56,6 +56,7 @@ struct Node {
     std::vector<std::string> audioInputLabels;
     std::vector<std::string> audioOutputLabels;
     double gainDb = 0.0;
+    double pan = 0.0;
 };
 
 enum class PortKind { Audio, Midi };
@@ -97,6 +98,7 @@ struct GraphView {
     std::size_t nextPluginId = 1;
     std::size_t nextMidiInputId = 1;
     std::size_t nextMidiOutputId = 1;
+    std::size_t nextGainId = 1;
     std::array<std::string, 2> systemInputConnections{"system:capture_1", "system:capture_2"};
     std::array<std::string, 2> systemOutputConnections{"system:playback_1", "system:playback_2"};
     std::unique_ptr<transmission::JackConnectionManager> jackConnections;
@@ -147,6 +149,23 @@ struct MidiDialogContext {
     GtkWidget* dialog = nullptr;
     GtkComboBoxText* selector = nullptr;
     bool input = true;
+    std::size_t node = static_cast<std::size_t>(-1);
+};
+
+struct PanDial {
+    GtkWidget* widget = nullptr;
+    double value = 0.0;
+    double dragY = 0.0;
+    double dragValue = 0.0;
+    bool dragging = false;
+};
+
+struct GainDialogContext {
+    GraphView* view = nullptr;
+    GtkWidget* canvas = nullptr;
+    GtkWidget* dialog = nullptr;
+    GtkRange* gain = nullptr;
+    PanDial pan;
     std::size_t node = static_cast<std::size_t>(-1);
 };
 
@@ -267,6 +286,7 @@ transmission::RuntimeGraphSnapshot runtimeSnapshot(const GraphView& view) {
             node.id, kind, node.pluginPath, externalMidiPort,
             node.audioInputs, node.audioOutputs, {}, {}, 0.0, {}});
         snapshot.nodes.back().gainDb = node.gainDb;
+        snapshot.nodes.back().pan = node.pan;
         const auto gainLane = std::find_if(
             view.gainLanes.begin(), view.gainLanes.end(),
             [&](const auto& lane) { return lane.targetNodeId == node.id; });
@@ -518,6 +538,182 @@ void showPluginDialog(GtkWidget* canvas, GraphView& view) {
     gtk_widget_show_all(dialog);
 }
 
+void setPanDialValue(PanDial& dial, double value) {
+    dial.value = std::clamp(value, -1.0, 1.0);
+    if (dial.widget) gtk_widget_queue_draw(dial.widget);
+}
+
+gboolean drawPanDial(GtkWidget* widget, cairo_t* cr, gpointer data) {
+    const auto& dial = *static_cast<PanDial*>(data);
+    const auto width = gtk_widget_get_allocated_width(widget);
+    const auto height = gtk_widget_get_allocated_height(widget);
+    const auto centerX = static_cast<double>(width) * 0.5;
+    const auto centerY = static_cast<double>(height) * 0.46;
+    const auto radius = std::min(width, height) * 0.28;
+    const auto start = 0.75 * M_PI;
+    const auto end = 2.25 * M_PI;
+    const auto angle = start + (dial.value + 1.0) * 0.5 * (end - start);
+
+    cairo_set_line_width(cr, 5.0);
+    cairo_set_source_rgb(cr, 0.22, 0.24, 0.29);
+    cairo_arc(cr, centerX, centerY, radius + 8.0, start, end);
+    cairo_stroke(cr);
+    cairo_set_source_rgb(cr, 0.28, 0.62, 0.88);
+    cairo_arc(cr, centerX, centerY, radius + 8.0, start, angle);
+    cairo_stroke(cr);
+
+    cairo_set_source_rgb(cr, 0.17, 0.18, 0.22);
+    cairo_arc(cr, centerX, centerY, radius, 0.0, 2.0 * M_PI);
+    cairo_fill_preserve(cr);
+    cairo_set_line_width(cr, 2.0);
+    cairo_set_source_rgb(cr, 0.62, 0.66, 0.74);
+    cairo_stroke(cr);
+    cairo_set_line_width(cr, 3.0);
+    cairo_set_source_rgb(cr, 0.92, 0.95, 1.0);
+    cairo_move_to(cr, centerX, centerY);
+    cairo_line_to(cr, centerX + std::cos(angle) * radius * 0.72,
+                  centerY + std::sin(angle) * radius * 0.72);
+    cairo_stroke(cr);
+
+    const auto valueText = std::fabs(dial.value) < 0.005
+        ? std::string("C")
+        : (dial.value < 0.0 ? "L " : "R ") +
+            std::to_string(static_cast<int>(
+                std::lround(std::fabs(dial.value) * 100.0)));
+    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL,
+                           CAIRO_FONT_WEIGHT_BOLD);
+    cairo_set_font_size(cr, 12.0);
+    cairo_text_extents_t extents{};
+    cairo_text_extents(cr, valueText.c_str(), &extents);
+    cairo_move_to(cr, centerX - extents.width * 0.5,
+                  static_cast<double>(height) - 8.0);
+    cairo_show_text(cr, valueText.c_str());
+    return FALSE;
+}
+
+gboolean panDialButtonPress(GtkWidget*, GdkEventButton* event, gpointer data) {
+    if (event->button != GDK_BUTTON_PRIMARY) return FALSE;
+    auto& dial = *static_cast<PanDial*>(data);
+    dial.dragging = true;
+    dial.dragY = event->y;
+    dial.dragValue = dial.value;
+    return TRUE;
+}
+
+gboolean panDialMotion(GtkWidget*, GdkEventMotion* event, gpointer data) {
+    auto& dial = *static_cast<PanDial*>(data);
+    if (!dial.dragging) return FALSE;
+    setPanDialValue(dial, dial.dragValue + (dial.dragY - event->y) / 80.0);
+    return TRUE;
+}
+
+gboolean panDialButtonRelease(GtkWidget*, GdkEventButton* event,
+                              gpointer data) {
+    if (event->button != GDK_BUTTON_PRIMARY) return FALSE;
+    static_cast<PanDial*>(data)->dragging = false;
+    return TRUE;
+}
+
+gboolean panDialScroll(GtkWidget*, GdkEventScroll* event, gpointer data) {
+    auto& dial = *static_cast<PanDial*>(data);
+    const auto amount = event->direction == GDK_SCROLL_UP ? 0.02
+        : event->direction == GDK_SCROLL_DOWN ? -0.02 : 0.0;
+    if (amount == 0.0) return FALSE;
+    setPanDialValue(dial, dial.value + amount);
+    return TRUE;
+}
+
+void editGainFromDialog(GtkDialog*, gint response, gpointer data) {
+    auto* context = static_cast<GainDialogContext*>(data);
+    if (response == GTK_RESPONSE_ACCEPT &&
+        context->node < context->view->nodes.size()) {
+        auto& node = context->view->nodes[context->node];
+        node.gainDb = gtk_range_get_value(context->gain);
+        node.pan = context->pan.value;
+#if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
+        if (runtimeRunning(*context->view) && context->view->runtime) {
+            std::string error;
+            const auto gainNormalized =
+                (node.gainDb - transmission::GainProcessor::minimumGainDb) /
+                (transmission::GainProcessor::maximumGainDb -
+                 transmission::GainProcessor::minimumGainDb);
+            if (!context->view->runtime->setParameter(
+                    node.id, transmission::GainProcessor::gainParameterId,
+                    gainNormalized, error) ||
+                !context->view->runtime->setParameter(
+                    node.id, transmission::GainProcessor::panParameterId,
+                    (node.pan + 1.0) * 0.5, error))
+                setStatus(*context->view, error, true);
+        }
+#endif
+        gtk_widget_queue_draw(context->canvas);
+    }
+    gtk_widget_destroy(context->dialog);
+    delete context;
+}
+
+void showGainDialog(GtkWidget* canvas, GraphView& view,
+                    std::size_t nodeIndex) {
+    if (nodeIndex >= view.nodes.size() ||
+        view.nodes[nodeIndex].kind != NodeKind::Gain)
+        return;
+    const auto& node = view.nodes[nodeIndex];
+    auto* dialog = gtk_dialog_new_with_buttons(
+        "Edit Gain / Pan", GTK_WINDOW(gtk_widget_get_toplevel(canvas)),
+        static_cast<GtkDialogFlags>(
+            GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
+        "_Cancel", GTK_RESPONSE_CANCEL, "_Apply", GTK_RESPONSE_ACCEPT,
+        nullptr);
+    auto* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+    gtk_box_set_spacing(GTK_BOX(content), 12);
+
+    auto* gainLabel = gtk_label_new("Gain");
+    gtk_widget_set_halign(gainLabel, GTK_ALIGN_START);
+    auto* gain = GTK_RANGE(gtk_scale_new_with_range(
+        GTK_ORIENTATION_HORIZONTAL,
+        transmission::GainProcessor::minimumGainDb,
+        transmission::GainProcessor::maximumGainDb, 0.1));
+    gtk_scale_set_digits(GTK_SCALE(gain), 1);
+    gtk_scale_set_value_pos(GTK_SCALE(gain), GTK_POS_RIGHT);
+    gtk_range_set_value(gain, node.gainDb);
+    gtk_widget_set_size_request(GTK_WIDGET(gain), 420, -1);
+    gtk_box_pack_start(GTK_BOX(content), gainLabel, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(content), GTK_WIDGET(gain), FALSE, FALSE, 0);
+
+    auto* panLabel = gtk_label_new("Pan / stereo balance");
+    gtk_widget_set_halign(panLabel, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), panLabel, FALSE, FALSE, 0);
+    auto* context = new GainDialogContext{
+        &view, canvas, dialog, gain, {}, nodeIndex};
+    context->pan.widget = gtk_drawing_area_new();
+    setPanDialValue(context->pan, node.pan);
+    gtk_widget_set_size_request(context->pan.widget, 130, 120);
+    gtk_widget_set_halign(context->pan.widget, GTK_ALIGN_CENTER);
+    gtk_widget_set_tooltip_text(
+        context->pan.widget,
+        "Drag vertically or use the mouse wheel; center preserves stereo balance");
+    gtk_widget_add_events(
+        context->pan.widget,
+        GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK |
+        GDK_POINTER_MOTION_MASK | GDK_SCROLL_MASK);
+    g_signal_connect(context->pan.widget, "draw",
+                     G_CALLBACK(drawPanDial), &context->pan);
+    g_signal_connect(context->pan.widget, "button-press-event",
+                     G_CALLBACK(panDialButtonPress), &context->pan);
+    g_signal_connect(context->pan.widget, "motion-notify-event",
+                     G_CALLBACK(panDialMotion), &context->pan);
+    g_signal_connect(context->pan.widget, "button-release-event",
+                     G_CALLBACK(panDialButtonRelease), &context->pan);
+    g_signal_connect(context->pan.widget, "scroll-event",
+                     G_CALLBACK(panDialScroll), &context->pan);
+    gtk_box_pack_start(GTK_BOX(content), context->pan.widget,
+                       FALSE, FALSE, 0);
+    g_signal_connect(dialog, "response", G_CALLBACK(editGainFromDialog),
+                     context);
+    gtk_widget_show_all(dialog);
+}
+
 void addMidiNodeFromDialog(GtkDialog*, gint response, gpointer data) {
     auto* context = static_cast<MidiDialogContext*>(data);
     if (response == GTK_RESPONSE_ACCEPT) {
@@ -602,6 +798,18 @@ void addPluginActivated(GtkMenuItem*, gpointer data) {
     showPluginDialog(context->canvas, *context->view);
 }
 
+void addGainActivated(GtkMenuItem*, gpointer data) {
+    auto* context = static_cast<AddNodeMenuContext*>(data);
+    auto& view = *context->view;
+    stopRuntime(view, "Graph changed — press Play to compile and start audio");
+    const auto id = "gain-" + std::to_string(view.nextGainId++);
+    const auto offset = static_cast<double>(view.nodes.size() % 3) * 35.0;
+    view.nodes.push_back({
+        id, "Gain / Pan", NodeKind::Gain, 2, 2, 0, 0,
+        300.0 + offset, 300.0 + offset, "", "", {}, {}, 0.0, 0.0});
+    gtk_widget_queue_draw(context->canvas);
+}
+
 void addMidiInputActivated(GtkMenuItem*, gpointer data) {
     auto* context = static_cast<AddNodeMenuContext*>(data);
     showMidiDialog(context->canvas, *context->view, true);
@@ -616,13 +824,16 @@ void showAddNodeMenu(GtkWidget* canvas, GraphView& view,
                      GdkEventButton* event) {
     auto* menu = gtk_menu_new();
     auto* plugin = gtk_menu_item_new_with_label("Add VST3 Plugin…");
+    auto* gain = gtk_menu_item_new_with_label("Add Gain / Pan");
     auto* midiInput = gtk_menu_item_new_with_label("Add MIDI Input…");
     auto* midiOutput = gtk_menu_item_new_with_label("Add MIDI Output…");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), plugin);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), gain);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), midiInput);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), midiOutput);
     auto* context = new AddNodeMenuContext{&view, canvas};
     g_signal_connect(plugin, "activate", G_CALLBACK(addPluginActivated), context);
+    g_signal_connect(gain, "activate", G_CALLBACK(addGainActivated), context);
     g_signal_connect(midiInput, "activate", G_CALLBACK(addMidiInputActivated), context);
     g_signal_connect(midiOutput, "activate", G_CALLBACK(addMidiOutputActivated), context);
     g_signal_connect_data(
@@ -1229,6 +1440,8 @@ void editNodeFromMenu(GtkMenuItem*, gpointer data) {
                node.kind == NodeKind::MidiOutput) {
         showMidiDialog(context->canvas, *context->view,
                        node.kind == NodeKind::MidiInput, context->node);
+    } else if (node.kind == NodeKind::Gain) {
+        showGainDialog(context->canvas, *context->view, context->node);
     } else if (!node.pluginPath.empty() && context->view->editorHost) {
         openPluginEditor(*context->view, node);
     }
@@ -1239,8 +1452,14 @@ void removeNodeFromMenu(GtkMenuItem*, gpointer data) {
     auto& view = *context->view;
     if (context->node >= view.nodes.size()) return;
     stopRuntime(view, "Graph changed — press Play to compile and start audio");
-    view.parameterValues.erase(view.nodes[context->node].id);
-    view.pluginStates.erase(view.nodes[context->node].id);
+    const auto removedId = view.nodes[context->node].id;
+    view.parameterValues.erase(removedId);
+    view.pluginStates.erase(removedId);
+    view.gainLanes.erase(
+        std::remove_if(
+            view.gainLanes.begin(), view.gainLanes.end(),
+            [&](const auto& lane) { return lane.targetNodeId == removedId; }),
+        view.gainLanes.end());
     view.edges.erase(std::remove_if(view.edges.begin(), view.edges.end(), [&](const auto& edge) {
         return edge.from == context->node || edge.to == context->node;
     }), view.edges.end());
@@ -1334,6 +1553,21 @@ gboolean drawGraph(GtkWidget*, cairo_t* cr, gpointer data) {
             !node.audioInputLabels.empty() || !node.audioOutputLabels.empty();
         drawNodeLabel(cr, node.label, node.x + (hasAudioLabels ? 55.0 : 15.0),
                       node.y + 31.0, hasAudioLabels ? 80.0 : nodeWidth - 30.0);
+        if (node.kind == NodeKind::Gain) {
+            char details[64]{};
+            const auto panText = std::fabs(node.pan) < 0.005
+                ? std::string("C")
+                : (node.pan < 0.0 ? "L " : "R ") +
+                    std::to_string(static_cast<int>(
+                        std::lround(std::fabs(node.pan) * 100.0)));
+            g_snprintf(details, sizeof(details), "%.1f dB   Pan %s",
+                       node.gainDb, panText.c_str());
+            cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL,
+                                   CAIRO_FONT_WEIGHT_NORMAL);
+            cairo_set_font_size(cr, 11.0);
+            cairo_move_to(cr, node.x + 15.0, node.y + 52.0);
+            cairo_show_text(cr, details);
+        }
         for (std::size_t port = 0; port < node.audioInputs; ++port)
             drawPort(cr, node.x, portY(node, PortKind::Audio, port, false),
                      false, PortKind::Audio);
@@ -1404,6 +1638,14 @@ gboolean buttonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
             cancelPointerInteraction(widget, view);
             showMidiDialog(
                 widget, view, node->kind == NodeKind::MidiInput,
+                static_cast<std::size_t>(node - view.nodes.data()));
+            return TRUE;
+        }
+        if (auto* node = nodeAt(view, event->x, event->y);
+            node && node->kind == NodeKind::Gain) {
+            cancelPointerInteraction(widget, view);
+            showGainDialog(
+                widget, view,
                 static_cast<std::size_t>(node - view.nodes.data()));
             return TRUE;
         }
@@ -1484,7 +1726,8 @@ transmission::UiProject captureProject(const GraphView& view) {
         project.nodes.push_back({
             node.id, node.label, kind,
             node.audioInputs, node.audioOutputs, node.midiInputs, node.midiOutputs,
-            node.x, node.y, node.pluginPath, node.externalPort, {}, {}, {}, node.gainDb});
+            node.x, node.y, node.pluginPath, node.externalPort, {}, {}, {},
+            node.gainDb, node.pan});
         auto& target = project.nodes.back();
         const auto parameters = view.parameterValues.find(node.id);
         if (parameters != view.parameterValues.end()) {
@@ -1628,7 +1871,8 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
             source.id, label, kind,
             source.audioInputs, source.audioOutputs, source.midiInputs, source.midiOutputs,
             source.x, source.y, source.pluginPath, source.externalPort,
-            inputLabels[source.id], outputLabels[source.id], source.gainDb});
+            inputLabels[source.id], outputLabels[source.id], source.gainDb,
+            source.pan});
     }
     std::vector<Edge> edges;
     edges.reserve(normalized.connections.size());
@@ -1665,6 +1909,7 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
     view.nextPluginId = 1;
     view.nextMidiInputId = 1;
     view.nextMidiOutputId = 1;
+    view.nextGainId = 1;
     std::unordered_set<std::string> identifiers;
     for (const auto& node : view.nodes) identifiers.insert(node.id);
     while (identifiers.contains("plugin-" + std::to_string(view.nextPluginId)))
@@ -1673,6 +1918,8 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
         ++view.nextMidiInputId;
     while (identifiers.contains("midi-output-" + std::to_string(view.nextMidiOutputId)))
         ++view.nextMidiOutputId;
+    while (identifiers.contains("gain-" + std::to_string(view.nextGainId)))
+        ++view.nextGainId;
     gtk_spin_button_set_value(view.tempo, normalized.tempo);
     gtk_spin_button_set_value(view.loopBars, normalized.loopBars);
     gtk_toggle_button_set_active(view.loop, normalized.loopEnabled);

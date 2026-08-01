@@ -16,7 +16,7 @@ describe('native UI Turtle project helper', () => {
     temporaryDirectories.push(directory)
     const filePath = join(directory, 'drums.ttl')
     const interchange = [
-      'TRANSMISSION_UI\t4',
+      'TRANSMISSION_UI\t5',
       `PROJECT\t${hex('main')}\t${hex('Drum graph')}`,
       'TRANSPORT\t132\t8\t1',
       `INPUT\t0\t${hex('capture:left')}`,
@@ -42,6 +42,8 @@ describe('native UI Turtle project helper', () => {
       `GAIN_LANE\t${hex('master-gain')}`,
       `GAIN_POINT\t${hex('master-gain')}\t12\t0\t1`,
       `GAIN_POINT\t${hex('master-gain')}\t16\t-120\t1`,
+      `MIDI_MAP\t${hex('master-gain')}\t0\t-1\t19\t1`,
+      `MIDI_MAP\t${hex('drumgen')}\t42\t0\t23\t0`,
       'END',
       ''
     ].join('\n')
@@ -55,9 +57,11 @@ describe('native UI Turtle project helper', () => {
     expect(turtle).toContain(':normalizedValue 0.75')
     expect(turtle).toContain(':componentState "AAEC/w=="')
     expect(turtle).toContain(':controllerState "ECA="')
+    expect(turtle).toContain(':midiMappings')
+    expect(turtle).toContain(':controller 19')
 
     const restored = await runHelper('load', filePath)
-    expect(restored).toContain('TRANSMISSION_UI\t4')
+    expect(restored).toContain('TRANSMISSION_UI\t5')
     expect(restored).toContain('TRANSPORT\t132\t8\t1')
     expect(restored).toContain(`NODE\t${hex('drumgen')}`)
     expect(restored).toContain(`EDGE\t${hex('drumgen')}\t${hex('drumkit')}\t1\t0\t0`)
@@ -67,6 +71,8 @@ describe('native UI Turtle project helper', () => {
     expect(restored).toContain(`PARAM\t${hex('drumgen')}\t42\t0.75`)
     expect(restored).toContain(`STATE\t${hex('drumgen')}\t000102ff\t1020`)
     expect(restored).toContain(`NODE_GAIN\t${hex('master-gain')}\t-3\t-0.25`)
+    expect(restored).toContain(`MIDI_MAP\t${hex('master-gain')}\t0\t-1\t19\t1`)
+    expect(restored).toContain(`MIDI_MAP\t${hex('drumgen')}\t42\t0\t23\t0`)
     expect(restored).toContain(`NOTE\t${hex('intro')}\t0.5\t0.25\t36\t100\t9`)
     expect(restored).toContain(`GAIN_POINT\t${hex('master-gain')}\t16\t-120\t1`)
   }, 15_000)

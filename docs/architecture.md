@@ -68,9 +68,10 @@ to `scripts/native-ui-project.js`.
 On save, the helper decodes the interchange into a Node `Graph` and asks
 `ProjectSession` to serialize Turtle. On open, it loads Turtle through
 `ProjectSession` and returns the versioned interchange to GTK. Version 2 added
-parameters and opaque state, version 3 added arrangements, and version 4 adds
-persisted Gain/Pan balance. The decoder remains compatible with versions 1–3;
-older readers should reject version 4 rather than silently discard pan.
+parameters and opaque state, version 3 added arrangements, version 4 added
+persisted Gain/Pan balance, and version 5 adds host MIDI parameter mappings.
+The decoder remains compatible with versions 1–4; older readers should reject
+version 5 rather than silently discard mappings.
 GTK validates node identifiers, endpoints, and port indices before replacing
 the visible project.
 
@@ -185,6 +186,14 @@ input and SysEx are not currently implemented.
 Control-originated MIDI and parameter changes use bounded queues. Parameters
 are applied at the beginning of a processing block. A full queue produces a
 recoverable control error rather than allocating or blocking.
+
+Host MIDI mappings are compiled on the control thread into per-node fixed
+lookup data. A routed CC can target an automatable VST3 parameter or the
+built-in Gain/Pan parameters. Its 0–127 value is normalized to 0–1 and queued
+for that processor in the same audio block. A mapping can consume the matching
+event or allow it to continue to the processor; unmatched MIDI always passes
+through. This preserves plugins such as T-Mix that implement their own CC
+control when no host mapping claims the event.
 
 ## VST3 hosting and native editors
 

@@ -70,7 +70,14 @@ export function graphFromDataset(dataset, transmissionId) {
     connections,
     metadata: {
       systemInputConnections: literalList(dataset, first(dataset, subject, ns.trn.systemInputConnections)),
-      systemOutputConnections: literalList(dataset, first(dataset, subject, ns.trn.systemOutputConnections))
+      systemOutputConnections: literalList(dataset, first(dataset, subject, ns.trn.systemOutputConnections)),
+      midiMappings: list(dataset, first(dataset, subject, ns.trn.midiMappings)).map(mapping => ({
+        targetNodeId: first(dataset, mapping, ns.trn.targetNode)?.value ?? '',
+        parameterId: numeric(first(dataset, mapping, ns.trn.parameterId)),
+        channel: numeric(first(dataset, mapping, ns.trn.channel)),
+        controller: numeric(first(dataset, mapping, ns.trn.controller)),
+        consume: first(dataset, mapping, ns.trn.consume)?.value !== 'false'
+      }))
     }
   })
 }
@@ -166,6 +173,13 @@ export function serializeGraph(graph, transport = null, arrangement = null) {
     lines.push(`    :systemInputConnections ( ${inputConnections.map(literal).join(' ')} ) ;`)
   if (outputConnections.length)
     lines.push(`    :systemOutputConnections ( ${outputConnections.map(literal).join(' ')} ) ;`)
+  if (graph.metadata?.midiMappings?.length) {
+    const mappings = graph.metadata.midiMappings.map(mapping =>
+      `[ :targetNode ${nodeNames.get(mapping.targetNodeId) ?? term(mapping.targetNodeId, base)} ; ` +
+      `:parameterId ${mapping.parameterId} ; :channel ${mapping.channel} ; ` +
+      `:controller ${mapping.controller} ; :consume ${mapping.consume !== false} ]`)
+    lines.push(`    :midiMappings ( ${mappings.join(' ')} ) ;`)
+  }
   lines.push(`    :pipe ( ${[...graph.nodes.keys()].map(id => nodeNames.get(id)).join(' ')} ) ;`)
   const connections = graph.connections.map(connection =>
     `[ :from ${nodeNames.get(connection.from) ?? term(connection.from, base)} ; ` +

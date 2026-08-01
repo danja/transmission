@@ -48,7 +48,10 @@ describe('Transmission RDF adapter', () => {
       ],
       metadata: {
         systemInputConnections: ['capture:left', 'capture:right'],
-        systemOutputConnections: ['playback:left', 'playback:right']
+        systemOutputConnections: ['playback:left', 'playback:right'],
+        midiMappings: [
+          { targetNodeId: `${base}drumgen`, parameterId: 42, channel: -1, controller: 19, consume: true }
+        ]
       }
     })
     const transport = {
@@ -75,6 +78,7 @@ describe('Transmission RDF adapter', () => {
     })
     expect(restored.node(`${base}drumgen`).metadata).toEqual({ x: 240, y: 30 })
     expect(restored.metadata.systemOutputConnections).toEqual(['playback:left', 'playback:right'])
+    expect(restored.metadata.midiMappings).toEqual(graph.metadata.midiMappings)
     expect(transportFromDataset(dataset, graph.id)).toEqual(transport)
     expect(arrangementFromDataset(dataset, graph.id, graph).toJSON()).toEqual(arrangement.toJSON())
   })

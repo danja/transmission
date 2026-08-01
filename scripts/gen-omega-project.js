@@ -9,6 +9,15 @@ import { createGenOmegaArrangement } from './gen-omega-arrangement.js'
 
 const BASE = 'http://purl.org/stuff/transmissions/'
 const VST = '/home/danny/.vst3'
+const MIDIMIX_PORT = 'Midi-Bridge:MIDI Mix MIDI 1 (capture)'
+const MIDIMIX_STRIPS = [
+  { target: 'field-gain', gain: 19, pan: 18 },
+  { target: 'fife-gain', gain: 23, pan: 22 },
+  { target: 'main-gain', gain: 27, pan: 26 },
+  { target: 'bass-gain', gain: 31, pan: 30 },
+  { target: 'acid-gain', gain: 49, pan: 48 },
+  { target: 'chords-gain', gain: 53, pan: 52 }
+]
 
 export function createGenOmegaProject() {
   const recipe = createGenOmegaArrangement()
@@ -24,13 +33,17 @@ export function createGenOmegaProject() {
   }
   const gain = (id, label, gainDb, x, y) => {
     nodes.push({ id: `${BASE}${id}`, type: `${BASE}Gain`, label,
-      ports: { audioInputs: 2, audioOutputs: 2 }, settings: { gainDb }, metadata: { x, y } })
+      ports: { audioInputs: 2, audioOutputs: 2, midiInputs: 1 }, settings: { gainDb }, metadata: { x, y } })
     positions.set(id, `${BASE}${id}`)
   }
   const stereo = (from, to) => {
     for (let port = 0; port < 2; ++port)
       connections.push({ from: positions.get(from), to: positions.get(to), kind: 'audio', fromPort: port, toPort: port })
   }
+
+  nodes.push({ id: `${BASE}midimix-input`, type: `${BASE}MidiInput`, label: 'Akai MIDImix',
+    ports: { midiOutputs: 1 }, settings: { externalPort: MIDIMIX_PORT }, metadata: { x: 40, y: 700 } })
+  positions.set('midimix-input', `${BASE}midimix-input`)
 
   plugin('field-drums', 'Field Drums — DrumKit', 'drumkit', 40, 40, true)
   gain('field-gain', 'Field Drums Gain', -12, 270, 40)
@@ -69,8 +82,24 @@ export function createGenOmegaProject() {
     stereo(role, 'master-gain')
   stereo('master-gain', 'system-output')
 
+  for (const { target } of MIDIMIX_STRIPS)
+    connections.push({ from: positions.get('midimix-input'), to: positions.get(target),
+      kind: 'midi', fromPort: 0, toPort: 0 })
+  connections.push({ from: positions.get('midimix-input'), to: positions.get('master-gain'),
+    kind: 'midi', fromPort: 0, toPort: 0 })
+
+  const midiMappings = MIDIMIX_STRIPS.flatMap(({ target, gain: gainCc, pan: panCc }) => [
+    { targetNodeId: positions.get(target), parameterId: 0, channel: -1, controller: gainCc, consume: true },
+    { targetNodeId: positions.get(target), parameterId: 1, channel: -1, controller: panCc, consume: true }
+  ])
+  midiMappings.push({ targetNodeId: positions.get('master-gain'), parameterId: 0,
+    channel: -1, controller: 62, consume: true })
+
   const graph = new Graph({ id: `${BASE}gen-omega`, label: 'Gen Omega', nodes, connections,
-    metadata: { systemOutputConnections: ['system:playback_1', 'system:playback_2'] } })
+    metadata: {
+      systemOutputConnections: ['system:playback_1', 'system:playback_2'],
+      midiMappings
+    } })
   const trackTargets = ['field-drums', 'fife', 'main-drums', 'bass', 'acid', 'chords']
   const midiClips = recipe.tracks.flatMap((track, trackIndex) => track.clips.map((clip, clipIndex) => ({
     id: `${trackTargets[trackIndex]}-${clipIndex + 1}`,

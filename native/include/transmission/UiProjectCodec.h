@@ -68,6 +68,14 @@ struct UiProjectGainLane {
     std::vector<GainEnvelopePoint> points;
 };
 
+struct UiProjectMidiParameterMapping {
+    std::string targetNodeId;
+    std::uint32_t parameterId = 0;
+    int channel = -1;
+    std::uint8_t controller = 0;
+    bool consume = true;
+};
+
 struct UiProject {
     std::string id = "http://purl.org/stuff/transmissions/main";
     std::string label = "Transmission";
@@ -83,6 +91,7 @@ struct UiProject {
     double arrangementLengthBeats = 0.0;
     std::vector<UiProjectMidiClip> midiClips;
     std::vector<UiProjectGainLane> gainLanes;
+    std::vector<UiProjectMidiParameterMapping> midiMappings;
 };
 
 std::string encodeUiProject(const UiProject& project);

@@ -77,7 +77,7 @@ bool number(std::string_view text, double& result) {
 
 std::string encodeUiProject(const UiProject& project) {
     std::ostringstream output;
-    output << "TRANSMISSION_UI\t4\n";
+    output << "TRANSMISSION_UI\t5\n";
     output << "PROJECT\t" << hexEncode(project.id) << '\t'
            << hexEncode(project.label) << '\n';
     output << "TRANSPORT\t" << project.tempo << '\t' << project.loopBars
@@ -141,6 +141,11 @@ std::string encodeUiProject(const UiProject& project) {
                    << point.beat << '\t' << point.valueDb << '\t'
                    << (point.linear ? 1 : 0) << '\n';
     }
+    for (const auto& mapping : project.midiMappings)
+        output << "MIDI_MAP\t" << hexEncode(mapping.targetNodeId) << '\t'
+               << mapping.parameterId << '\t' << mapping.channel << '\t'
+               << static_cast<unsigned>(mapping.controller) << '\t'
+               << (mapping.consume ? 1 : 0) << '\n';
     output << "END\n";
     return output.str();
 }
@@ -164,7 +169,8 @@ bool decodeUiProject(const std::string& text, UiProject& project,
         if (!header) {
             if (values.size() != 2 || values[0] != "TRANSMISSION_UI" ||
                 (values[1] != "1" && values[1] != "2" &&
-                 values[1] != "3" && values[1] != "4")) return fail();
+                 values[1] != "3" && values[1] != "4" &&
+                 values[1] != "5")) return fail();
             header = true;
             continue;
         }
@@ -323,6 +329,29 @@ bool decodeUiProject(const std::string& text, UiProject& project,
                 (!lane->points.empty() && point.beat <= lane->points.back().beat)) return fail();
             point.linear = linear == 1;
             lane->points.push_back(point);
+        } else if (values[0] == "MIDI_MAP") {
+            UiProjectMidiParameterMapping mapping;
+            unsigned controller = 0;
+            int consume = 0;
+            if (values.size() != 6 ||
+                !hexDecode(values[1], mapping.targetNodeId) ||
+                !integer(values[2], mapping.parameterId) ||
+                !integer(values[3], mapping.channel) ||
+                !integer(values[4], controller) ||
+                !integer(values[5], consume) ||
+                mapping.targetNodeId.empty() || mapping.channel < -1 ||
+                mapping.channel > 15 || controller > 127 ||
+                (consume != 0 && consume != 1))
+                return fail();
+            const auto target = std::find_if(
+                candidate.nodes.begin(), candidate.nodes.end(),
+                [&](const auto& node) {
+                    return node.id == mapping.targetNodeId;
+                });
+            if (target == candidate.nodes.end()) return fail();
+            mapping.controller = static_cast<std::uint8_t>(controller);
+            mapping.consume = consume == 1;
+            candidate.midiMappings.push_back(mapping);
         } else {
             return fail();
         }

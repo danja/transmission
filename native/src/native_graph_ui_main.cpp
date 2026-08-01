@@ -36,6 +36,7 @@ namespace {
 constexpr double nodeWidth = 190.0;
 constexpr double minimumNodeHeight = 70.0;
 constexpr double portSpacing = 18.0;
+constexpr std::int32_t vst3CanAutomateFlag = 1 << 0;
 
 enum class NodeKind {
     SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput, Gain
@@ -95,6 +96,7 @@ struct GraphView {
     double arrangementLengthBeats = 0.0;
     std::vector<transmission::UiProjectMidiClip> midiClips;
     std::vector<transmission::UiProjectGainLane> gainLanes;
+    std::vector<transmission::UiProjectMidiParameterMapping> midiMappings;
     std::size_t nextPluginId = 1;
     std::size_t nextMidiInputId = 1;
     std::size_t nextMidiOutputId = 1;
@@ -167,6 +169,26 @@ struct GainDialogContext {
     GtkRange* gain = nullptr;
     PanDial pan;
     std::size_t node = static_cast<std::size_t>(-1);
+};
+
+struct MidiMappingParameter {
+    std::uint32_t id = 0;
+    std::string label;
+};
+
+struct MidiMappingDialogContext {
+    GraphView* view = nullptr;
+    GtkWidget* canvas = nullptr;
+    GtkWidget* dialog = nullptr;
+    GtkComboBoxText* parameter = nullptr;
+    GtkComboBoxText* channel = nullptr;
+    GtkSpinButton* controller = nullptr;
+    GtkToggleButton* consume = nullptr;
+    GtkListStore* store = nullptr;
+    GtkTreeView* list = nullptr;
+    std::size_t node = static_cast<std::size_t>(-1);
+    std::vector<MidiMappingParameter> parameters;
+    std::vector<transmission::UiProjectMidiParameterMapping> mappings;
 };
 
 struct AddNodeMenuContext {
@@ -326,6 +348,11 @@ transmission::RuntimeGraphSnapshot runtimeSnapshot(const GraphView& view) {
                 {noteOff, note.pitch, 0}});
         }
     }
+    snapshot.midiParameterMappings.reserve(view.midiMappings.size());
+    for (const auto& mapping : view.midiMappings)
+        snapshot.midiParameterMappings.push_back({
+            mapping.targetNodeId, mapping.parameterId, mapping.channel,
+            mapping.controller, mapping.consume});
     return snapshot;
 }
 
@@ -507,7 +534,8 @@ void addPluginFromDialog(GtkDialog*, gint response, gpointer data) {
             context->view->nodes.push_back({
                 id, topology.name.empty() ? stem : topology.name, NodeKind::Plugin,
                 topology.audioInputs.size(), topology.audioOutputs.size(),
-                topology.midiInputs, topology.midiOutputs, 300.0 + offset,
+                std::max<std::size_t>(1, topology.midiInputs),
+                topology.midiOutputs, 300.0 + offset,
                 300.0 + offset, path, "", std::move(inputLabels),
                 std::move(outputLabels)});
             gtk_widget_queue_draw(context->canvas);
@@ -714,6 +742,216 @@ void showGainDialog(GtkWidget* canvas, GraphView& view,
     gtk_widget_show_all(dialog);
 }
 
+std::string midiMappingParameterLabel(
+    const MidiMappingDialogContext& context, std::uint32_t parameterId) {
+    const auto parameter = std::find_if(
+        context.parameters.begin(), context.parameters.end(),
+        [&](const auto& candidate) { return candidate.id == parameterId; });
+    return parameter == context.parameters.end()
+        ? "Parameter " + std::to_string(parameterId) : parameter->label;
+}
+
+void refreshMidiMappingList(MidiMappingDialogContext& context) {
+    gtk_list_store_clear(context.store);
+    for (std::size_t index = 0; index < context.mappings.size(); ++index) {
+        const auto& mapping = context.mappings[index];
+        GtkTreeIter row;
+        gtk_list_store_append(context.store, &row);
+        const auto parameter = midiMappingParameterLabel(
+            context, mapping.parameterId);
+        const auto channel = mapping.channel < 0
+            ? std::string("Any") : std::to_string(mapping.channel + 1);
+        gtk_list_store_set(
+            context.store, &row, 0, parameter.c_str(), 1, channel.c_str(),
+            2, static_cast<guint>(mapping.controller), 3, mapping.consume,
+            4, static_cast<guint>(index), -1);
+    }
+}
+
+void addMidiMapping(GtkButton*, gpointer data) {
+    auto& context = *static_cast<MidiMappingDialogContext*>(data);
+    const auto parameterIndex = gtk_combo_box_get_active(
+        GTK_COMBO_BOX(context.parameter));
+    const auto channelIndex = gtk_combo_box_get_active(
+        GTK_COMBO_BOX(context.channel));
+    if (parameterIndex < 0 || channelIndex < 0 ||
+        static_cast<std::size_t>(parameterIndex) >= context.parameters.size())
+        return;
+    const auto& node = context.view->nodes[context.node];
+    transmission::UiProjectMidiParameterMapping mapping{
+        node.id, context.parameters[static_cast<std::size_t>(parameterIndex)].id,
+        channelIndex - 1,
+        static_cast<std::uint8_t>(gtk_spin_button_get_value_as_int(
+            context.controller)),
+        gtk_toggle_button_get_active(context.consume) != FALSE};
+    const auto existing = std::find_if(
+        context.mappings.begin(), context.mappings.end(),
+        [&](const auto& candidate) {
+            return candidate.parameterId == mapping.parameterId &&
+                   candidate.channel == mapping.channel &&
+                   candidate.controller == mapping.controller;
+        });
+    if (existing == context.mappings.end())
+        context.mappings.push_back(std::move(mapping));
+    else
+        existing->consume = mapping.consume;
+    refreshMidiMappingList(context);
+}
+
+void removeMidiMapping(GtkButton*, gpointer data) {
+    auto& context = *static_cast<MidiMappingDialogContext*>(data);
+    GtkTreeModel* model = nullptr;
+    GtkTreeIter row;
+    if (!gtk_tree_selection_get_selected(
+            gtk_tree_view_get_selection(context.list), &model, &row))
+        return;
+    guint index = 0;
+    gtk_tree_model_get(model, &row, 4, &index, -1);
+    if (index < context.mappings.size())
+        context.mappings.erase(context.mappings.begin() + index);
+    refreshMidiMappingList(context);
+}
+
+void applyMidiMappings(GtkDialog*, gint response, gpointer data) {
+    auto* context = static_cast<MidiMappingDialogContext*>(data);
+    if (response == GTK_RESPONSE_ACCEPT &&
+        context->node < context->view->nodes.size()) {
+        const auto targetId = context->view->nodes[context->node].id;
+        stopRuntime(*context->view,
+                    "MIDI mappings changed — press Play to compile and start audio");
+        auto& mappings = context->view->midiMappings;
+        mappings.erase(
+            std::remove_if(mappings.begin(), mappings.end(),
+                           [&](const auto& mapping) {
+                               return mapping.targetNodeId == targetId;
+                           }),
+            mappings.end());
+        mappings.insert(mappings.end(), context->mappings.begin(),
+                        context->mappings.end());
+        gtk_widget_queue_draw(context->canvas);
+    }
+    gtk_widget_destroy(context->dialog);
+    delete context;
+}
+
+void showMidiMappingDialog(GtkWidget* canvas, GraphView& view,
+                           std::size_t nodeIndex) {
+    if (nodeIndex >= view.nodes.size()) return;
+    const auto& node = view.nodes[nodeIndex];
+    if (node.kind != NodeKind::Gain && node.kind != NodeKind::Plugin) return;
+
+    std::vector<MidiMappingParameter> parameters;
+    if (node.kind == NodeKind::Gain) {
+        parameters = {
+            {transmission::GainProcessor::gainParameterId, "Gain"},
+            {transmission::GainProcessor::panParameterId,
+             "Pan / stereo balance"}};
+    } else {
+        transmission::Vst3PluginTopology topology;
+        std::string error;
+        if (!transmission::Vst3Inspector().inspectTopology(
+                node.pluginPath, topology, error)) {
+            setStatus(view, "Unable to inspect " + node.label + ": " + error,
+                      true);
+            return;
+        }
+        for (const auto& parameter : topology.parameters) {
+            if ((parameter.flags & vst3CanAutomateFlag) == 0) continue;
+            const auto label = !parameter.title.empty()
+                ? parameter.title
+                : (!parameter.shortTitle.empty()
+                       ? parameter.shortTitle
+                       : "Parameter " + std::to_string(parameter.id));
+            parameters.push_back({parameter.id, label});
+        }
+    }
+    if (parameters.empty()) {
+        setStatus(view, node.label + " has no automatable parameters", true);
+        return;
+    }
+
+    auto* dialog = gtk_dialog_new_with_buttons(
+        ("MIDI mappings — " + node.label).c_str(),
+        GTK_WINDOW(gtk_widget_get_toplevel(canvas)),
+        static_cast<GtkDialogFlags>(
+            GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
+        "_Cancel", GTK_RESPONSE_CANCEL, "_Apply", GTK_RESPONSE_ACCEPT,
+        nullptr);
+    auto* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+    gtk_box_set_spacing(GTK_BOX(content), 10);
+    auto* hint = gtk_label_new(
+        "Connect a MIDI Input to this node, then map its channel and CC.");
+    gtk_widget_set_halign(hint, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), hint, FALSE, FALSE, 0);
+
+    auto* controls = gtk_grid_new();
+    gtk_grid_set_column_spacing(GTK_GRID(controls), 8);
+    gtk_grid_set_row_spacing(GTK_GRID(controls), 6);
+    auto* parameter = GTK_COMBO_BOX_TEXT(gtk_combo_box_text_new());
+    for (const auto& item : parameters)
+        gtk_combo_box_text_append_text(parameter, item.label.c_str());
+    gtk_combo_box_set_active(GTK_COMBO_BOX(parameter), 0);
+    auto* channel = GTK_COMBO_BOX_TEXT(gtk_combo_box_text_new());
+    gtk_combo_box_text_append_text(channel, "Any channel");
+    for (int current = 1; current <= 16; ++current)
+        gtk_combo_box_text_append_text(
+            channel, ("Channel " + std::to_string(current)).c_str());
+    gtk_combo_box_set_active(GTK_COMBO_BOX(channel), 0);
+    auto* controller = GTK_SPIN_BUTTON(
+        gtk_spin_button_new_with_range(0, 127, 1));
+    auto* consume = GTK_TOGGLE_BUTTON(gtk_check_button_new_with_label(
+        "Consume mapped CC (do not also send it to the plugin)"));
+    gtk_toggle_button_set_active(consume, TRUE);
+    gtk_grid_attach(GTK_GRID(controls), gtk_label_new("Parameter"), 0, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(controls), GTK_WIDGET(parameter), 1, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(controls), gtk_label_new("MIDI channel"), 0, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(controls), GTK_WIDGET(channel), 1, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(controls), gtk_label_new("CC number"), 0, 2, 1, 1);
+    gtk_grid_attach(GTK_GRID(controls), GTK_WIDGET(controller), 1, 2, 1, 1);
+    gtk_grid_attach(GTK_GRID(controls), GTK_WIDGET(consume), 0, 3, 2, 1);
+    gtk_box_pack_start(GTK_BOX(content), controls, FALSE, FALSE, 0);
+
+    auto* store = gtk_list_store_new(
+        5, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_UINT, G_TYPE_BOOLEAN,
+        G_TYPE_UINT);
+    auto* list = GTK_TREE_VIEW(
+        gtk_tree_view_new_with_model(GTK_TREE_MODEL(store)));
+    const std::array<std::pair<const char*, int>, 4> columns{{
+        {"Parameter", 0}, {"Channel", 1}, {"CC", 2}, {"Consume", 3}}};
+    for (const auto& [title, column] : columns) {
+        auto* renderer = column == 3 ? gtk_cell_renderer_toggle_new()
+                                     : gtk_cell_renderer_text_new();
+        gtk_tree_view_append_column(
+            list, gtk_tree_view_column_new_with_attributes(
+                      title, renderer, column == 3 ? "active" : "text",
+                      column, nullptr));
+    }
+    gtk_widget_set_size_request(GTK_WIDGET(list), 520, 180);
+    gtk_box_pack_start(GTK_BOX(content), GTK_WIDGET(list), TRUE, TRUE, 0);
+    auto* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
+    auto* add = gtk_button_new_with_label("Add mapping");
+    auto* remove = gtk_button_new_with_label("Remove selected");
+    gtk_container_add(GTK_CONTAINER(buttons), add);
+    gtk_container_add(GTK_CONTAINER(buttons), remove);
+    gtk_box_pack_start(GTK_BOX(content), buttons, FALSE, FALSE, 0);
+
+    auto* context = new MidiMappingDialogContext{
+        &view, canvas, dialog, parameter, channel, controller, consume, store,
+        list, nodeIndex, std::move(parameters), {}};
+    for (const auto& mapping : view.midiMappings) {
+        if (mapping.targetNodeId == node.id)
+            context->mappings.push_back(mapping);
+    }
+    refreshMidiMappingList(*context);
+    g_signal_connect(add, "clicked", G_CALLBACK(addMidiMapping), context);
+    g_signal_connect(remove, "clicked", G_CALLBACK(removeMidiMapping), context);
+    g_signal_connect(dialog, "response", G_CALLBACK(applyMidiMappings), context);
+    g_object_unref(store);
+    gtk_widget_show_all(dialog);
+}
+
 void addMidiNodeFromDialog(GtkDialog*, gint response, gpointer data) {
     auto* context = static_cast<MidiDialogContext*>(data);
     if (response == GTK_RESPONSE_ACCEPT) {
@@ -805,7 +1043,7 @@ void addGainActivated(GtkMenuItem*, gpointer data) {
     const auto id = "gain-" + std::to_string(view.nextGainId++);
     const auto offset = static_cast<double>(view.nodes.size() % 3) * 35.0;
     view.nodes.push_back({
-        id, "Gain / Pan", NodeKind::Gain, 2, 2, 0, 0,
+        id, "Gain / Pan", NodeKind::Gain, 2, 2, 1, 0,
         300.0 + offset, 300.0 + offset, "", "", {}, {}, 0.0, 0.0});
     gtk_widget_queue_draw(context->canvas);
 }
@@ -1447,6 +1685,11 @@ void editNodeFromMenu(GtkMenuItem*, gpointer data) {
     }
 }
 
+void editMidiMappingsFromMenu(GtkMenuItem*, gpointer data) {
+    auto* context = static_cast<NodeMenuContext*>(data);
+    showMidiMappingDialog(context->canvas, *context->view, context->node);
+}
+
 void removeNodeFromMenu(GtkMenuItem*, gpointer data) {
     auto* context = static_cast<NodeMenuContext*>(data);
     auto& view = *context->view;
@@ -1460,6 +1703,13 @@ void removeNodeFromMenu(GtkMenuItem*, gpointer data) {
             view.gainLanes.begin(), view.gainLanes.end(),
             [&](const auto& lane) { return lane.targetNodeId == removedId; }),
         view.gainLanes.end());
+    view.midiMappings.erase(
+        std::remove_if(
+            view.midiMappings.begin(), view.midiMappings.end(),
+            [&](const auto& mapping) {
+                return mapping.targetNodeId == removedId;
+            }),
+        view.midiMappings.end());
     view.edges.erase(std::remove_if(view.edges.begin(), view.edges.end(), [&](const auto& edge) {
         return edge.from == context->node || edge.to == context->node;
     }), view.edges.end());
@@ -1476,9 +1726,19 @@ void showNodeMenu(GtkWidget* canvas, GraphView& view, std::size_t nodeIndex, Gdk
     auto* edit = gtk_menu_item_new_with_label("Edit");
     auto* remove = gtk_menu_item_new_with_label("Remove");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), edit);
+    GtkWidget* midiMappings = nullptr;
+    if (nodeIndex < view.nodes.size() &&
+        (view.nodes[nodeIndex].kind == NodeKind::Gain ||
+         view.nodes[nodeIndex].kind == NodeKind::Plugin)) {
+        midiMappings = gtk_menu_item_new_with_label("MIDI mappings…");
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), midiMappings);
+    }
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), remove);
     auto* context = new NodeMenuContext{&view, canvas, nodeIndex};
     g_signal_connect(edit, "activate", G_CALLBACK(editNodeFromMenu), context);
+    if (midiMappings)
+        g_signal_connect(midiMappings, "activate",
+                         G_CALLBACK(editMidiMappingsFromMenu), context);
     g_signal_connect(remove, "activate", G_CALLBACK(removeNodeFromMenu), context);
     g_signal_connect_data(menu, "destroy", G_CALLBACK(destroyNodeMenuContext), context, nullptr,
                           static_cast<GConnectFlags>(0));
@@ -1764,6 +2024,7 @@ transmission::UiProject captureProject(const GraphView& view) {
     project.arrangementLengthBeats = view.arrangementLengthBeats;
     project.midiClips = view.midiClips;
     project.gainLanes = view.gainLanes;
+    project.midiMappings = view.midiMappings;
     return project;
 }
 
@@ -1831,6 +2092,23 @@ bool validateProject(const transmission::UiProject& project, std::string& error)
             return false;
         }
     }
+    for (const auto& mapping : project.midiMappings) {
+        const auto target = nodes.find(mapping.targetNodeId);
+        if (target == nodes.end() ||
+            (target->second->kind != transmission::UiProjectNodeKind::Gain &&
+             target->second->kind != transmission::UiProjectNodeKind::Plugin) ||
+            mapping.channel < -1 || mapping.channel > 15 ||
+            mapping.controller > 127) {
+            error = "The project contains an invalid MIDI parameter mapping";
+            return false;
+        }
+        if (target->second->kind == transmission::UiProjectNodeKind::Gain &&
+            mapping.parameterId != transmission::GainProcessor::gainParameterId &&
+            mapping.parameterId != transmission::GainProcessor::panParameterId) {
+            error = "The project maps MIDI to an unknown Gain/Pan parameter";
+            return false;
+        }
+    }
     return true;
 }
 
@@ -1840,6 +2118,10 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
     std::unordered_map<std::string, std::vector<std::string>> inputLabels;
     std::unordered_map<std::string, std::vector<std::string>> outputLabels;
     for (auto& node : normalized.nodes) {
+        if (node.kind == transmission::UiProjectNodeKind::Gain) {
+            node.midiInputs = std::max<std::size_t>(1, node.midiInputs);
+            continue;
+        }
         if (node.kind != transmission::UiProjectNodeKind::Plugin ||
             node.pluginPath.empty()) continue;
         transmission::Vst3PluginTopology topology;
@@ -1850,7 +2132,7 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
         }
         node.audioInputs = topology.audioInputs.size();
         node.audioOutputs = topology.audioOutputs.size();
-        node.midiInputs = topology.midiInputs;
+        node.midiInputs = std::max<std::size_t>(1, topology.midiInputs);
         node.midiOutputs = topology.midiOutputs;
         if (!topology.name.empty()) node.label = topology.name;
         for (const auto& port : topology.audioInputs)
@@ -1904,6 +2186,7 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
     view.arrangementLengthBeats = normalized.arrangementLengthBeats;
     view.midiClips = normalized.midiClips;
     view.gainLanes = normalized.gainLanes;
+    view.midiMappings = normalized.midiMappings;
     view.dragging = static_cast<std::size_t>(-1);
     view.connectingFrom = static_cast<std::size_t>(-1);
     view.nextPluginId = 1;

@@ -214,6 +214,42 @@ bool RoutedAudioGraph::setScheduledMidiEvents(
     return true;
 }
 
+bool RoutedAudioGraph::setMidiParameterMappings(
+    std::vector<MidiParameterMapping> mappings, std::string& error) {
+    if (preparedChannels_ != 0) {
+        error = "MIDI parameter mappings must be configured before graph preparation";
+        return false;
+    }
+    std::vector<std::vector<Node::MidiMapping>> compiled(nodes_.size());
+    for (const auto& mapping : mappings) {
+        const auto node = std::find_if(
+            nodes_.begin(), nodes_.end(), [&](const auto& candidate) {
+                return candidate.id == mapping.targetNodeId;
+            });
+        if (node == nodes_.end() || mapping.channel < -1 ||
+            mapping.channel > 15 || mapping.controller > 127) {
+            error = "MIDI parameter mapping has an invalid target, channel, or controller";
+            return false;
+        }
+        auto& target = compiled[static_cast<std::size_t>(node - nodes_.begin())];
+        const auto duplicate = std::find_if(
+            target.begin(), target.end(), [&](const auto& current) {
+                return current.parameterId == mapping.parameterId &&
+                    current.channel == mapping.channel &&
+                    current.controller == mapping.controller;
+            });
+        if (duplicate != target.end()) {
+            error = "MIDI parameter mapping is duplicated";
+            return false;
+        }
+        target.push_back({mapping.parameterId, mapping.channel,
+                          mapping.controller, mapping.consume});
+    }
+    for (std::size_t index = 0; index < nodes_.size(); ++index)
+        nodes_[index].midiParameterMappings = std::move(compiled[index]);
+    return true;
+}
+
 bool RoutedAudioGraph::prepare(std::size_t channels, std::size_t frames) noexcept {
     if (channels == 0 || frames == 0 || nodes_.empty()) return false;
     try {
@@ -363,6 +399,34 @@ void RoutedAudioGraph::processNode(std::size_t index) noexcept {
                 node.input.data() + channel * currentFrames_,
                 currentInputs_[channel],
                 currentFrames_ * sizeof(float));
+    }
+    if (!node.midiParameterMappings.empty() && node.midiInputCount != 0) {
+        std::size_t retained = 0;
+        bool applied = false;
+        for (std::size_t eventIndex = 0;
+             eventIndex < node.midiInputCount; ++eventIndex) {
+            const auto event = node.midiInput[eventIndex];
+            bool consume = false;
+            if (event.size >= 3 && (event.data[0] & 0xf0U) == 0xb0U) {
+                const auto channel = static_cast<int>(event.data[0] & 0x0fU);
+                const auto controller = event.data[1] & 0x7fU;
+                const auto value = static_cast<double>(event.data[2] & 0x7fU) /
+                    127.0;
+                for (const auto& mapping : node.midiParameterMappings) {
+                    if ((mapping.channel != -1 && mapping.channel != channel) ||
+                        mapping.controller != controller)
+                        continue;
+                    if (node.processor->enqueueParameter(
+                            mapping.parameterId, value)) {
+                        applied = true;
+                        consume = consume || mapping.consume;
+                    }
+                }
+            }
+            if (!consume) node.midiInput[retained++] = event;
+        }
+        node.midiInputCount = retained;
+        if (applied) node.processor->applyPendingParameters();
     }
     if (processContext_.playing && node.sleepOutsideScheduledMidi &&
         node.midiInputCount == 0 &&

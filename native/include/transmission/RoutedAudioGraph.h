@@ -31,6 +31,14 @@ struct ScheduledMidiEvent {
     std::array<std::uint8_t, 3> data{};
 };
 
+struct MidiParameterMapping {
+    std::string targetNodeId;
+    std::uint32_t parameterId = 0;
+    int channel = -1;
+    std::uint8_t controller = 0;
+    bool consume = true;
+};
+
 /**
  * Preallocated DAG runtime. Control-plane code creates nodes and connects
  * them; prepare() resolves execution order and allocates all block storage.
@@ -67,6 +75,8 @@ public:
      */
     bool setScheduledMidiEvents(std::vector<ScheduledMidiEvent> events,
                                 double sampleRate, std::string& error);
+    bool setMidiParameterMappings(std::vector<MidiParameterMapping> mappings,
+                                  std::string& error);
     bool prepare(std::size_t channels, std::size_t frames) noexcept;
     void process(const float* const* inputs, float* const* outputs,
                  std::size_t channels, std::size_t frames) noexcept;
@@ -141,6 +151,13 @@ private:
         double scheduledMidiLastBeat = 0.0;
         bool hasScheduledMidi = false;
         bool sleepOutsideScheduledMidi = false;
+        struct MidiMapping {
+            std::uint32_t parameterId = 0;
+            int channel = -1;
+            std::uint8_t controller = 0;
+            bool consume = true;
+        };
+        std::vector<MidiMapping> midiParameterMappings;
     };
 
     struct CompiledMidiEvent {

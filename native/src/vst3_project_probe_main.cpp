@@ -143,6 +143,11 @@ RuntimeGraphSnapshot snapshotFor(const transmission::UiProject& project) {
                  ? RuntimeConnectionKind::Audio
                  : RuntimeConnectionKind::Midi,
              connection.fromPort, connection.toPort});
+    snapshot.midiParameterMappings.reserve(project.midiMappings.size());
+    for (const auto& mapping : project.midiMappings)
+        snapshot.midiParameterMappings.push_back({
+            mapping.targetNodeId, mapping.parameterId, mapping.channel,
+            mapping.controller, mapping.consume});
     for (const auto& clip : project.midiClips) {
         for (const auto& note : clip.notes) {
             snapshot.scheduledMidiEvents.push_back({

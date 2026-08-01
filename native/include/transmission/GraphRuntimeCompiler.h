@@ -48,6 +48,7 @@ struct RuntimeGraphSnapshot {
     std::vector<RuntimeGraphNode> nodes;
     std::vector<RuntimeGraphConnection> connections;
     std::vector<ScheduledMidiEvent> scheduledMidiEvents;
+    std::vector<MidiParameterMapping> midiParameterMappings;
 };
 
 using RuntimeProcessorFactory = std::function<std::unique_ptr<AudioProcessor>(

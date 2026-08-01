@@ -109,6 +109,27 @@ project. In Transmission:
 Requested port selections are saved in the Turtle project even if the external
 device is temporarily unavailable.
 
+## MIDI controllers
+
+To control Gain/Pan or VST3 parameters from a device such as an Akai MIDImix:
+
+1. Right-click the canvas, choose **Add MIDI Input…**, and select the
+   controller's JACK MIDI source.
+2. Draw a magenta MIDI cable from that input to each Gain/Pan or VST3 node you
+   want to control.
+3. Right-click a target node and choose **MIDI mappings…**.
+4. Select an automatable parameter, MIDI channel (or any channel), and CC
+   number, then choose **Add mapping** and **Apply**.
+5. Press **Play** after changing the graph or mappings.
+
+Mapped CC values use the full controller range for the target parameter. By
+default the mapped event is consumed so the same movement does not also invoke
+a plugin's own MIDI behavior. Clear **Consume mapped CC** when the plugin
+should receive it too. Unmapped events always pass through, so T-Mix's native
+CC assignments continue to work without host mappings. Controller learn and
+live hardware-to-widget feedback are not currently implemented; enter the CC
+number shown by the controller's configuration or a MIDI monitor.
+
 Settings → Audio shows the active JACK/PipeWire period, render-ahead setting,
 processing-thread selection, xruns, and graph timing. The default automatic
 thread count adapts to the machine and graph.

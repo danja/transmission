@@ -63,7 +63,8 @@ function decodeProject(text) {
     connections: [],
     metadata: {
       systemInputConnections: ['system:capture_1', 'system:capture_2'],
-      systemOutputConnections: ['system:playback_1', 'system:playback_2']
+      systemOutputConnections: ['system:playback_1', 'system:playback_2'],
+      midiMappings: []
     },
     transport: {
       tempoMap: [{ beat: 0, bpm: 120 }],
@@ -79,7 +80,7 @@ function decodeProject(text) {
     const invalid = () => { throw new Error(`Invalid native UI project interchange at line ${index + 1}`) }
     if (!header) {
       if (fields.length !== 2 || fields[0] !== 'TRANSMISSION_UI' ||
-          !['1', '2', '3', '4'].includes(fields[1])) invalid()
+          !['1', '2', '3', '4', '5'].includes(fields[1])) invalid()
       header = true
       continue
     }
@@ -188,6 +189,18 @@ function decodeProject(text) {
         shape: fields[4] === '1' ? 'linear' : fields[4] === '0' ? 'step' : invalid() }
       if (!lane || point.beat < 0 || (lane.points.length && point.beat <= lane.points.at(-1).beat)) invalid()
       lane.points.push(point)
+    } else if (fields[0] === 'MIDI_MAP' && fields.length === 6) {
+      const mapping = {
+        targetNodeId: fullId(hexDecode(fields[1])),
+        parameterId: integer(fields[2]),
+        channel: signedInteger(fields[3]),
+        controller: integer(fields[4]),
+        consume: fields[5] === '1' ? true : fields[5] === '0' ? false : invalid()
+      }
+      if (!project.nodes.some(node => node.id === mapping.targetNodeId) ||
+          mapping.channel < -1 || mapping.channel > 15 ||
+          mapping.controller > 127) invalid()
+      project.metadata.midiMappings.push(mapping)
     } else {
       invalid()
     }
@@ -200,7 +213,7 @@ function encodeProject(session) {
   const graph = session.graph
   const transport = session.transport.toJSON()
   const lines = [
-    'TRANSMISSION_UI\t4',
+    'TRANSMISSION_UI\t5',
     `PROJECT\t${hexEncode(shortId(graph.id))}\t${hexEncode(graph.label)}`,
     `TRANSPORT\t${transport.tempoMap[0]?.bpm ?? 120}\t${(transport.loop?.endBeat ?? 16) / 4}\t${transport.loop?.enabled ? 1 : 0}`
   ]
@@ -260,6 +273,10 @@ function encodeProject(session) {
     for (const point of lane.points)
       lines.push(`GAIN_POINT\t${hexEncode(shortId(lane.targetNodeId))}\t${point.beat}\t${point.valueDb}\t${point.shape === 'linear' ? 1 : 0}`)
   }
+  for (const mapping of graph.metadata.midiMappings ?? []) {
+    lines.push(
+      `MIDI_MAP\t${hexEncode(shortId(mapping.targetNodeId))}\t${integer(String(mapping.parameterId))}\t${signedInteger(String(mapping.channel))}\t${integer(String(mapping.controller))}\t${mapping.consume === false ? 0 : 1}`)
+  }
   lines.push('END')
   return `${lines.join('\n')}\n`
 }
@@ -279,6 +296,11 @@ function shortId(value) {
 
 function integer(value) {
   if (!/^\d+$/.test(value)) throw new Error(`Invalid integer: ${value}`)
+  return Number(value)
+}
+
+function signedInteger(value) {
+  if (!/^-?\d+$/.test(value)) throw new Error(`Invalid integer: ${value}`)
   return Number(value)
 }
 

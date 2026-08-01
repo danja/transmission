@@ -12,8 +12,18 @@ describe('Gen Omega Transmission project', () => {
     const amboNodes = [...graph.nodes.values()].filter(node => node.settings?.pluginPath?.endsWith('/ambo.vst3'))
     expect(amboNodes).toHaveLength(1)
     expect(amboNodes[0].label).toBe('Shared Space — Ambo')
+    expect(graph.node('http://purl.org/stuff/transmissions/midimix-input')?.settings.externalPort)
+      .toBe('Midi-Bridge:MIDI Mix MIDI 1 (capture)')
+    expect(graph.connections.filter(connection => connection.kind === 'midi')).toHaveLength(7)
+    expect(graph.metadata.midiMappings).toHaveLength(13)
+    expect(graph.metadata.midiMappings.at(-1)).toMatchObject({
+      targetNodeId: 'http://purl.org/stuff/transmissions/master-gain',
+      parameterId: 0,
+      controller: 62
+    })
     const dataset = await parseTurtle(serializeGraph(graph, transport, arrangement))
     const restoredGraph = graphFromDataset(dataset, graph.id)
+    expect(restoredGraph.metadata.midiMappings).toEqual(graph.metadata.midiMappings)
     expect(arrangementFromDataset(dataset, graph.id, restoredGraph).toJSON()).toEqual(arrangement.toJSON())
   }, 15_000)
 })

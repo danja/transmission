@@ -152,6 +152,9 @@ std::unique_ptr<RoutedAudioGraph> GraphRuntimeCompiler::compile(
             return nullptr;
         }
     }
+    if (!graph->setMidiParameterMappings(
+            snapshot.midiParameterMappings, error))
+        return nullptr;
     if (!graph->setScheduledMidiEvents(snapshot.scheduledMidiEvents,
                                        config.sampleRate, error))
         return nullptr;

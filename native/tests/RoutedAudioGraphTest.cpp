@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <thread>
 
@@ -72,6 +73,35 @@ public:
 
 private:
     std::atomic<int>& calls_;
+};
+
+class MappedParameterProcessor final : public transmission::AudioProcessor {
+public:
+    void process(const float* const*, float* const* outputs,
+                 std::size_t channels, std::size_t frames) noexcept override {
+        for (std::size_t channel = 0; channel < channels; ++channel)
+            std::fill_n(outputs[channel], frames, 0.0F);
+    }
+
+    void processWithMidi(
+        const float* const* inputs, float* const* outputs,
+        std::size_t channels, std::size_t frames,
+        const transmission::MidiEvent*, std::size_t eventCount) noexcept override {
+        receivedMidi = eventCount;
+        process(inputs, outputs, channels, frames);
+    }
+
+    bool enqueueParameter(std::uint32_t id, double value) noexcept override {
+        parameterId = id;
+        parameterValue = value;
+        ++parameterChanges;
+        return true;
+    }
+
+    std::size_t receivedMidi = 0;
+    std::uint32_t parameterId = 0;
+    double parameterValue = 0.0;
+    std::size_t parameterChanges = 0;
 };
 
 } // namespace
@@ -183,6 +213,36 @@ int main() {
     sleepingScheduled.setProcessContext({4.0, 60.0, true});
     sleepingScheduled.process(inputs, outputs, 1, 4);
     assert(scheduledCalls.load() == 1);
+
+    transmission::RoutedAudioGraph mapped;
+    assert(mapped.addNode(
+        "controller", std::make_unique<transmission::PassThroughProcessor>()));
+    auto mappedProcessor = std::make_unique<MappedParameterProcessor>();
+    auto* mappedCapture = mappedProcessor.get();
+    assert(mapped.addNode("target", std::move(mappedProcessor)));
+    assert(mapped.setExternalMidiInput("controller", 2));
+    assert(mapped.connectMidi("controller", "target"));
+    std::string mappingError;
+    assert(!mapped.setMidiParameterMappings(
+        {{"missing", 42, -1, 19, true}}, mappingError));
+    assert(!mapped.setMidiParameterMappings(
+        {{"target", 42, 16, 19, true}}, mappingError));
+    assert(mapped.setMidiParameterMappings(
+        {{"target", 42, 0, 19, true}}, mappingError));
+    assert(mapped.prepare(1, 4));
+    transmission::MidiEvent controllerEvent;
+    controllerEvent.port = 2;
+    controllerEvent.size = 3;
+    controllerEvent.data = {0xb0, 19, 64};
+    mapped.processWithMidi(inputs, outputs, 1, 4, &controllerEvent, 1);
+    assert(mappedCapture->parameterChanges == 1);
+    assert(mappedCapture->parameterId == 42);
+    assert(std::fabs(mappedCapture->parameterValue - 64.0 / 127.0) < 0.0001);
+    assert(mappedCapture->receivedMidi == 0);
+    controllerEvent.data[1] = 20;
+    mapped.processWithMidi(inputs, outputs, 1, 4, &controllerEvent, 1);
+    assert(mappedCapture->parameterChanges == 1);
+    assert(mappedCapture->receivedMidi == 1);
     sleepingScheduled.setProcessContext(
         {5.0 + transmission::RoutedAudioGraph::scheduledInstrumentTailBeats,
          60.0, true});

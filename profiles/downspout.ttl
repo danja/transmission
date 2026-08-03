@@ -181,6 +181,15 @@ dsp:gremlin a trn:PluginProfile ;
     trn:companion dsp:gremlin-driver ;
     trn:caution "Randomisation and delay-oriented behaviours can produce large level or density changes." .
 
+dsp:gater a trn:PluginProfile ;
+    rdfs:label "Gater" ;
+    rdfs:comment "MIDI-controlled stereo audio switcher that routes input to one of two stereo outputs based on note number parity." ;
+    trn:bundleName "gater.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:AudioEffect ;
+    trn:accepts trn:Audio, trn:Midi ;
+    trn:produces trn:Audio .
+
 dsp:ground a trn:PluginProfile ;
     rdfs:label "Ground" ;
     rdfs:comment "Long-form bass generator with Dub and Jazz styles, phrase planning, and guarded bass-register output." ;

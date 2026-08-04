@@ -64,6 +64,7 @@ function decodeProject(text) {
     metadata: {
       systemInputConnections: ['system:capture_1', 'system:capture_2'],
       systemOutputConnections: ['system:playback_1', 'system:playback_2'],
+      audioSettings: { renderAheadMs: 200, requestedBufferSize: 0, processingThreads: 0 },
       midiMappings: []
     },
     transport: {
@@ -80,7 +81,7 @@ function decodeProject(text) {
     const invalid = () => { throw new Error(`Invalid native UI project interchange at line ${index + 1}`) }
     if (!header) {
       if (fields.length !== 2 || fields[0] !== 'TRANSMISSION_UI' ||
-          !['1', '2', '3', '4', '5'].includes(fields[1])) invalid()
+          !['1', '2', '3', '4', '5', '6'].includes(fields[1])) invalid()
       header = true
       continue
     }
@@ -189,6 +190,11 @@ function decodeProject(text) {
         shape: fields[4] === '1' ? 'linear' : fields[4] === '0' ? 'step' : invalid() }
       if (!lane || point.beat < 0 || (lane.points.length && point.beat <= lane.points.at(-1).beat)) invalid()
       lane.points.push(point)
+    } else if (fields[0] === 'SETTINGS' && fields.length === 4) {
+      const renderAheadMs = integer(fields[1])
+      const requestedBufferSize = integer(fields[2])
+      const processingThreads = integer(fields[3])
+      project.metadata.audioSettings = { renderAheadMs, requestedBufferSize, processingThreads }
     } else if (fields[0] === 'MIDI_MAP' && fields.length === 6) {
       const mapping = {
         targetNodeId: fullId(hexDecode(fields[1])),
@@ -213,7 +219,7 @@ function encodeProject(session) {
   const graph = session.graph
   const transport = session.transport.toJSON()
   const lines = [
-    'TRANSMISSION_UI\t5',
+    'TRANSMISSION_UI\t6',
     `PROJECT\t${hexEncode(shortId(graph.id))}\t${hexEncode(graph.label)}`,
     `TRANSPORT\t${transport.tempoMap[0]?.bpm ?? 120}\t${(transport.loop?.endBeat ?? 16) / 4}\t${transport.loop?.enabled ? 1 : 0}`
   ]
@@ -276,6 +282,10 @@ function encodeProject(session) {
   for (const mapping of graph.metadata.midiMappings ?? []) {
     lines.push(
       `MIDI_MAP\t${hexEncode(shortId(mapping.targetNodeId))}\t${integer(String(mapping.parameterId))}\t${signedInteger(String(mapping.channel))}\t${integer(String(mapping.controller))}\t${mapping.consume === false ? 0 : 1}`)
+  }
+  const s = graph.metadata.audioSettings
+  if (s) {
+    lines.push(`SETTINGS\t${integer(String(s.renderAheadMs ?? 200))}\t${integer(String(s.requestedBufferSize ?? 0))}\t${integer(String(s.processingThreads ?? 0))}`)
   }
   lines.push('END')
   return `${lines.join('\n')}\n`

@@ -1,0 +1,47 @@
+@prefix : <http://purl.org/stuff/transmissions/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+:main a :Transmission ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Transmission" ;
+    :tempoMap ( [ :atBeat 0 ; :bpm 120 ] ) ;
+    :loopStart 0 ;
+    :loopEnd 16 ;
+    :loopEnabled false ;
+    :systemInputConnections ( "system:capture_1" "system:capture_2" ) ;
+    :systemOutputConnections ( "UMC404HD 192k-97:playback_AUX0" "UMC404HD 192k-97:playback_AUX1" ) ;
+    :audioSettings [ :renderAheadMs 200 ; :requestedBufferSize 0 ; :processingThreads 0 ] ;
+    :pipe ( :system-input :system-output :plugin-1 :plugin-2 ) ;
+    :connections ( [ :from :plugin-1 ; :to :plugin-2 ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-2 ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-2 ; :to :system-output ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] ) .
+
+:system-input a :AudioInput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Input" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 20 ;
+    :editorY 70 .
+
+:system-output a :AudioOutput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Output" ;
+    :audioInputs 2 ;
+    :midiInputs 1 ;
+    :editorX 600 ;
+    :editorY 181 .
+
+:plugin-1 a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "BassGen" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 35 ;
+    :editorY 191 ;
+    :settings [ :pluginPath "/home/danny/.vst3/bassgen.vst3" ] ;
+    :componentState "X19kcGZfc3RhdGVfYmVnaW5fXwBjb250cm9scwB2ZXJzaW9uPTIKcm9vdE5vdGU9MzYKc2NhbGU9MApnZW5yZT0wCnN0eWxlTW9kZT0wCmNoYW5uZWw9MQpsZW5ndGhCZWF0cz0xNgpzdWJkaXZpc2lvbj0xCmRlbnNpdHk9MC40NQpyZWc9MQpob2xkPTAuMzUKYWNjZW50PTAuNDUKY29sb3I9MC41CnZhcnk9MApmb2xsb3dEb2RnZT0wCmxpc3RlbkNoYW5uZWw9MTAKbGlzdGVuTm90ZT0zNgppbnB1dE1hdGNoTW9kZT0wCmlucHV0U2Vuc2l0aXZpdHk9MQpzZWVkPTEKYWN0aW9uTmV3PTAKYWN0aW9uTm90ZXM9MAphY3Rpb25SaHl0aG09MAoAcGF0dGVybgB2ZXJzaW9uPTIKcGF0dGVyblN0ZXBzPTY0CnN0ZXBzUGVyQmVhdD00CnN0ZXBzUGVyQmFyPTE2Cm1ldGVyTnVtZXJhdG9yPTQKbWV0ZXJEZW5vbWluYXRvcj00CmV2ZW50Q291bnQ9MTkKZ2VuZXJhdGlvblNlcmlhbD0xCmV2ZW50PTAsMSwzNiwxMDYKZXZlbnQ9MiwxLDM2LDk1CmV2ZW50PTMsMSw0Myw5NApldmVudD01LDIsNDMsOTIKZXZlbnQ9MTEsMSw0MSw4NgpldmVudD0xMywxLDM5LDk0CmV2ZW50PTE2LDEsMzgsMTA1CmV2ZW50PTE5LDMsMzksOTMKZXZlbnQ9MjksMSwzNiw5MApldmVudD0zMiwyLDM2LDEwMgpldmVudD0zOSwxLDM4LDkwCmV2ZW50PTQzLDEsMzYsOTQKZXZlbnQ9NDUsMSwzOCw5NQpldmVudD00NywxLDM5LDkwCmV2ZW50PTQ5LDEsNDEsOTMKZXZlbnQ9NTEsMiwzNiw4OQpldmVudD01OCwxLDQzLDk1CmV2ZW50PTYwLDEsNDMsMTAyCmV2ZW50PTYyLDEsNDEsODcKAHZhcmlhdGlvbgB2ZXJzaW9uPTEKY29tcGxldGVkTG9vcHM9MApsYXN0TXV0YXRpb25Mb29wPTAKAF9fZHBmX3N0YXRlX2VuZF9fAF9fZHBmX3BhcmFtZXRlcnNfYmVnaW5fXwByb290X25vdGUAMzYAc2NhbGUAMABnZW5yZQAwAHN0eWxlX21vZGUAMABjaGFubmVsADEAbGVuZ3RoX2JlYXRzADE2AHN1YmRpdmlzaW9uADEAZGVuc2l0eQAwLjQ0OTk5OTk4ODA3OQByZWdpc3RlcgAxAGhvbGQAMC4zNDk5OTk5OTQwNABhY2NlbnQAMC40NDk5OTk5ODgwNzkAc2VlZAAxAHZhcnkAMABuZXcAMABub3RlcwAwAHJoeXRobQAwAGZvbGxvd19kb2RnZQAwAGxpc3Rlbl9jaGFubmVsADEwAGxpc3Rlbl9ub3RlADM2AGNvbG9yADAuNQBpbnB1dF9tYXRjaAAwAGlucHV0X3NlbnNpdGl2aXR5ADEwMABfX2RwZl9wYXJhbWV0ZXJzX2VuZF9fAP4A" .
+
+:plugin-2 a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Basilico" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 308 ;
+    :editorY 190 ;
+    :settings [ :pluginPath "/home/danny/.vst3/basilico.vst3" ] ;
+    :componentState "X19kcGZfcGFyYW1ldGVyc19iZWdpbl9fAG1vZGVsADEAd2F2ZWZvcm0AMgBzdWJfbGV2ZWwAMC41NTAwMDAwMTE5MjEAYm9keQAwLjU1MDAwMDAxMTkyMQBiaXRlADAuMzQ5OTk5OTk0MDQAbXV0ZQAwLjM0OTk5OTk5NDA0AGdsaWRlADAuMTgwMDAwMDA3MTUzAGFjY2VudAAwLjQ0OTk5OTk4ODA3OQBjdXRvZmYAMC40Nzk5OTk5ODkyNzEAcmVzb25hbmNlADAuMjUAZmlsdGVyX2VudgAwLjQxOTk5OTk4Njg4NwBrZXlfdHJhY2sAMC40NDk5OTk5ODgwNzkAYXR0YWNrADAuMDE5OTk5OTk5NTUzAGRlY2F5ADAuMzAwMDAwMDExOTIxAHN1c3RhaW4AMC41NTAwMDAwMTE5MjEAcmVsZWFzZQAwLjIzOTk5OTk5NDYzNgBwdW5jaAAwLjQwMDAwMDAwNTk2AGRyaXZlX3R5cGUAMQBkcml2ZQAwLjI1AG91dHB1dAAwLjY5OTk5OTk4ODA3OQBsZm9fZnJlcXVlbmN5ADAuNQBsZm9fZGVwdGgAMAB3b2JibGVfc3luYwAwAHdvYmJsZV9kaXZpc2lvbgAzAHdvYmJsZV9zaGFwZQAwAGFtcF93b2JibGUAMABwaGFzZV93b2JibGUAMABzcXVlbGNoADAAd29iYmxlX3N0YXJ0ADAAZHBmX2J5cGFzcwAwAF9fZHBmX3BhcmFtZXRlcnNfZW5kX18A/gA=" .

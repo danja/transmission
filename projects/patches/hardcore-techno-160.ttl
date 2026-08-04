@@ -1,0 +1,190 @@
+@prefix : <http://purl.org/stuff/transmissions/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+:main a :Transmission ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Transmission" ;
+    :tempoMap ( [ :atBeat 0 ; :bpm 160 ] ) ;
+    :loopStart 0 ;
+    :loopEnd 128 ;
+    :loopEnabled true ;
+    :systemInputConnections ( "No connection" "No connection" ) ;
+    :systemOutputConnections ( "UMC404HD 192k:playback_AUX0" "UMC404HD 192k:playback_AUX1" ) ;
+    :pipe ( :system-input :drumgen :drumkit :xoxolo :bassgen :basilico :arpgen :canticle :sidecar :gremlin-driver :gremlin :oracle :ambo :rift :tmix :guardian :system-output ) ;
+    :connections ( [ :from :drumgen ; :to :drumkit ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :xoxolo ; :to :drumkit ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :bassgen ; :to :basilico ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :bassgen ; :to :arpgen ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :arpgen ; :to :canticle ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :sidecar ; :to :canticle ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :gremlin-driver ; :to :gremlin ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :drumkit ; :to :tmix ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :drumkit ; :to :tmix ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :basilico ; :to :ambo ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :basilico ; :to :ambo ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :ambo ; :to :oracle ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :ambo ; :to :oracle ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :oracle ; :to :rift ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :oracle ; :to :rift ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :rift ; :to :tmix ; :kind "audio" ; :fromPort 0 ; :toPort 2 ] [ :from :rift ; :to :tmix ; :kind "audio" ; :fromPort 1 ; :toPort 3 ] [ :from :canticle ; :to :tmix ; :kind "audio" ; :fromPort 0 ; :toPort 4 ] [ :from :canticle ; :to :tmix ; :kind "audio" ; :fromPort 1 ; :toPort 5 ] [ :from :gremlin ; :to :tmix ; :kind "audio" ; :fromPort 0 ; :toPort 6 ] [ :from :gremlin ; :to :tmix ; :kind "audio" ; :fromPort 1 ; :toPort 7 ] [ :from :tmix ; :to :guardian ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :tmix ; :to :guardian ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :guardian ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :guardian ; :to :system-output ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] ) .
+
+:system-input a :AudioInput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Input" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 560 .
+
+:drumgen a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "DrumGen" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 50 ;
+    :settings [ :pluginPath "/home/danny/.vst3/drumgen.vst3" ] ;
+    :parameters ( [ :parameterId 0 ; :normalizedValue 0.95 ] [ :parameterId 1 ; :normalizedValue 0.85 ] [ :parameterId 2 ; :normalizedValue 0.9 ] ) ;
+    :componentState "X19kcGZfc3RhdGVfYmVnaW5fXwBjb250cm9scwB2ZXJzaW9uPTIKZ2VucmU9MApzdHlsZU1vZGU9MApjaGFubmVsPTEwCmtpdE1hcD0wCmJhcnM9MgpyZXNvbHV0aW9uPTEKZGVuc2l0eT0wLjU4CnZhcmlhdGlvbj0wLjM1CmZpbGw9MC4zCnZhcnk9MApzZWVkPTEKa2lja0FtdD0wLjc4CmJhY2tiZWF0QW10PTAuNzYKaGF0QW10PTAuODIKYXV4QW10PTAuMjgKdG9tQW10PTAuMwptZXRhbEFtdD0wLjI2CmFjdGlvbk5ldz0wCmFjdGlvbk11dGF0ZT0wCmFjdGlvbkZpbGw9MAoAcGF0dGVybgB2ZXJzaW9uPTIKYmFycz0yCm1ldGVyTnVtZXJhdG9yPTQKbWV0ZXJEZW5vbWluYXRvcj00CnN0ZXBzUGVyQmVhdD00CnN0ZXBzUGVyQmFyPTE2CnRvdGFsU3RlcHM9MzIKZ2VuZXJhdGlvblNlcmlhbD0xCmxhbmU9MCwzNiwxMjQ6MSwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMTE4OjEsMDowLDA6MCwwOjAsMDowLDA6MCw5ODowLDA6MCwxMjQ6MSwwOjAsMDowLDA6MCwxMTk6MCwwOjAsMDowLDA6MCwxMjA6MSwwOjAsMDowLDA6MCwwOjAsMDowLDk4OjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowCmxhbmU9MSwzOSwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowCmxhbmU9Miw0MCwwOjAsMDowLDA6MCwwOjAsMTIyOjEsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDEyNDoxLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwxMjI6MSwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMTI0OjMsOTI6Miw5NjoyLDEwMDoyLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowCmxhbmU9Myw0MSw5NDoxLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDk0OjEsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAKbGFuZT00LDQyLDkyOjAsODI6MCw4NDowLDczOjAsOTI6MCwwOjAsODI6MCwwOjAsOTM6MCw3ODowLDgyOjAsMDowLDkyOjAsMDowLDgyOjAsMDowLDk2OjAsNzc6MCw4NDowLDgzOjAsOTI6MCwwOjAsODI6MCwwOjAsOTI6MCwwOjAsODI6MCw3MzowLDkyOjAsNzg6MCw4MjowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MApsYW5lPTUsNDUsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsOTY6MiwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsODk6MiwwOjAsMDowLDA6MCw5NjoyLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MApsYW5lPTYsNDYsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsNjk6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAKbGFuZT03LDUwLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDEwODozLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MApsYW5lPTgsNTEsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDExNjozLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowCmxhbmU9OSw1MiwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDg5OjIsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MApsYW5lPTEwLDUzLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAsMDowLDA6MCwwOjAKAHZhcmlhdGlvbgB2ZXJzaW9uPTEKY29tcGxldGVkTG9vcHM9MApsYXN0TXV0YXRpb25Mb29wPTAKAF9fZHBmX3N0YXRlX2VuZF9fAF9fZHBmX3BhcmFtZXRlcnNfYmVnaW5fXwBnZW5yZQAwAHN0eWxlX21vZGUAMABjaGFubmVsADEwAGtpdF9tYXAAMABiYXJzADIAcmVzb2x1dGlvbgAxAGRlbnNpdHkAMC41Nzk5OTk5ODMzMTEAdmFyaWF0aW9uADAuMzQ5OTk5OTk0MDQAZmlsbF9hbW91bnQAMC4zMDAwMDAwMTE5MjEAc2VlZAAxAGtpY2tfYW10ADAuNzc5OTk5OTcxMzkAYmFja2JlYXRfYW10ADAuNzU5OTk5OTkwNDYzAGhhdF9hbXQAMC44MTk5OTk5OTI4NDcAYXV4X2FtdAAwLjI4MDAwMDAwMTE5MgB0b21fYW10ADAuMzAwMDAwMDExOTIxAG1ldGFsX2FtdAAwLjI1OTk5OTk5MDQ2MwB2YXJ5ADAAX19kcGZfcGFyYW1ldGVyc19lbmRfXwD+AA==" .
+
+:drumkit a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "DrumKit" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 280 ;
+    :editorY 50 ;
+    :settings [ :pluginPath "/home/danny/.vst3/drumkit.vst3" ] ;
+    :parameters ( [ :parameterId 0 ; :normalizedValue 0.7 ] [ :parameterId 1 ; :normalizedValue 0.8 ] ) ;
+    :componentState "X19kcGZfcGFyYW1ldGVyc19iZWdpbl9fAGtpY2tfcGl0Y2gAMC4zNDk5OTk5OTQwNABraWNrX2RlY2F5ADAuNDAwMDAwMDA1OTYAa2lja19kcml2ZQAwLjMwMDAwMDAxMTkyMQBraWNrX3B1bmNoADAuMTUwMDAwMDA1OTYAa2lja19sZXZlbAAxAHNuYXJlX3RvbmUAMC41AHNuYXJlX3NuYXAAMC42MDAwMDAwMjM4NDIAc25hcmVfbGV2ZWwAMS4wNDk5OTk5NTIzMgBjbGFwX2RlbnNpdHkAMC41NTAwMDAwMTE5MjEAY2xhcF90b25lADAuNDQ5OTk5OTg4MDc5AGNsYXBfbGV2ZWwAMQB0b20xX3BpdGNoADAuNDAwMDAwMDA1OTYAdG9tMV9kZWNheQAwLjQ0OTk5OTk4ODA3OQB0b20xX2xldmVsADAuNzQwMDAwMDA5NTM3AHRvbTJfcGl0Y2gAMC41NTAwMDAwMTE5MjEAdG9tMl9kZWNheQAwLjQ0OTk5OTk4ODA3OQB0b20yX2xldmVsADAuNzIwMDAwMDI4NjEAaGhfY2xvc2VkX2JyaWdodG5lc3MAMC42MDAwMDAwMjM4NDIAaGhfY2xvc2VkX2RlY2F5ADAuMzAwMDAwMDExOTIxAGhoX2Nsb3NlZF9sZXZlbAAxLjA0OTk5OTk1MjMyAGhoX29wZW5fYnJpZ2h0bmVzcwAwLjY5OTk5OTk4ODA3OQBoaF9vcGVuX2RlY2F5ADAuNTUwMDAwMDExOTIxAGhoX29wZW5fbGV2ZWwAMS4wMTk5OTk5ODA5MwBjcmFzaF9icmlnaHRuZXNzADAuNjQ5OTk5OTc2MTU4AGNyYXNoX2RlY2F5ADAuNQBjcmFzaF9sZXZlbAAxAGNvd2JlbGxfdG9uZQAwLjQ0OTk5OTk4ODA3OQBjb3diZWxsX2RlY2F5ADAuMzQ5OTk5OTk0MDQAY293YmVsbF9sZXZlbAAxAGNsYXZlX3RvbmUAMC41AGNsYXZlX2RlY2F5ADAuMjUAY2xhdmVfbGV2ZWwAMQBiYXNoX3NpemUAMC40NDk5OTk5ODgwNzkAYmFzaF9zcHJlYWQAMC41NTAwMDAwMTE5MjEAYmFzaF9kZWNheQAwLjY5OTk5OTk4ODA3OQBiYXNoX2RyaXZlADAuNjQ5OTk5OTc2MTU4AGJhc2hfbm9pc2UAMC42MDAwMDAwMjM4NDIAYmFzaF9lZGdlADAuNjk5OTk5OTg4MDc5AGJhc2hfbGV2ZWwAMQBiaXRfY3J1c2gAMABtYXN0ZXJfZHJpdmUAMC4yNQBtYXN0ZXJfcmV2ZXJiADAuMjAwMDAwMDAyOTgAbWFzdGVyX2dhaW4AMC42OTk5OTk5ODgwNzkAa2lja19tdXRlADAAY2xhcF9tdXRlADAAc25hcmVfbXV0ZQAwAGNyYXNoX211dGUAMABoaF9jbG9zZWRfbXV0ZQAwAHRvbTFfbXV0ZQAwAGhoX29wZW5fbXV0ZQAwAHRvbTJfbXV0ZQAwAGJhc2hfbXV0ZQAwAGNvd2JlbGxfbXV0ZQAwAGNsYXZlX211dGUAMABraWNrX3RyYW5zaWVudAAwAGNsYXBfbWV0YWwAMABzbmFyZV9tZXRhbAAwAGNyYXNoX21ldGFsADAAaGhfY2xvc2VkX21ldGFsADAAdG9tMV9tZXRhbAAwAGhoX29wZW5fbWV0YWwAMAB0b20yX21ldGFsADAAY293YmVsbF9tZXRhbAAwAGNsYXZlX21ldGFsADAAX19kcGZfcGFyYW1ldGVyc19lbmRfXwD+AA==" .
+
+:xoxolo a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Xoxolo" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 120 ;
+    :settings [ :pluginPath "/home/danny/.vst3/xoxolo.vst3" ] ;
+    :parameters ( [ :parameterId 0 ; :normalizedValue 0.8 ] [ :parameterId 1 ; :normalizedValue 0.9 ] ) ;
+    :componentState "X19kcGZfc3RhdGVfYmVnaW5fXwBwYXR0ZXJuAHZlcnNpb249MwpiYXJzPTEKbGVuZ3RoPTE2CnJlc29sdXRpb249MgpjaGFubmVsPTEwCnByZXNldD0wCnN0ZXBzUGVyQmVhdD00CnN0ZXBzUGVyQmFyPTE2CnRvdGFsU3RlcHM9MTYKbGFuZT0wLDM2CnN0ZXBzPTAsMDAwMDAwMDAwMDAwMDAwMApsYW5lPTEsMzkKc3RlcHM9MSwwMDAwMDAwMDAwMDAwMDAwCmxhbmU9Miw0MApzdGVwcz0yLDAwMDAwMDAwMDAwMDAwMDAKbGFuZT0zLDQxCnN0ZXBzPTMsMDAwMDAwMDAwMDAwMDAwMApsYW5lPTQsNDIKc3RlcHM9NCwwMDAwMDAwMDAwMDAwMDAwCmxhbmU9NSw0NQpzdGVwcz01LDAwMDAwMDAwMDAwMDAwMDAKbGFuZT02LDQ2CnN0ZXBzPTYsMDAwMDAwMDAwMDAwMDAwMApsYW5lPTcsNTAKc3RlcHM9NywwMDAwMDAwMDAwMDAwMDAwCmxhbmU9OCw1MQpzdGVwcz04LDAwMDAwMDAwMDAwMDAwMDAKbGFuZT05LDUyCnN0ZXBzPTksMDAwMDAwMDAwMDAwMDAwMApsYW5lPTEwLDUzCnN0ZXBzPTEwLDAwMDAwMDAwMDAwMDAwMDAKbGFuZT0xMSwzNwpzdGVwcz0xMSwwMDAwMDAwMDAwMDAwMDAwCmxhbmU9MTIsMzgKc3RlcHM9MTIsMDAwMDAwMDAwMDAwMDAwMApsYW5lPTEzLDQwCnN0ZXBzPTEzLDAwMDAwMDAwMDAwMDAwMDAKbGFuZT0xNCw0MQpzdGVwcz0xNCwwMDAwMDAwMDAwMDAwMDAwCmxhbmU9MTUsNDMKc3RlcHM9MTUsMDAwMDAwMDAwMDAwMDAwMApsYW5lPTE2LDQ0CnN0ZXBzPTE2LDAwMDAwMDAwMDAwMDAwMDAKbGFuZT0xNyw0NQpzdGVwcz0xNywwMDAwMDAwMDAwMDAwMDAwCmxhbmU9MTgsNDYKc3RlcHM9MTgsMDAwMDAwMDAwMDAwMDAwMApsYW5lPTE5LDQ3CnN0ZXBzPTE5LDAwMDAwMDAwMDAwMDAwMDAKbGFuZT0yMCw0OApzdGVwcz0yMCwwMDAwMDAwMDAwMDAwMDAwCmxhbmU9MjEsNDkKc3RlcHM9MjEsMDAwMDAwMDAwMDAwMDAwMApsYW5lPTIyLDUwCnN0ZXBzPTIyLDAwMDAwMDAwMDAwMDAwMDAKbGFuZT0yMyw1MQpzdGVwcz0yMywwMDAwMDAwMDAwMDAwMDAwCmxhbmU9MjQsNTIKc3RlcHM9MjQsMDAwMDAwMDAwMDAwMDAwMApsYW5lPTI1LDUzCnN0ZXBzPTI1LDAwMDAwMDAwMDAwMDAwMDAKbGFuZT0yNiw1NApzdGVwcz0yNiwwMDAwMDAwMDAwMDAwMDAwCmxhbmU9MjcsNTUKc3RlcHM9MjcsMDAwMDAwMDAwMDAwMDAwMApsYW5lPTI4LDU3CnN0ZXBzPTI4LDAwMDAwMDAwMDAwMDAwMDAKAF9fZHBmX3N0YXRlX2VuZF9fAF9fZHBmX3BhcmFtZXRlcnNfYmVnaW5fXwBzdGVwcwAxNgByZXNvbHV0aW9uADIAY2hhbm5lbAAxMABub3RlX3ByZXNldAAwAHByZXZpZXdfbGFuZQAwAHByZXZpZXcAMABfX2RwZl9wYXJhbWV0ZXJzX2VuZF9fAP4A" .
+
+:bassgen a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "BassGen" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 180 ;
+    :settings [ :pluginPath "/home/danny/.vst3/bassgen.vst3" ] ;
+    :parameters ( [ :parameterId 0 ; :normalizedValue 0.85 ] [ :parameterId 1 ; :normalizedValue 0.9 ] [ :parameterId 2 ; :normalizedValue 0.75 ] ) ;
+    :componentState "X19kcGZfc3RhdGVfYmVnaW5fXwBjb250cm9scwB2ZXJzaW9uPTIKcm9vdE5vdGU9MzYKc2NhbGU9MApnZW5yZT0wCnN0eWxlTW9kZT0wCmNoYW5uZWw9MQpsZW5ndGhCZWF0cz0xNgpzdWJkaXZpc2lvbj0xCmRlbnNpdHk9MC40NQpyZWc9MQpob2xkPTAuMzUKYWNjZW50PTAuNDUKY29sb3I9MC41CnZhcnk9MApmb2xsb3dEb2RnZT0wCmxpc3RlbkNoYW5uZWw9MTAKbGlzdGVuTm90ZT0zNgppbnB1dE1hdGNoTW9kZT0wCmlucHV0U2Vuc2l0aXZpdHk9MQpzZWVkPTEKYWN0aW9uTmV3PTAKYWN0aW9uTm90ZXM9MAphY3Rpb25SaHl0aG09MAoAcGF0dGVybgB2ZXJzaW9uPTIKcGF0dGVyblN0ZXBzPTY0CnN0ZXBzUGVyQmVhdD00CnN0ZXBzUGVyQmFyPTE2Cm1ldGVyTnVtZXJhdG9yPTQKbWV0ZXJEZW5vbWluYXRvcj00CmV2ZW50Q291bnQ9MTkKZ2VuZXJhdGlvblNlcmlhbD0xCmV2ZW50PTAsMSwzNiwxMDYKZXZlbnQ9MiwxLDM2LDk1CmV2ZW50PTMsMSw0Myw5NApldmVudD01LDIsNDMsOTIKZXZlbnQ9MTEsMSw0MSw4NgpldmVudD0xMywxLDM5LDk0CmV2ZW50PTE2LDEsMzgsMTA1CmV2ZW50PTE5LDMsMzksOTMKZXZlbnQ9MjksMSwzNiw5MApldmVudD0zMiwyLDM2LDEwMgpldmVudD0zOSwxLDM4LDkwCmV2ZW50PTQzLDEsMzYsOTQKZXZlbnQ9NDUsMSwzOCw5NQpldmVudD00NywxLDM5LDkwCmV2ZW50PTQ5LDEsNDEsOTMKZXZlbnQ9NTEsMiwzNiw4OQpldmVudD01OCwxLDQzLDk1CmV2ZW50PTYwLDEsNDMsMTAyCmV2ZW50PTYyLDEsNDEsODcKAHZhcmlhdGlvbgB2ZXJzaW9uPTEKY29tcGxldGVkTG9vcHM9MApsYXN0TXV0YXRpb25Mb29wPTAKAF9fZHBmX3N0YXRlX2VuZF9fAF9fZHBmX3BhcmFtZXRlcnNfYmVnaW5fXwByb290X25vdGUAMzYAc2NhbGUAMABnZW5yZQAwAHN0eWxlX21vZGUAMABjaGFubmVsADEAbGVuZ3RoX2JlYXRzADE2AHN1YmRpdmlzaW9uADEAZGVuc2l0eQAwLjQ0OTk5OTk4ODA3OQByZWdpc3RlcgAxAGhvbGQAMC4zNDk5OTk5OTQwNABhY2NlbnQAMC40NDk5OTk5ODgwNzkAc2VlZAAxAHZhcnkAMABuZXcAMABub3RlcwAwAHJoeXRobQAwAGZvbGxvd19kb2RnZQAwAGxpc3Rlbl9jaGFubmVsADEwAGxpc3Rlbl9ub3RlADM2AGNvbG9yADAuNQBpbnB1dF9tYXRjaAAwAGlucHV0X3NlbnNpdGl2aXR5ADEwMABfX2RwZl9wYXJhbWV0ZXJzX2VuZF9fAP4A" .
+
+:basilico a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Basilico" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 280 ;
+    :editorY 180 ;
+    :settings [ :pluginPath "/home/danny/.vst3/basilico.vst3" ] ;
+    :parameters ( [ :parameterId 0 ; :normalizedValue 0.75 ] [ :parameterId 1 ; :normalizedValue 0.8 ] [ :parameterId 2 ; :normalizedValue 0.65 ] ) ;
+    :componentState "X19kcGZfcGFyYW1ldGVyc19iZWdpbl9fAG1vZGVsADEAd2F2ZWZvcm0AMgBzdWJfbGV2ZWwAMC41NTAwMDAwMTE5MjEAYm9keQAwLjU1MDAwMDAxMTkyMQBiaXRlADAuMzQ5OTk5OTk0MDQAbXV0ZQAwLjM0OTk5OTk5NDA0AGdsaWRlADAuMTgwMDAwMDA3MTUzAGFjY2VudAAwLjQ0OTk5OTk4ODA3OQBjdXRvZmYAMC40Nzk5OTk5ODkyNzEAcmVzb25hbmNlADAuMjUAZmlsdGVyX2VudgAwLjQxOTk5OTk4Njg4NwBrZXlfdHJhY2sAMC40NDk5OTk5ODgwNzkAYXR0YWNrADAuMDE5OTk5OTk5NTUzAGRlY2F5ADAuMzAwMDAwMDExOTIxAHN1c3RhaW4AMC41NTAwMDAwMTE5MjEAcmVsZWFzZQAwLjIzOTk5OTk5NDYzNgBwdW5jaAAwLjQwMDAwMDAwNTk2AGRyaXZlX3R5cGUAMQBkcml2ZQAwLjI1AG91dHB1dAAwLjY5OTk5OTk4ODA3OQBsZm9fZnJlcXVlbmN5ADAuNQBsZm9fZGVwdGgAMAB3b2JibGVfc3luYwAwAHdvYmJsZV9kaXZpc2lvbgAzAHdvYmJsZV9zaGFwZQAwAGFtcF93b2JibGUAMABwaGFzZV93b2JibGUAMABzcXVlbGNoADAAd29iYmxlX3N0YXJ0ADAAZHBmX2J5cGFzcwAwAF9fZHBmX3BhcmFtZXRlcnNfZW5kX18A/gA=" .
+
+:arpgen a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Arpgen" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 240 ;
+    :settings [ :pluginPath "/home/danny/.vst3/arpgen.vst3" ] ;
+    :parameters ( [ :parameterId 0 ; :normalizedValue 0.9 ] [ :parameterId 1 ; :normalizedValue 0.8 ] [ :parameterId 2 ; :normalizedValue 0.75 ] ) ;
+    :componentState "X19kcGZfcGFyYW1ldGVyc19iZWdpbl9fAG1vZGUAMABvcmRlcgAyAHJhdGUAMwBjYXB0dXJlX3NsaWNlADAAa2V5ADAAc2NhbGUAMABzY2FsZV9zaGFwZQAwAG9jdGF2ZXMAMgBnYXRlADAuNzIwMDAwMDI4NjEAdmVsb2NpdHlfZm9sbG93ADAuODAwMDAwMDExOTIxAHBhc3NfaW5wdXQAMABvdXRwdXRfY2hhbm5lbAAwAF9fZHBmX3BhcmFtZXRlcnNfZW5kX18A/gA=" .
+
+:canticle a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Canticle" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 280 ;
+    :editorY 240 ;
+    :settings [ :pluginPath "/home/danny/.vst3/canticle.vst3" ] ;
+    :parameters ( [ :parameterId 0 ; :normalizedValue 0.7 ] [ :parameterId 1 ; :normalizedValue 0.65 ] [ :parameterId 2 ; :normalizedValue 0.8 ] ) ;
+    :componentState "X19kcGZfcGFyYW1ldGVyc19iZWdpbl9fAG1vZGVsADAAdG9uZQAwLjUxOTk5OTk4MDkyNwBib2R5ADAuNTc5OTk5OTgzMzExAG1vdmVtZW50ADAuMjAwMDAwMDAyOTgAYXR0YWNrADAuMTAwMDAwMDAxNDkAZGVjYXkAMC4zNDAwMDAwMDM1NzYAc3VzdGFpbgAwLjc3OTk5OTk3MTM5AHJlbGVhc2UAMC40MTk5OTk5ODY4ODcAZGV0dW5lADAuMTgwMDAwMDA3MTUzAHdpZHRoADAuNjIwMDAwMDA0NzY4AGRyaXZlADAuMTAwMDAwMDAxNDkAb3V0cHV0ADAuNjgwMDAwMDA3MTUzAG1ldGFsADAAYXJ0aWN1bGF0aW9uADAAcmFuZ2UAMABlbnNlbWJsZQAwAF9fZHBmX3BhcmFtZXRlcnNfZW5kX18A/gA=" .
+
+:sidecar a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Sidecar" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 300 ;
+    :settings [ :pluginPath "/home/danny/.vst3/sidecar.vst3" ] ;
+    :parameters ( [ :parameterId 0 ; :normalizedValue 0.75 ] [ :parameterId 1 ; :normalizedValue 0.7 ] ) ;
+    :componentState "X19kcGZfc3RhdGVfYmVnaW5fXwBwaHJhc2UAdmVyc2lvbj0xCmJhcnM9NApiZWF0c1BlckJhcj00CmV2ZW50Q291bnQ9MTEKZXZlbnQ9MCwwLjUsNzgsMTAyCmV2ZW50PTEsMC4yNSw3MCw5MwpldmVudD0yLDAuMjUsNjgsNzgKZXZlbnQ9Mi41LDAuNSw3Myw3NApldmVudD0zLDAuNSw3MSw3OQpldmVudD0zLjUsMC4yNSw3Nyw3OQpldmVudD00LDAuNSw3NSw4NwpldmVudD00LjUsMC4yNSw3OSw3OApldmVudD01LDAuNSw3NywxMDAKZXZlbnQ9NiwwLjUsNzUsOTMKZXZlbnQ9Ni41LDAuNSw4MCw5MgoAX19kcGZfc3RhdGVfZW5kX18AX19kcGZfcGFyYW1ldGVyc19iZWdpbl9fAGNoYW5uZWwAMQBiYXJzADQAcmVnaXN0ZXIAMQByZWdpc3Rlcl9sb3cANTUAcmVnaXN0ZXJfaGlnaAA4MgBkZW5zaXR5ADAuNQByaXNrADAuMzQ5OTk5OTk0MDQAaHVtYW5pemUAMABtdXRlADAAZ2VuZXJhdGUAMABwbGF5ADAAYWNjZXB0ADAAcmV0cnkAMABzb3VyY2UAMABfX2RwZl9wYXJhbWV0ZXJzX2VuZF9fAP4A" .
+
+:gremlin-driver a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "GremlinDriver" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 360 ;
+    :settings [ :pluginPath "/home/danny/.vst3/gremlin_driver.vst3" ] ;
+    :componentState "X19kcGZfcGFyYW1ldGVyc19iZWdpbl9fAGNsb2NrX21vZGUAMQBicG0AMTIwAGxhbmUxX3RhcmdldAAyAGxhbmUxX3NoYXBlADEAbGFuZTFfcmF0ZQAwLjE4MDAwMDAwNzE1MwBsYW5lMV9kZXB0aAAwLjUAbGFuZTFfY2VudGVyADAuNTYwMDAwMDAyMzg0AGxhbmUyX3RhcmdldAAzAGxhbmUyX3NoYXBlADUAbGFuZTJfcmF0ZQAwLjE0MDAwMDAwMDU5NgBsYW5lMl9kZXB0aAAwLjY5OTk5OTk4ODA3OQBsYW5lMl9jZW50ZXIAMC42MjAwMDAwMDQ3NjgAbGFuZTNfdGFyZ2V0ADUAbGFuZTNfc2hhcGUAMwBsYW5lM19yYXRlADAuMTAwMDAwMDAxNDkAbGFuZTNfZGVwdGgAMC42MjAwMDAwMDQ3NjgAbGFuZTNfY2VudGVyADAuNTE5OTk5OTgwOTI3AGxhbmU0X3RhcmdldAA2AGxhbmU0X3NoYXBlADYAbGFuZTRfcmF0ZQAwLjIwMDAwMDAwMjk4AGxhbmU0X2RlcHRoADAuNjIwMDAwMDA0NzY4AGxhbmU0X2NlbnRlcgAwLjI4MDAwMDAwMTE5MgB0cmlnZ2VyMV9hY3Rpb24AMgB0cmlnZ2VyMV9yYXRlADAuMzE5OTk5OTkyODQ3AHRyaWdnZXIxX2NoYW5jZQAwLjY4MDAwMDAwNzE1MwB0cmlnZ2VyMl9hY3Rpb24ANQB0cmlnZ2VyMl9yYXRlADAuMTE5OTk5OTk3MzE4AHRyaWdnZXIyX2NoYW5jZQAwLjIxOTk5OTk5ODgwOABwYXNzX2lucHV0ADEAX19kcGZfcGFyYW1ldGVyc19lbmRfXwD+AA==" .
+
+:gremlin a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Gremlin" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 280 ;
+    :editorY 360 ;
+    :settings [ :pluginPath "/home/danny/.vst3/gremlin.vst3" ] ;
+    :parameters ( [ :parameterId 0 ; :normalizedValue 0.8 ] [ :parameterId 1 ; :normalizedValue 0.75 ] [ :parameterId 2 ; :normalizedValue 0.6 ] ) ;
+    :componentState "X19kcGZfcGFyYW1ldGVyc19iZWdpbl9fAG1vZGUAMABkYW1hZ2UAMC4zNDAwMDAwMDM1NzYAY2hhb3MAMC4zNzk5OTk5OTUyMzIAbm9pc2UAMC4xMDAwMDAwMDE0OQBkcmlmdAAwLjE4MDAwMDAwNzE1MwBjcnVuY2gAMC4xODAwMDAwMDcxNTMAZm9sZAAwLjE4MDAwMDAwNzE1MwBkZWxheV90aW1lADAuMjM5OTk5OTk0NjM2AGZlZWRiYWNrADAuMzQwMDAwMDAzNTc2AHdhcnAAMC4yMzk5OTk5OTQ2MzYAc3R1dHRlcgAwLjIwMDAwMDAwMjk4AHRvbmUAMC43NTk5OTk5OTA0NjMAZGFtcGluZwAwLjYwMDAwMDAyMzg0MgBzcGFjZQAwLjMxOTk5OTk5Mjg0NwBhdHRhY2sAMC4wMTk5OTk5OTk1NTMAcmVsZWFzZQAwLjExOTk5OTk5NzMxOABvdXRwdXQAMC40MDAwMDAwMDU5NgBzb3VyY2VfZ2FpbgAwLjYyMDAwMDAwNDc2OABidXJzdAAwLjcyMDAwMDAyODYxAHBpdGNoX3NwcmVhZAAwLjIzOTk5OTk5NDYzNgBkZWxheV9taXgAMC4zMDAwMDAwMTE5MjEAY3Jvc3NfZmVlZGJhY2sAMC4yODAwMDAwMDExOTIAZ2xpdGNoX2xlbmd0aAAwLjIxOTk5OTk5ODgwOABjaGFvc19yYXRlADAuMzE5OTk5OTkyODQ3AGR1Y2sAMC4zMTk5OTk5OTI4NDcAbWFzdGVyX3RyaW0AMC40NDk5OTk5ODgwNzkAbWFjcm9fc291cmNlADAuNQBtYWNyb19waXRjaAAwLjUAbWFjcm9fYnJlYWthZ2UAMC41AG1hY3JvX2RlbGF5ADAuNQBtYWNyb19zcGFjZQAwLjUAbWFjcm9fc3R1dHRlcgAwLjUAbWFjcm9fdG9uZQAwLjUAbWFjcm9fb3V0cHV0ADAuNQBtb21lbnRhcnlfZnJlZXplADAAbW9tZW50YXJ5X3N0dXR0ZXJfbWF4ADAAbW9tZW50YXJ5X2NoYW9zX2Jvb3N0ADAAbW9tZW50YXJ5X2NydW5jaF9ibGFzdAAwAG1vbWVudGFyeV9mZWVkYmFja19wdXNoADAAbW9tZW50YXJ5X3dhcnBfcHVzaAAwAG1vbWVudGFyeV9ub2lzZV9idXJzdAAwAG1vbWVudGFyeV9kdWNrX2tpbGwAMABfX2RwZl9wYXJhbWV0ZXJzX2VuZF9fAP4A" .
+
+:oracle a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Oracle" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 420 ;
+    :settings [ :pluginPath "/home/danny/.vst3/oracle.vst3" ] ;
+    :parameters ( [ :parameterId 0 ; :normalizedValue 0.6 ] [ :parameterId 1 ; :normalizedValue 0.7 ] ) ;
+    :componentState "X19kcGZfcGFyYW1ldGVyc19iZWdpbl9fAHNtb290aGluZwAwLjcyMDAwMDAyODYxAG9uc2V0X3RocmVzaG9sZAAwLjA3OTk5OTk5ODIxMTkAcmVzcG9uc2VfY2hhbmNlADAuMzQ5OTk5OTk0MDQAbWluX25vdGUANDgAbWF4X25vdGUAODQAY2hhbm5lbAAyAGxldmVsX2NjADMwAGJyaWdodG5lc3NfY2MAMzEAZGVuc2l0eV9jYwAzMgBwaXRjaF9jYwAzMwBwYXNzX2lucHV0ADEAc2VlZAA3OTA3AGZlZWRiYWNrX2d1YXJkADIAX19kcGZfcGFyYW1ldGVyc19lbmRfXwD+AA==" .
+
+:ambo a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Ambo" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 520 ;
+    :editorY 180 ;
+    :settings [ :pluginPath "/home/danny/.vst3/ambo.vst3" ] ;
+    :parameters ( [ :parameterId 0 ; :normalizedValue 0.6 ] [ :parameterId 1 ; :normalizedValue 0.7 ] [ :parameterId 2 ; :normalizedValue 0.55 ] ) ;
+    :componentState "X19kcGZfc3RhdGVfYmVnaW5fXwBwYXJhbWV0ZXJzAHZlcnNpb249MQpjaGFpbj0wLjAwMDAwMAp0aW1lPTAuMzAwMDAwCnNwZWN0cmFsPTAuMjQwMDAwCnRhcGU9MC4yMjAwMDAKc2hpbW1lcj0wLjM2MDAwMApkZWxheT0wLjI4MDAwMApkcml2ZT0wLjEyMDAwMApmZWVkYmFjaz0wLjE4MDAwMAptaXg9MC41NTAwMDAKb3V0cHV0PTAuMDAwMDAwCmJ5cGFzcz0wLjAwMDAwMAoAX19kcGZfc3RhdGVfZW5kX18AX19kcGZfcGFyYW1ldGVyc19iZWdpbl9fAGNoYWluADAAdGltZQAwLjMwMDAwMDAxMTkyMQBzcGVjdHJhbAAwLjIzOTk5OTk5NDYzNgB0YXBlADAuMjE5OTk5OTk4ODA4AHNoaW1tZXIAMC4zNjAwMDAwMTQzMDUAZGVsYXkAMC4yODAwMDAwMDExOTIAZHJpdmUAMC4xMTk5OTk5OTczMTgAZmVlZGJhY2sAMC4xODAwMDAwMDcxNTMAbWl4ADAuNTUwMDAwMDExOTIxAG91dHB1dAAwAGRwZl9ieXBhc3MAMABfX2RwZl9wYXJhbWV0ZXJzX2VuZF9fAP4A" .
+
+:rift a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Rift" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 760 ;
+    :editorY 180 ;
+    :settings [ :pluginPath "/home/danny/.vst3/rift.vst3" ] ;
+    :parameters ( [ :parameterId 0 ; :normalizedValue 0.7 ] [ :parameterId 1 ; :normalizedValue 0.65 ] [ :parameterId 2 ; :normalizedValue 0.55 ] ) ;
+    :componentState "X19kcGZfc3RhdGVfYmVnaW5fXwBwYXJhbWV0ZXJzAHZlcnNpb249NQpncmlkPTguMDAwMDAwCmRlbnNpdHk9MC4wMDAwMDAKZHViPTAuMDAwMDAwCmRhbWFnZT00NS4wMDAwMDAKbWVtb3J5QmFycz0yLjAwMDAwMApkcmlmdD0yMC4wMDAwMDAKcGl0Y2g9MC4wMDAwMDAKbWl4PTEwMC4wMDAwMDAKYmxlbmQ9MjAuMDAwMDAwCmhvbGQ9MC4wMDAwMDAKc291cmNlTW9kZT0wLjAwMDAwMApzYW1wbGVCZWF0cz00LjAwMDAwMApjaG9wPTAuMDAwMDAwCgBzYW1wbGVfcGF0aAAAc2VxdWVuY2UAdmVyc2lvbj0xCmNlbGxzPTAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsMCwwLDAsCgBfX2RwZl9zdGF0ZV9lbmRfXwBfX2RwZl9wYXJhbWV0ZXJzX2JlZ2luX18AZ3JpZAA4AGRlbnNpdHkAMABkYW1hZ2UANDUAbWVtb3J5X2JhcnMAMgBkcmlmdAAyMABwaXRjaAAwAG1peAAxMDAAaG9sZAAwAGJsZW5kADIwAHNvdXJjZQAwAHNhbXBsZV9iZWF0cwA0AGNob3AAMABkdWIAMABfX2RwZl9wYXJhbWV0ZXJzX2VuZF9fAP4A" .
+
+:tmix a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "T-Mix" ;
+    :audioInputs 8 ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 1000 ;
+    :editorY 240 ;
+    :settings [ :pluginPath "/home/danny/.vst3/t_mix.vst3" ] ;
+    :parameters ( [ :parameterId 2 ; :normalizedValue 0.82 ] [ :parameterId 3 ; :normalizedValue 0.82 ] [ :parameterId 4 ; :normalizedValue 0.75 ] [ :parameterId 5 ; :normalizedValue 0.75 ] [ :parameterId 6 ; :normalizedValue 0.7 ] [ :parameterId 7 ; :normalizedValue 0.7 ] [ :parameterId 8 ; :normalizedValue 0.65 ] [ :parameterId 9 ; :normalizedValue 0.65 ] [ :parameterId 10 ; :normalizedValue 0.6 ] [ :parameterId 11 ; :normalizedValue 0.6 ] ) ;
+    :componentState "X19kcGZfc3RhdGVfYmVnaW5fXwBwYXJhbWV0ZXJzAHZlcnNpb249MwptYXN0ZXJfZGI9MC4wMDAwMDAKcHJvZHVjZXJfc2xld19tcz0yNS4wMDAwMDAKcHJvZHVjZXJfY29udHJvbF9jaGFubmVsPTAuMDAwMDAwCnJlcXVpcmVfcHJvZHVjZXJfZ2F0ZT0wLjAwMDAwMApjaGFubmVsMC5sZXZlbF9kYj0wLjAwMDAwMApjaGFubmVsMC5wYW49MC4wMDAwMDAKY2hhbm5lbDAubXV0ZT0wLjAwMDAwMApjaGFubmVsMC5zb2xvPTAuMDAwMDAwCmNoYW5uZWwxLmxldmVsX2RiPTAuMDAwMDAwCmNoYW5uZWwxLnBhbj0wLjAwMDAwMApjaGFubmVsMS5tdXRlPTAuMDAwMDAwCmNoYW5uZWwxLnNvbG89MC4wMDAwMDAKY2hhbm5lbDIubGV2ZWxfZGI9MC4wMDAwMDAKY2hhbm5lbDIucGFuPTAuMDAwMDAwCmNoYW5uZWwyLm11dGU9MC4wMDAwMDAKY2hhbm5lbDIuc29sbz0wLjAwMDAwMApjaGFubmVsMy5sZXZlbF9kYj0wLjAwMDAwMApjaGFubmVsMy5wYW49MC4wMDAwMDAKY2hhbm5lbDMubXV0ZT0wLjAwMDAwMApjaGFubmVsMy5zb2xvPTAuMDAwMDAwCmNoYW5uZWw0LmxldmVsX2RiPTAuMDAwMDAwCmNoYW5uZWw0LnBhbj0wLjAwMDAwMApjaGFubmVsNC5tdXRlPTAuMDAwMDAwCmNoYW5uZWw0LnNvbG89MC4wMDAwMDAKY2hhbm5lbDUubGV2ZWxfZGI9MC4wMDAwMDAKY2hhbm5lbDUucGFuPTAuMDAwMDAwCmNoYW5uZWw1Lm11dGU9MC4wMDAwMDAKY2hhbm5lbDUuc29sbz0wLjAwMDAwMApjaGFubmVsNi5sZXZlbF9kYj0wLjAwMDAwMApjaGFubmVsNi5wYW49MC4wMDAwMDAKY2hhbm5lbDYubXV0ZT0wLjAwMDAwMApjaGFubmVsNi5zb2xvPTAuMDAwMDAwCmNoYW5uZWw3LmxldmVsX2RiPTAuMDAwMDAwCmNoYW5uZWw3LnBhbj0wLjAwMDAwMApjaGFubmVsNy5tdXRlPTAuMDAwMDAwCmNoYW5uZWw3LnNvbG89MC4wMDAwMDAKAF9fZHBmX3N0YXRlX2VuZF9fAF9fZHBmX3BhcmFtZXRlcnNfYmVnaW5fXwBjaGFubmVsXzFfbGV2ZWwAMABjaGFubmVsXzJfbGV2ZWwAMABjaGFubmVsXzNfbGV2ZWwAMABjaGFubmVsXzRfbGV2ZWwAMABjaGFubmVsXzVfbGV2ZWwAMABjaGFubmVsXzZfbGV2ZWwAMABjaGFubmVsXzdfbGV2ZWwAMABjaGFubmVsXzhfbGV2ZWwAMABjaGFubmVsXzFfcGFuADAAY2hhbm5lbF8yX3BhbgAwAGNoYW5uZWxfM19wYW4AMABjaGFubmVsXzRfcGFuADAAY2hhbm5lbF81X3BhbgAwAGNoYW5uZWxfNl9wYW4AMABjaGFubmVsXzdfcGFuADAAY2hhbm5lbF84X3BhbgAwAGNoYW5uZWxfMV9tdXRlADAAY2hhbm5lbF8yX211dGUAMABjaGFubmVsXzNfbXV0ZQAwAGNoYW5uZWxfNF9tdXRlADAAY2hhbm5lbF81X211dGUAMABjaGFubmVsXzZfbXV0ZQAwAGNoYW5uZWxfN19tdXRlADAAY2hhbm5lbF84X211dGUAMABjaGFubmVsXzFfc29sbwAwAGNoYW5uZWxfMl9zb2xvADAAY2hhbm5lbF8zX3NvbG8AMABjaGFubmVsXzRfc29sbwAwAGNoYW5uZWxfNV9zb2xvADAAY2hhbm5lbF82X3NvbG8AMABjaGFubmVsXzdfc29sbwAwAGNoYW5uZWxfOF9zb2xvADAAbWFzdGVyX2xldmVsADAAcHJvZHVjZXJfc2xld19tcwAyNQBwcm9kdWNlcl9jb250cm9sX2NoYW5uZWwAMAByZXF1aXJlX3Byb2R1Y2VyX2dhdGUAMABfX2RwZl9wYXJhbWV0ZXJzX2VuZF9fAP4A" .
+
+:guardian a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Guardian" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 1240 ;
+    :editorY 240 ;
+    :settings [ :pluginPath "/home/danny/.vst3/guardian.vst3" ] ;
+    :parameters ( [ :parameterId 0 ; :normalizedValue 0.95 ] [ :parameterId 10 ; :normalizedValue 0.000015259 ] ) ;
+    :componentState "X19kcGZfcGFyYW1ldGVyc19iZWdpbl9fAGNlaWxpbmdfZGIALTEAbG9va2FoZWFkX21zADUAcmVsZWFzZV9tcwAxMjAAZGNfcmVtb3ZlADEAdHJ1ZV9wZWFrADEAc29mdF9jbGlwADEAc2lsZW5jZV9kYgAtNzIAcmVzZXQAMABfX2RwZl9wYXJhbWV0ZXJzX2VuZF9fAP4A" .
+
+:system-output a :AudioOutput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Output" ;
+    :audioInputs 2 ;
+    :midiInputs 1 ;
+    :editorX 1690 ;
+    :editorY 239 .

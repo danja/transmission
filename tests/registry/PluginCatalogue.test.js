@@ -7,7 +7,7 @@ const downspoutProfile = new URL('../../profiles/downspout.ttl', import.meta.url
 describe('PluginCatalogue', () => {
   it('loads Downspout RDF profiles and merges authoritative semantics with discovered facts', async () => {
     const catalogue = new PluginCatalogue()
-    expect(await catalogue.loadProfileFile(downspoutProfile)).toBe(36)
+    expect(await catalogue.loadProfileFile(downspoutProfile)).toBe(37)
     catalogue.replaceDiscoveries([{
       classId: 'drumgen-class',
       name: 'DrumGen',

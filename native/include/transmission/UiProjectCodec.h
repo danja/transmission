@@ -92,6 +92,9 @@ struct UiProject {
     std::vector<UiProjectMidiClip> midiClips;
     std::vector<UiProjectGainLane> gainLanes;
     std::vector<UiProjectMidiParameterMapping> midiMappings;
+    std::size_t renderAheadMilliseconds = 200;
+    std::size_t requestedBufferSize = 0;
+    std::size_t processingThreads = 0;
 };
 
 std::string encodeUiProject(const UiProject& project);

@@ -61,7 +61,7 @@ describe('native UI Turtle project helper', () => {
     expect(turtle).toContain(':controller 19')
 
     const restored = await runHelper('load', filePath)
-    expect(restored).toContain('TRANSMISSION_UI\t5')
+    expect(restored).toContain('TRANSMISSION_UI\t6')
     expect(restored).toContain('TRANSPORT\t132\t8\t1')
     expect(restored).toContain(`NODE\t${hex('drumgen')}`)
     expect(restored).toContain(`EDGE\t${hex('drumgen')}\t${hex('drumkit')}\t1\t0\t0`)

@@ -4,6 +4,7 @@
 #include "transmission/AudioProcessor.h"
 #include "transmission/GraphRuntimeController.h"
 #include "transmission/JackConnectionManager.h"
+#include "transmission/JackPortIdentity.h"
 #include "transmission/JackAudioDevice.h"
 #include "transmission/OfflineAudioRenderer.h"
 #include "transmission/UiProjectCodec.h"
@@ -16,6 +17,7 @@
 #include <atomic>
 #include <chrono>
 #include <cctype>
+#include <ctime>
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
@@ -136,6 +138,9 @@ struct GraphView {
     GtkWidget* renderDialog = nullptr;
     GtkProgressBar* renderProgressBar = nullptr;
     bool renderInProgress = false;
+    GtkWidget* consoleWindow = nullptr;
+    GtkWidget* consoleTextView = nullptr;
+    GtkWidget* consoleEntry = nullptr;
 };
 
 struct PluginDialogContext {
@@ -209,7 +214,21 @@ struct NodeMenuContext {
     std::size_t node = static_cast<std::size_t>(-1);
 };
 
+void logConsole(GraphView& view, const std::string& message) {
+    if (!view.consoleTextView) return;
+    auto* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view.consoleTextView));
+    const auto now = std::time(nullptr);
+    char ts[12];
+    std::strftime(ts, sizeof(ts), "[%H:%M:%S] ", std::localtime(&now));
+    GtkTextIter end;
+    gtk_text_buffer_get_end_iter(buffer, &end);
+    gtk_text_buffer_insert(buffer, &end, (std::string(ts) + message + "\n").c_str(), -1);
+    auto* mark = gtk_text_buffer_get_insert(buffer);
+    gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(view.consoleTextView), mark);
+}
+
 void setStatus(GraphView& view, const std::string& message, bool error = false) {
+    logConsole(view, error ? "[error] " + message : message);
     if (!error || !view.window) return;
     auto* dialog = gtk_message_dialog_new(
         GTK_WINDOW(view.window),
@@ -1203,6 +1222,7 @@ gboolean retryExternalConnections(gpointer data) {
     if (!pending) {
         view.externalConnectionTimer = 0;
         view.externalConnectionAttempts = 0;
+        logConsole(view, "JACK connections established");
         return G_SOURCE_REMOVE;
     }
     ++view.externalConnectionAttempts;
@@ -1314,6 +1334,23 @@ void showSystemDialog(GtkWidget* canvas, GraphView& view, bool input) {
         gtk_grid_attach(GTK_GRID(grid), GTK_WIDGET(selector), 1, static_cast<gint>(index), 1, 1);
         context->selectors[index] = selector;
     }
+    if (!jackPorts.empty()) {
+        std::string resolvedText = "Resolved JACK ports:";
+        for (std::size_t index = 0; index < connections.size(); ++index) {
+            const auto resolved = transmission::resolveJackPortName(
+                connections[index], jackPorts);
+            resolvedText += "\n  Ch " + std::to_string(index + 1) + ": ";
+            if (resolved == connections[index])
+                resolvedText += resolved;
+            else
+                resolvedText += connections[index] + "  →  " + resolved;
+        }
+        auto* resolvedLabel = gtk_label_new(resolvedText.c_str());
+        gtk_label_set_xalign(GTK_LABEL(resolvedLabel), 0.0F);
+        gtk_label_set_line_wrap(GTK_LABEL(resolvedLabel), TRUE);
+        gtk_widget_set_margin_top(resolvedLabel, 8);
+        gtk_box_pack_start(GTK_BOX(content), resolvedLabel, FALSE, FALSE, 0);
+    }
     g_signal_connect(dialog, "response", G_CALLBACK(systemDialogResponse), context);
     gtk_widget_show_all(dialog);
 }
@@ -1412,6 +1449,7 @@ void playStopClicked(GtkButton*, gpointer data) {
         return;
     }
     scheduleExternalConnections(view);
+    logConsole(view, "Audio started — waiting for JACK connections");
     startTransportTimer(view);
     if (!bufferWarning.empty())
         setStatus(view, "Audio started, but " + bufferWarning, true);
@@ -1419,6 +1457,139 @@ void playStopClicked(GtkButton*, gpointer data) {
     setStatus(view, "This UI build requires both JACK and VST3 support", true);
 #endif
     updateTransportDisplay(view);
+}
+
+void consoleCommandActivated(GtkEntry* entry, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    const gchar* raw = gtk_entry_get_text(entry);
+    std::string cmd(raw ? raw : "");
+    gtk_entry_set_text(entry, "");
+    // Trim leading/trailing whitespace
+    const auto start = cmd.find_first_not_of(" \t");
+    if (start == std::string::npos) return;
+    const auto end = cmd.find_last_not_of(" \t");
+    cmd = cmd.substr(start, end - start + 1);
+    logConsole(view, "> " + cmd);
+    if (cmd == "help" || cmd == "?") {
+        logConsole(view, "Commands: status  lsp  reconnect  clear  help");
+    } else if (cmd == "clear") {
+        if (view.consoleTextView) {
+            auto* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view.consoleTextView));
+            gtk_text_buffer_set_text(buffer, "", 0);
+        }
+    } else if (cmd == "status") {
+        const bool jackOk = view.jackConnections && view.jackConnections->available();
+        logConsole(view, std::string("JACK: ") + (jackOk ? "available" : "not available"));
+        logConsole(view, std::string("Runtime: ") + (runtimeRunning(view) ? "running" : "stopped"));
+        logConsole(view, "Output ports: " + view.systemOutputConnections[0] +
+                         ", " + view.systemOutputConnections[1]);
+        logConsole(view, "Input ports: " + view.systemInputConnections[0] +
+                         ", " + view.systemInputConnections[1]);
+    } else if (cmd == "lsp") {
+        if (!view.jackConnections || !view.jackConnections->available()) {
+            logConsole(view, "JACK not available");
+        } else {
+            logConsole(view, "Output destinations:");
+            for (const auto& dest : view.jackConnections->outputDestinations())
+                logConsole(view, "  " + dest);
+            logConsole(view, "Input sources:");
+            for (const auto& src : view.jackConnections->inputSources())
+                logConsole(view, "  " + src);
+        }
+    } else if (cmd == "reconnect") {
+        if (!runtimeRunning(view)) {
+            logConsole(view, "Reconnect: audio is not running");
+        } else {
+            std::string error;
+            if (!applyExternalConnections(view, error))
+                logConsole(view, "[error] " + error);
+            else
+                logConsole(view, "JACK ports reconnected");
+        }
+    } else {
+        logConsole(view, "Unknown command. Type help for a list.");
+    }
+}
+
+void showConsoleWindow(GraphView& view) {
+    if (!view.consoleWindow) {
+        auto* win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+        gtk_window_set_title(GTK_WINDOW(win), "Transmission — Console");
+        gtk_window_set_default_size(GTK_WINDOW(win), 700, 400);
+        gtk_window_set_transient_for(GTK_WINDOW(win), GTK_WINDOW(view.window));
+
+        auto* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+        gtk_container_set_border_width(GTK_CONTAINER(vbox), 4);
+        gtk_container_add(GTK_CONTAINER(win), vbox);
+
+        // Scrolled text view for log output
+        auto* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
+        gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled),
+                                       GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+        gtk_widget_set_vexpand(scrolled, TRUE);
+
+        auto* textView = gtk_text_view_new();
+        gtk_text_view_set_editable(GTK_TEXT_VIEW(textView), FALSE);
+        gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(textView), FALSE);
+        gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(textView), GTK_WRAP_WORD_CHAR);
+        gtk_text_view_set_monospace(GTK_TEXT_VIEW(textView), TRUE);
+        gtk_text_view_set_left_margin(GTK_TEXT_VIEW(textView), 4);
+        gtk_text_view_set_right_margin(GTK_TEXT_VIEW(textView), 4);
+        gtk_text_view_set_top_margin(GTK_TEXT_VIEW(textView), 4);
+        gtk_text_view_set_bottom_margin(GTK_TEXT_VIEW(textView), 4);
+        gtk_container_add(GTK_CONTAINER(scrolled), textView);
+        gtk_box_pack_start(GTK_BOX(vbox), scrolled, TRUE, TRUE, 0);
+
+        // Bottom input row: prompt label, entry, send button
+        auto* hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+        auto* promptLabel = gtk_label_new(">");
+        gtk_box_pack_start(GTK_BOX(hbox), promptLabel, FALSE, FALSE, 0);
+
+        auto* entry = gtk_entry_new();
+        gtk_widget_set_hexpand(entry, TRUE);
+        gtk_box_pack_start(GTK_BOX(hbox), entry, TRUE, TRUE, 0);
+
+        auto* sendButton = gtk_button_new_with_label("Send");
+        gtk_box_pack_start(GTK_BOX(hbox), sendButton, FALSE, FALSE, 0);
+
+        gtk_box_pack_start(GTK_BOX(vbox), hbox, FALSE, FALSE, 0);
+
+        view.consoleTextView = textView;
+        view.consoleEntry = entry;
+        view.consoleWindow = win;
+
+        g_signal_connect(entry, "activate", G_CALLBACK(consoleCommandActivated), &view);
+        g_signal_connect(sendButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) {
+            auto* v = static_cast<GraphView*>(data);
+            consoleCommandActivated(GTK_ENTRY(v->consoleEntry), data);
+        }), &view);
+        g_signal_connect(win, "delete-event", G_CALLBACK(+[](GtkWidget* w, GdkEvent*, gpointer) -> gboolean {
+            gtk_widget_hide(w);
+            return TRUE;
+        }), nullptr);
+
+        gtk_widget_show_all(win);
+        logConsole(view, "Console ready. Commands: status  lsp  reconnect  clear  help");
+    } else {
+        gtk_window_present(GTK_WINDOW(view.consoleWindow));
+    }
+}
+
+void showConsoleActivated(GtkMenuItem*, gpointer data) {
+    showConsoleWindow(*static_cast<GraphView*>(data));
+}
+
+void reconnectJackActivated(GtkMenuItem*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    if (!runtimeRunning(view)) {
+        setStatus(view, "Reconnect JACK ports: audio is not running");
+        return;
+    }
+    std::string error;
+    if (!applyExternalConnections(view, error))
+        setStatus(view, error, true);
+    else
+        setStatus(view, "JACK ports reconnected");
 }
 
 void audioSettingsActivated(GtkMenuItem*, gpointer data) {
@@ -2018,6 +2189,9 @@ transmission::UiProject captureProject(const GraphView& view) {
     }
     project.systemInputConnections = view.systemInputConnections;
     project.systemOutputConnections = view.systemOutputConnections;
+    project.renderAheadMilliseconds = view.renderAheadMilliseconds;
+    project.requestedBufferSize = view.requestedBufferSize;
+    project.processingThreads = view.processingThreads;
     project.tempo = gtk_spin_button_get_value(view.tempo);
     project.loopBars = gtk_spin_button_get_value(view.loopBars);
     project.loopEnabled = gtk_toggle_button_get_active(view.loop);
@@ -2183,6 +2357,9 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
     }
     view.systemInputConnections = normalized.systemInputConnections;
     view.systemOutputConnections = normalized.systemOutputConnections;
+    view.renderAheadMilliseconds = normalized.renderAheadMilliseconds;
+    view.requestedBufferSize = normalized.requestedBufferSize;
+    view.processingThreads = normalized.processingThreads;
     view.arrangementLengthBeats = normalized.arrangementLengthBeats;
     view.midiClips = normalized.midiClips;
     view.gainLanes = normalized.gainLanes;
@@ -2783,11 +2960,21 @@ void activate(GtkApplication* application, gpointer) {
     auto* settingsMenu = gtk_menu_new();
     auto* audioSettingsItem =
         gtk_menu_item_new_with_mnemonic("_Audio…");
+    auto* reconnectJackItem =
+        gtk_menu_item_new_with_mnemonic("_Reconnect JACK Ports");
     gtk_menu_shell_append(
         GTK_MENU_SHELL(settingsMenu), audioSettingsItem);
+    gtk_menu_shell_append(
+        GTK_MENU_SHELL(settingsMenu), reconnectJackItem);
     gtk_menu_item_set_submenu(
         GTK_MENU_ITEM(settingsItem), settingsMenu);
     gtk_menu_shell_append(GTK_MENU_SHELL(menuBar), settingsItem);
+    auto* consoleItem = gtk_menu_item_new_with_mnemonic("_Console");
+    auto* consoleMenu = gtk_menu_new();
+    auto* showConsoleItem = gtk_menu_item_new_with_mnemonic("_Show Console");
+    gtk_menu_shell_append(GTK_MENU_SHELL(consoleMenu), showConsoleItem);
+    gtk_menu_item_set_submenu(GTK_MENU_ITEM(consoleItem), consoleMenu);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menuBar), consoleItem);
     gtk_box_pack_start(GTK_BOX(frame), menuBar, FALSE, FALSE, 0);
 
     auto* accelerators = gtk_accel_group_new();
@@ -2807,6 +2994,8 @@ void activate(GtkApplication* application, gpointer) {
         static_cast<GdkModifierType>(GDK_CONTROL_MASK | GDK_SHIFT_MASK),
         GTK_ACCEL_VISIBLE);
     gtk_widget_add_accelerator(quitItem, "activate", accelerators, GDK_KEY_q,
+                               GDK_CONTROL_MASK, GTK_ACCEL_VISIBLE);
+    gtk_widget_add_accelerator(showConsoleItem, "activate", accelerators, GDK_KEY_grave,
                                GDK_CONTROL_MASK, GTK_ACCEL_VISIBLE);
 
     GtkWidget* transportBar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
@@ -2864,6 +3053,10 @@ void activate(GtkApplication* application, gpointer) {
     g_signal_connect(renderItem, "activate", G_CALLBACK(renderAudioActivated), view);
     g_signal_connect(audioSettingsItem, "activate",
                      G_CALLBACK(audioSettingsActivated), view);
+    g_signal_connect(reconnectJackItem, "activate",
+                     G_CALLBACK(reconnectJackActivated), view);
+    g_signal_connect(showConsoleItem, "activate",
+                     G_CALLBACK(showConsoleActivated), view);
     g_signal_connect(quitItem, "activate", G_CALLBACK(quitActivated), view);
     gtk_widget_set_hexpand(canvas, TRUE);
     gtk_widget_set_vexpand(canvas, TRUE);
@@ -2892,6 +3085,7 @@ void activate(GtkApplication* application, gpointer) {
         }
         if (view->renderProgressTimer)
             g_source_remove(view->renderProgressTimer);
+        if (view->consoleWindow) gtk_widget_destroy(view->consoleWindow);
         delete view;
     }), view);
     gtk_widget_show_all(window);

@@ -28,6 +28,8 @@ export const vocabulary = Object.freeze({
     modulePath: `${TRN}modulePath`, category: `${TRN}category`, discoverySource: `${TRN}discoverySource`,
     parameter: `${TRN}parameter`, parameterTitle: `${TRN}parameterTitle`, shortTitle: `${TRN}shortTitle`,
     units: `${TRN}units`, defaultNormalized: `${TRN}defaultNormalized`,
-    stepCount: `${TRN}stepCount`, parameterFlags: `${TRN}parameterFlags`
+    stepCount: `${TRN}stepCount`, parameterFlags: `${TRN}parameterFlags`,
+    audioSettings: `${TRN}audioSettings`, renderAheadMs: `${TRN}renderAheadMs`,
+    requestedBufferSize: `${TRN}requestedBufferSize`, processingThreads: `${TRN}processingThreads`
   })
 })

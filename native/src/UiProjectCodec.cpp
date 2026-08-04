@@ -77,7 +77,7 @@ bool number(std::string_view text, double& result) {
 
 std::string encodeUiProject(const UiProject& project) {
     std::ostringstream output;
-    output << "TRANSMISSION_UI\t5\n";
+    output << "TRANSMISSION_UI\t6\n";
     output << "PROJECT\t" << hexEncode(project.id) << '\t'
            << hexEncode(project.label) << '\n';
     output << "TRANSPORT\t" << project.tempo << '\t' << project.loopBars
@@ -146,6 +146,9 @@ std::string encodeUiProject(const UiProject& project) {
                << mapping.parameterId << '\t' << mapping.channel << '\t'
                << static_cast<unsigned>(mapping.controller) << '\t'
                << (mapping.consume ? 1 : 0) << '\n';
+    output << "SETTINGS\t" << project.renderAheadMilliseconds << '\t'
+           << project.requestedBufferSize << '\t'
+           << project.processingThreads << '\n';
     output << "END\n";
     return output.str();
 }
@@ -170,7 +173,7 @@ bool decodeUiProject(const std::string& text, UiProject& project,
             if (values.size() != 2 || values[0] != "TRANSMISSION_UI" ||
                 (values[1] != "1" && values[1] != "2" &&
                  values[1] != "3" && values[1] != "4" &&
-                 values[1] != "5")) return fail();
+                 values[1] != "5" && values[1] != "6")) return fail();
             header = true;
             continue;
         }
@@ -352,6 +355,11 @@ bool decodeUiProject(const std::string& text, UiProject& project,
             mapping.controller = static_cast<std::uint8_t>(controller);
             mapping.consume = consume == 1;
             candidate.midiMappings.push_back(mapping);
+        } else if (values[0] == "SETTINGS") {
+            if (values.size() != 4 ||
+                !integer(values[1], candidate.renderAheadMilliseconds) ||
+                !integer(values[2], candidate.requestedBufferSize) ||
+                !integer(values[3], candidate.processingThreads)) return fail();
         } else {
             return fail();
         }

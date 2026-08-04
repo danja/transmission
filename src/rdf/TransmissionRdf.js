@@ -71,6 +71,7 @@ export function graphFromDataset(dataset, transmissionId) {
     metadata: {
       systemInputConnections: literalList(dataset, first(dataset, subject, ns.trn.systemInputConnections)),
       systemOutputConnections: literalList(dataset, first(dataset, subject, ns.trn.systemOutputConnections)),
+      audioSettings: audioSettingsFromDataset(dataset, subject),
       midiMappings: list(dataset, first(dataset, subject, ns.trn.midiMappings)).map(mapping => ({
         targetNodeId: first(dataset, mapping, ns.trn.targetNode)?.value ?? '',
         parameterId: numeric(first(dataset, mapping, ns.trn.parameterId)),
@@ -173,6 +174,13 @@ export function serializeGraph(graph, transport = null, arrangement = null) {
     lines.push(`    :systemInputConnections ( ${inputConnections.map(literal).join(' ')} ) ;`)
   if (outputConnections.length)
     lines.push(`    :systemOutputConnections ( ${outputConnections.map(literal).join(' ')} ) ;`)
+  const audioSettings = graph.metadata?.audioSettings
+  if (audioSettings) {
+    const ms = audioSettings.renderAheadMs ?? 200
+    const buf = audioSettings.requestedBufferSize ?? 0
+    const threads = audioSettings.processingThreads ?? 0
+    lines.push(`    :audioSettings [ :renderAheadMs ${ms} ; :requestedBufferSize ${buf} ; :processingThreads ${threads} ] ;`)
+  }
   if (graph.metadata?.midiMappings?.length) {
     const mappings = graph.metadata.midiMappings.map(mapping =>
       `[ :targetNode ${nodeNames.get(mapping.targetNodeId) ?? term(mapping.targetNodeId, base)} ; ` +
@@ -218,6 +226,16 @@ export function serializeGraph(graph, transport = null, arrangement = null) {
     lines.push('')
   }
   return `${lines.join('\n').trim()}\n`
+}
+
+function audioSettingsFromDataset(dataset, subject) {
+  const node = first(dataset, subject, ns.trn.audioSettings)
+  if (!node) return null
+  return {
+    renderAheadMs: numeric(first(dataset, node, ns.trn.renderAheadMs)) || 200,
+    requestedBufferSize: numeric(first(dataset, node, ns.trn.requestedBufferSize)),
+    processingThreads: numeric(first(dataset, node, ns.trn.processingThreads))
+  }
 }
 
 function literalList(dataset, head) {

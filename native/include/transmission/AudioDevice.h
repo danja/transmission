@@ -44,6 +44,7 @@ public:
     virtual bool configure(const AudioDeviceConfig& config) = 0;
     virtual bool start(AudioCallback& callback) = 0;
     virtual void stop() noexcept = 0;
+    virtual std::size_t actualBlockSize() const noexcept { return 0; }
 };
 
 } // namespace transmission

@@ -324,6 +324,14 @@ bool RoutedAudioGraph::prepare(std::size_t channels, std::size_t frames) noexcep
     return true;
 }
 
+bool RoutedAudioGraph::reconfigureProcessors(std::size_t frames, std::string& error) {
+    for (auto& node : nodes_) {
+        if (node.processor && !node.processor->reconfigure(frames, error))
+            return false;
+    }
+    return true;
+}
+
 void RoutedAudioGraph::process(const float* const* inputs, float* const* outputs,
                                std::size_t channels, std::size_t frames) noexcept {
     processWithMidi(inputs, outputs, channels, frames, nullptr, 0);

@@ -69,6 +69,8 @@ public:
     virtual std::size_t takeOutputMidi(MidiEvent* /*events*/, std::size_t /*capacity*/) noexcept {
         return 0;
     }
+    /** Called on the control thread when the device block size changes post-activation. */
+    virtual bool reconfigure(std::size_t /*frames*/, std::string& /*error*/) { return true; }
 };
 
 class PassThroughProcessor final : public AudioProcessor {

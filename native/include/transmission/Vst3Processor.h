@@ -40,6 +40,7 @@ public:
     void applyPendingParameters() noexcept override;
     void setProcessContext(const AudioProcessContext& context) noexcept override;
     std::size_t takeOutputMidi(MidiEvent* events, std::size_t capacity) noexcept override;
+    bool reconfigure(std::size_t frames, std::string& error) override;
 
     void process(const float* const* inputs, float* const* outputs,
                  std::size_t channels, std::size_t frames) noexcept override;

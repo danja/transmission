@@ -136,6 +136,57 @@ bool AudioEngine::start() {
             routedAudioGraph_->configureProcessingThreads(1);
         return false;
     }
+    // PipeWire can assign a different quantum after jack_activate. If the
+    // actual block size differs from what the graph was prepared for, re-prepare
+    // and rebuild render buffers while the callback has not yet produced any blocks.
+    if (device_) {
+        const auto actual = device_->actualBlockSize();
+        if (actual != 0 && actual != graphFrames_) {
+            graphFrames_ = actual;
+            if (routedAudioGraph_) {
+                std::string reconfigError;
+                if (!routedAudioGraph_->reconfigureProcessors(actual, reconfigError) ||
+                    !routedAudioGraph_->prepare(graphChannels_, actual)) {
+                    device_->stop();
+                    transport_.stop();
+                    diagnostics_.running = false;
+                    routedAudioGraph_->configureProcessingThreads(1);
+                    return false;
+                }
+            }
+            if (audioGraph_ && !audioGraph_->prepare(graphChannels_, actual)) {
+                device_->stop();
+                transport_.stop();
+                diagnostics_.running = false;
+                return false;
+            }
+            if (renderAheadBlocks_ != 0) {
+                stopRenderWorker();
+                renderInputRead_.store(0, std::memory_order_relaxed);
+                renderInputWrite_.store(0, std::memory_order_relaxed);
+                renderOutputRead_.store(0, std::memory_order_relaxed);
+                renderOutputWrite_.store(0, std::memory_order_relaxed);
+                callbackSequence_ = 0;
+                if (!prepareRenderBuffers()) {
+                    device_->stop();
+                    transport_.stop();
+                    diagnostics_.running = false;
+                    if (routedAudioGraph_)
+                        routedAudioGraph_->configureProcessingThreads(1);
+                    return false;
+                }
+                stopRenderWorker_.store(false, std::memory_order_release);
+                try {
+                    renderWorker_ = std::thread(&AudioEngine::renderWorkerLoop, this);
+                } catch (...) {
+                    device_->stop();
+                    transport_.stop();
+                    diagnostics_.running = false;
+                    return false;
+                }
+            }
+        }
+    }
     return true;
 }
 
@@ -186,6 +237,9 @@ Diagnostics AudioEngine::diagnostics() const {
     result.renderQueueDrops =
         renderQueueDrops_.load(std::memory_order_acquire);
     result.renderAheadBlocks = renderAheadBlocks_;
+    result.graphFrames = graphFrames_;
+    result.graphChannels = graphChannels_;
+    result.lastCallbackFrames = lastCallbackFrames_.load(std::memory_order_acquire);
     result.processingThreads = routedAudioGraph_
         ? routedAudioGraph_->processingThreadCount()
         : std::size_t{1};
@@ -225,6 +279,7 @@ std::vector<NodeProcessorState> AudioEngine::processorStates(
 
 void AudioEngine::process(const float* const* inputs, float* const* outputs,
                           std::size_t channels, std::size_t frames) noexcept {
+    lastCallbackFrames_.store(frames, std::memory_order_relaxed);
     if (renderAheadBlocks_ == 0)
         processDirect(inputs, outputs, channels, frames);
     else

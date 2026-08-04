@@ -1496,7 +1496,7 @@ void consoleCommandActivated(GtkEntry* entry, gpointer data) {
     cmd = cmd.substr(start, end - start + 1);
     logConsole(view, "> " + cmd);
     if (cmd == "help" || cmd == "?") {
-        logConsole(view, "Commands: status  lsp  connections  watch  unwatch  reconnect  clear  help");
+        logConsole(view, "Commands: status  diag  lsp  connections  watch  unwatch  reconnect  clear  help");
     } else if (cmd == "clear") {
         if (view.consoleTextView) {
             auto* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view.consoleTextView));
@@ -1551,6 +1551,29 @@ void consoleCommandActivated(GtkEntry* entry, gpointer data) {
         } else {
             logConsole(view, "Not watching.");
         }
+    } else if (cmd == "diag") {
+#if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
+        if (!view.runtime) {
+            logConsole(view, "Runtime not created");
+        } else {
+            const auto d = view.runtime->diagnostics();
+            logConsole(view, std::string("running: ") + (d.running ? "yes" : "no"));
+            logConsole(view, "processedBlocks: " + std::to_string(d.processedBlocks));
+            logConsole(view, "positionBeats: " + std::to_string(d.positionBeats));
+            logConsole(view, "midiEvents: " + std::to_string(d.midiEvents));
+            logConsole(view, "underruns: " + std::to_string(d.underruns));
+            logConsole(view, "renderAheadBlocks: " + std::to_string(d.renderAheadBlocks));
+            logConsole(view, "graphFrames: " + std::to_string(d.graphFrames) +
+                "  graphChannels: " + std::to_string(d.graphChannels) +
+                "  lastCallbackFrames: " + std::to_string(d.lastCallbackFrames));
+            logConsole(view, "avgRender: " + std::to_string(d.averageRenderMicroseconds) + " µs");
+            for (const auto& t : view.runtime->processorTimings())
+                logConsole(view, "  " + t.nodeId + ": " + std::to_string(t.calls) + " calls, " +
+                    std::to_string(t.averageMicroseconds) + " µs avg");
+        }
+#else
+        logConsole(view, "Not available in this build");
+#endif
     } else if (cmd == "reconnect") {
         if (!runtimeRunning(view)) {
             logConsole(view, "Reconnect: audio is not running");

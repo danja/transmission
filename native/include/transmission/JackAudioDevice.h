@@ -27,6 +27,7 @@ public:
     bool configure(const AudioDeviceConfig& config) override;
     bool start(AudioCallback& callback) override;
     void stop() noexcept override;
+    std::size_t actualBlockSize() const noexcept override;
 
     const std::string& lastError() const noexcept { return lastError_; }
     bool connectPhysicalPorts();

@@ -78,6 +78,7 @@ public:
     bool setMidiParameterMappings(std::vector<MidiParameterMapping> mappings,
                                   std::string& error);
     bool prepare(std::size_t channels, std::size_t frames) noexcept;
+    bool reconfigureProcessors(std::size_t frames, std::string& error);
     void process(const float* const* inputs, float* const* outputs,
                  std::size_t channels, std::size_t frames) noexcept;
     void processWithMidi(const float* const* inputs, float* const* outputs,

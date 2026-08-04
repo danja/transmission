@@ -238,6 +238,40 @@ bool Vst3Processor::initialize(const std::string& modulePath,
 
 bool Vst3Processor::ready() const noexcept { return impl_ && impl_->processing; }
 
+bool Vst3Processor::reconfigure(std::size_t frames, std::string& error) {
+    if (!ready() || frames == 0) {
+        error = "VST3 processor is not initialized or frames is zero";
+        return false;
+    }
+    if (frames == impl_->frames) return true;
+    if (impl_->processing)
+        impl_->processor->setProcessing(false);
+    if (impl_->active)
+        impl_->component->setActive(false);
+    Steinberg::Vst::ProcessSetup setup{};
+    setup.processMode = Steinberg::Vst::kRealtime;
+    setup.symbolicSampleSize = Steinberg::Vst::kSample32;
+    setup.maxSamplesPerBlock = static_cast<Steinberg::int32>(frames);
+    setup.sampleRate = impl_->processContext.sampleRate;
+    if (impl_->processor->setupProcessing(setup) != Steinberg::kResultOk) {
+        error = "VST3 setupProcessing failed during reconfigure";
+        return false;
+    }
+    if (impl_->component->setActive(true) != Steinberg::kResultOk) {
+        error = "VST3 component activation failed during reconfigure";
+        return false;
+    }
+    const auto processingResult = impl_->processor->setProcessing(true);
+    if (processingResult != Steinberg::kResultOk &&
+        processingResult != Steinberg::kNotImplemented &&
+        processingResult != Steinberg::kInvalidArgument) {
+        error = "VST3 processor activation failed during reconfigure";
+        return false;
+    }
+    impl_->frames = frames;
+    return true;
+}
+
 const std::string& Vst3Processor::pluginName() const noexcept {
     static const std::string empty;
     return impl_ ? impl_->name : empty;

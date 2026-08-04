@@ -137,7 +137,13 @@ bool JackAudioDevice::start(AudioCallback& callback) {
         lastError_ = "unable to activate JACK client";
         return false;
     }
+    // PipeWire may assign a different quantum after activation.
+    config_.blockSize = static_cast<std::size_t>(jack_get_buffer_size(client_));
     return true;
+}
+
+std::size_t JackAudioDevice::actualBlockSize() const noexcept {
+    return client_ ? static_cast<std::size_t>(jack_get_buffer_size(client_)) : 0;
 }
 
 void JackAudioDevice::stop() noexcept {

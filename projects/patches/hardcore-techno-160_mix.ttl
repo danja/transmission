@@ -5,12 +5,12 @@
     <http://www.w3.org/2000/01/rdf-schema#label> "Transmission" ;
     :tempoMap ( [ :atBeat 0 ; :bpm 160 ] ) ;
     :loopStart 0 ;
-    :loopEnd 128 ;
+    :loopEnd 120 ;
     :loopEnabled true ;
     :systemInputConnections ( "No connection" "No connection" ) ;
     :systemOutputConnections ( "UMC404HD 192k:playback_AUX0" "UMC404HD 192k:playback_AUX1" ) ;
-    :pipe ( :system-input :drumgen :drumkit :xoxolo :bassgen :basilico :arpgen :canticle :sidecar :gremlin-driver :gremlin :oracle :ambo :rift :tmix :guardian :system-output ) ;
-    :connections ( [ :from :drumgen ; :to :drumkit ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :xoxolo ; :to :drumkit ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :drumgen ; :to :bassgen ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :bassgen ; :to :basilico ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :bassgen ; :to :arpgen ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :arpgen ; :to :canticle ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :sidecar ; :to :canticle ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :system-input ; :to :canticle ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :gremlin-driver ; :to :gremlin ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :drumkit ; :to :tmix ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :drumkit ; :to :tmix ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :basilico ; :to :ambo ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :basilico ; :to :ambo ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :ambo ; :to :oracle ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :ambo ; :to :oracle ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :oracle ; :to :rift ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :oracle ; :to :rift ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :rift ; :to :tmix ; :kind "audio" ; :fromPort 0 ; :toPort 2 ] [ :from :rift ; :to :tmix ; :kind "audio" ; :fromPort 1 ; :toPort 3 ] [ :from :canticle ; :to :tmix ; :kind "audio" ; :fromPort 0 ; :toPort 4 ] [ :from :canticle ; :to :tmix ; :kind "audio" ; :fromPort 1 ; :toPort 5 ] [ :from :gremlin ; :to :tmix ; :kind "audio" ; :fromPort 0 ; :toPort 6 ] [ :from :gremlin ; :to :tmix ; :kind "audio" ; :fromPort 1 ; :toPort 7 ] [ :from :tmix ; :to :guardian ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :tmix ; :to :guardian ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :guardian ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :guardian ; :to :system-output ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] ) .
+    :pipe ( :system-input :drumgen :drumkit :xoxolo :bassgen :basilico :arpgen :canticle :sidecar :gremlin-driver :gremlin :oracle :ambo :rift :tmix :gater :p-mix :guardian :system-output ) ;
+    :connections ( [ :from :drumgen ; :to :drumkit ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :xoxolo ; :to :drumkit ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :drumgen ; :to :bassgen ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :bassgen ; :to :basilico ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :bassgen ; :to :arpgen ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :arpgen ; :to :canticle ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :sidecar ; :to :canticle ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :system-input ; :to :canticle ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :gremlin-driver ; :to :gremlin ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :drumkit ; :to :tmix ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :drumkit ; :to :tmix ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :basilico ; :to :ambo ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :basilico ; :to :ambo ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :ambo ; :to :oracle ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :ambo ; :to :oracle ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :oracle ; :to :rift ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :oracle ; :to :rift ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :rift ; :to :tmix ; :kind "audio" ; :fromPort 0 ; :toPort 2 ] [ :from :rift ; :to :tmix ; :kind "audio" ; :fromPort 1 ; :toPort 3 ] [ :from :canticle ; :to :tmix ; :kind "audio" ; :fromPort 0 ; :toPort 4 ] [ :from :canticle ; :to :tmix ; :kind "audio" ; :fromPort 1 ; :toPort 5 ] [ :from :gremlin ; :to :tmix ; :kind "audio" ; :fromPort 0 ; :toPort 6 ] [ :from :gremlin ; :to :tmix ; :kind "audio" ; :fromPort 1 ; :toPort 7 ] [ :from :system-input ; :to :gater ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :gater ; :to :tmix ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :tmix ; :to :p-mix ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :tmix ; :to :p-mix ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :p-mix ; :to :guardian ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :p-mix ; :to :guardian ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :guardian ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :guardian ; :to :system-output ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] ) .
 
 :system-input a :AudioInput ;
     <http://www.w3.org/2000/01/rdf-schema#label> "System Input" ;
@@ -171,12 +171,29 @@
     :parameters ( [ :parameterId 2 ; :normalizedValue 0.82 ] [ :parameterId 3 ; :normalizedValue 0.82 ] [ :parameterId 4 ; :normalizedValue 0.75 ] [ :parameterId 5 ; :normalizedValue 0.75 ] [ :parameterId 6 ; :normalizedValue 0.7 ] [ :parameterId 7 ; :normalizedValue 0.7 ] [ :parameterId 8 ; :normalizedValue 0.65 ] [ :parameterId 9 ; :normalizedValue 0.65 ] [ :parameterId 10 ; :normalizedValue 0.6 ] [ :parameterId 11 ; :normalizedValue 0.6 ] ) ;
     :componentState "X19kcGZfc3RhdGVfYmVnaW5fXwBwYXJhbWV0ZXJzAHZlcnNpb249MwptYXN0ZXJfZGI9MC4wMDAwMDAKcHJvZHVjZXJfc2xld19tcz0yNS4wMDAwMDAKcHJvZHVjZXJfY29udHJvbF9jaGFubmVsPTAuMDAwMDAwCnJlcXVpcmVfcHJvZHVjZXJfZ2F0ZT0wLjAwMDAwMApjaGFubmVsMC5sZXZlbF9kYj0wLjAwMDAwMApjaGFubmVsMC5wYW49MC4wMDAwMDAKY2hhbm5lbDAubXV0ZT0wLjAwMDAwMApjaGFubmVsMC5zb2xvPTAuMDAwMDAwCmNoYW5uZWwxLmxldmVsX2RiPTAuMDAwMDAwCmNoYW5uZWwxLnBhbj0wLjAwMDAwMApjaGFubmVsMS5tdXRlPTAuMDAwMDAwCmNoYW5uZWwxLnNvbG89MC4wMDAwMDAKY2hhbm5lbDIubGV2ZWxfZGI9MC4wMDAwMDAKY2hhbm5lbDIucGFuPTAuMDAwMDAwCmNoYW5uZWwyLm11dGU9MC4wMDAwMDAKY2hhbm5lbDIuc29sbz0wLjAwMDAwMApjaGFubmVsMy5sZXZlbF9kYj0wLjAwMDAwMApjaGFubmVsMy5wYW49MC4wMDAwMDAKY2hhbm5lbDMubXV0ZT0wLjAwMDAwMApjaGFubmVsMy5zb2xvPTAuMDAwMDAwCmNoYW5uZWw0LmxldmVsX2RiPTAuMDAwMDAwCmNoYW5uZWw0LnBhbj0wLjAwMDAwMApjaGFubmVsNC5tdXRlPTAuMDAwMDAwCmNoYW5uZWw0LnNvbG89MC4wMDAwMDAKY2hhbm5lbDUubGV2ZWxfZGI9MC4wMDAwMDAKY2hhbm5lbDUucGFuPTAuMDAwMDAwCmNoYW5uZWw1Lm11dGU9MC4wMDAwMDAKY2hhbm5lbDUuc29sbz0wLjAwMDAwMApjaGFubmVsNi5sZXZlbF9kYj0wLjAwMDAwMApjaGFubmVsNi5wYW49MC4wMDAwMDAKY2hhbm5lbDYubXV0ZT0wLjAwMDAwMApjaGFubmVsNi5zb2xvPTAuMDAwMDAwCmNoYW5uZWw3LmxldmVsX2RiPTAuMDAwMDAwCmNoYW5uZWw3LnBhbj0wLjAwMDAwMApjaGFubmVsNy5tdXRlPTAuMDAwMDAwCmNoYW5uZWw3LnNvbG89MC4wMDAwMDAKAF9fZHBmX3N0YXRlX2VuZF9fAF9fZHBmX3BhcmFtZXRlcnNfYmVnaW5fXwBjaGFubmVsXzFfbGV2ZWwAMABjaGFubmVsXzJfbGV2ZWwAMABjaGFubmVsXzNfbGV2ZWwAMABjaGFubmVsXzRfbGV2ZWwAMABjaGFubmVsXzVfbGV2ZWwAMABjaGFubmVsXzZfbGV2ZWwAMABjaGFubmVsXzdfbGV2ZWwAMABjaGFubmVsXzhfbGV2ZWwAMABjaGFubmVsXzFfcGFuADAAY2hhbm5lbF8yX3BhbgAwAGNoYW5uZWxfM19wYW4AMABjaGFubmVsXzRfcGFuADAAY2hhbm5lbF81X3BhbgAwAGNoYW5uZWxfNl9wYW4AMABjaGFubmVsXzdfcGFuADAAY2hhbm5lbF84X3BhbgAwAGNoYW5uZWxfMV9tdXRlADAAY2hhbm5lbF8yX211dGUAMABjaGFubmVsXzNfbXV0ZQAwAGNoYW5uZWxfNF9tdXRlADAAY2hhbm5lbF81X211dGUAMABjaGFubmVsXzZfbXV0ZQAwAGNoYW5uZWxfN19tdXRlADAAY2hhbm5lbF84X211dGUAMABjaGFubmVsXzFfc29sbwAwAGNoYW5uZWxfMl9zb2xvADAAY2hhbm5lbF8zX3NvbG8AMABjaGFubmVsXzRfc29sbwAwAGNoYW5uZWxfNV9zb2xvADAAY2hhbm5lbF82X3NvbG8AMABjaGFubmVsXzdfc29sbwAwAGNoYW5uZWxfOF9zb2xvADAAbWFzdGVyX2xldmVsADAAcHJvZHVjZXJfc2xld19tcwAyNQBwcm9kdWNlcl9jb250cm9sX2NoYW5uZWwAMAByZXF1aXJlX3Byb2R1Y2VyX2dhdGUAMABfX2RwZl9wYXJhbWV0ZXJzX2VuZF9fAP4A" .
 
+:gater a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Gater" ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 1000 ;
+    :editorY 450 ;
+    :settings [ :pluginPath "/home/danny/.vst3/gater.vst3" ] .
+
+:p-mix a :VST3Plugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "P-Mix" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 1240 ;
+    :editorY 240 ;
+    :settings [ :pluginPath "/home/danny/.vst3/p_mix.vst3" ] .
+
 :guardian a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Guardian" ;
     :audioInputs 2 ;
     :audioOutputs 2 ;
     :midiInputs 1 ;
-    :editorX 1240 ;
+    :editorX 1480 ;
     :editorY 240 ;
     :settings [ :pluginPath "/home/danny/.vst3/guardian.vst3" ] ;
     :parameters ( [ :parameterId 0 ; :normalizedValue 0.95 ] [ :parameterId 10 ; :normalizedValue 0.000015259 ] ) ;
@@ -186,5 +203,5 @@
     <http://www.w3.org/2000/01/rdf-schema#label> "System Output" ;
     :audioInputs 2 ;
     :midiInputs 1 ;
-    :editorX 1690 ;
+    :editorX 1930 ;
     :editorY 239 .

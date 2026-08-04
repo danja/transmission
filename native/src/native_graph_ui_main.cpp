@@ -141,6 +141,8 @@ struct GraphView {
     GtkWidget* consoleWindow = nullptr;
     GtkWidget* consoleTextView = nullptr;
     GtkWidget* consoleEntry = nullptr;
+    guint connectionWatchTimer = 0;
+    std::array<std::string, 2> lastWatchedConnections{};
 };
 
 struct PluginDialogContext {
@@ -1143,9 +1145,15 @@ bool applyExternalConnections(GraphView& view, std::string& error) {
     for (std::size_t index = 0; index < view.systemOutputConnections.size(); ++index) {
         if (!systemChannelUsed(view, false, index)) continue;
         std::string routeError;
+        const auto port = "transmission:out_" + std::to_string(index + 1);
         if (!view.jackConnections->connectOutput(index, view.systemOutputConnections[index],
-                                                 routeError))
+                                                 routeError)) {
             appendError("output " + std::to_string(index + 1) + ": " + routeError);
+        } else {
+            const auto actual = view.jackConnections->portConnections(port);
+            logConsole(view, port + " → " +
+                (actual.empty() ? "(none)" : actual.front()));
+        }
     }
     return applied;
 }
@@ -1459,6 +1467,23 @@ void playStopClicked(GtkButton*, gpointer data) {
     updateTransportDisplay(view);
 }
 
+gboolean connectionWatchTick(gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    if (!view.jackConnections || !view.jackConnections->available()) return G_SOURCE_CONTINUE;
+    for (std::size_t i = 0; i < 2; ++i) {
+        const auto port = "transmission:out_" + std::to_string(i + 1);
+        const auto conns = view.jackConnections->portConnections(port);
+        const auto current = conns.empty() ? "(none)" : conns.front();
+        if (current != view.lastWatchedConnections[i]) {
+            logConsole(view, "[watch] " + port + ": " +
+                (view.lastWatchedConnections[i].empty() ? "?" : view.lastWatchedConnections[i]) +
+                " → " + current);
+            view.lastWatchedConnections[i] = current;
+        }
+    }
+    return G_SOURCE_CONTINUE;
+}
+
 void consoleCommandActivated(GtkEntry* entry, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
     const gchar* raw = gtk_entry_get_text(entry);
@@ -1471,7 +1496,7 @@ void consoleCommandActivated(GtkEntry* entry, gpointer data) {
     cmd = cmd.substr(start, end - start + 1);
     logConsole(view, "> " + cmd);
     if (cmd == "help" || cmd == "?") {
-        logConsole(view, "Commands: status  lsp  reconnect  clear  help");
+        logConsole(view, "Commands: status  lsp  connections  watch  unwatch  reconnect  clear  help");
     } else if (cmd == "clear") {
         if (view.consoleTextView) {
             auto* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view.consoleTextView));
@@ -1495,6 +1520,36 @@ void consoleCommandActivated(GtkEntry* entry, gpointer data) {
             logConsole(view, "Input sources:");
             for (const auto& src : view.jackConnections->inputSources())
                 logConsole(view, "  " + src);
+        }
+    } else if (cmd == "connections") {
+        if (!view.jackConnections || !view.jackConnections->available()) {
+            logConsole(view, "JACK not available");
+        } else {
+            for (std::size_t i = 1; i <= 2; ++i) {
+                const auto port = "transmission:out_" + std::to_string(i);
+                const auto connected = view.jackConnections->portConnections(port);
+                if (connected.empty())
+                    logConsole(view, port + " → (nothing)");
+                else
+                    for (const auto& dest : connected)
+                        logConsole(view, port + " → " + dest);
+            }
+        }
+    } else if (cmd == "watch") {
+        if (!view.connectionWatchTimer) {
+            view.lastWatchedConnections.fill("");
+            view.connectionWatchTimer = g_timeout_add(2000, connectionWatchTick, &view);
+            logConsole(view, "Watching output connections every 2 s. Type unwatch to stop.");
+        } else {
+            logConsole(view, "Already watching.");
+        }
+    } else if (cmd == "unwatch") {
+        if (view.connectionWatchTimer) {
+            g_source_remove(view.connectionWatchTimer);
+            view.connectionWatchTimer = 0;
+            logConsole(view, "Watch stopped.");
+        } else {
+            logConsole(view, "Not watching.");
         }
     } else if (cmd == "reconnect") {
         if (!runtimeRunning(view)) {
@@ -3085,6 +3140,8 @@ void activate(GtkApplication* application, gpointer) {
         }
         if (view->renderProgressTimer)
             g_source_remove(view->renderProgressTimer);
+        if (view->connectionWatchTimer)
+            g_source_remove(view->connectionWatchTimer);
         if (view->consoleWindow) gtk_widget_destroy(view->consoleWindow);
         delete view;
     }), view);

@@ -8,7 +8,7 @@
     :loopEnd 16 ;
     :loopEnabled false ;
     :systemInputConnections ( "system:capture_1" "system:capture_2" ) ;
-    :systemOutputConnections ( "UMC404HD 192k-97:playback_AUX0" "UMC404HD 192k-97:playback_AUX1" ) ;
+    :systemOutputConnections ( "UMC404HD 192k:playback_AUX0" "UMC404HD 192k:playback_AUX1" ) ;
     :audioSettings [ :renderAheadMs 200 ; :requestedBufferSize 0 ; :processingThreads 0 ] ;
     :pipe ( :system-input :system-output :plugin-1 :plugin-2 ) ;
     :connections ( [ :from :plugin-1 ; :to :plugin-2 ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-2 ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :plugin-2 ; :to :system-output ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] ) .

@@ -240,6 +240,18 @@ bool JackConnectionManager::setBufferSize(std::size_t frames,
     return false;
 }
 
+std::vector<std::string> JackConnectionManager::portConnections(const std::string& portName) const {
+    if (!impl_->ensureClient()) return {};
+    auto* port = jack_port_by_name(impl_->client, portName.c_str());
+    if (!port) return {};
+    const auto** connections = jack_port_get_all_connections(impl_->client, port);
+    if (!connections) return {};
+    std::vector<std::string> result;
+    for (std::size_t i = 0; connections[i]; ++i) result.emplace_back(connections[i]);
+    jack_free(const_cast<void*>(static_cast<const void*>(connections)));
+    return result;
+}
+
 bool JackConnectionManager::available() const noexcept {
     return impl_ && impl_->ensureClient();
 }
@@ -282,6 +294,7 @@ bool JackConnectionManager::setBufferSize(std::size_t, std::string& error) {
     error = "JACK support is not enabled";
     return false;
 }
+std::vector<std::string> JackConnectionManager::portConnections(const std::string&) const { return {}; }
 bool JackConnectionManager::available() const noexcept { return false; }
 } // namespace transmission
 

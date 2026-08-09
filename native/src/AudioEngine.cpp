@@ -334,7 +334,7 @@ void AudioEngine::processDirect(const float* const* inputs, float* const* output
     positionBeats_.store(advance.endBeat, std::memory_order_release);
     const auto tempo = advance.segmentCount > 0 ? advance.segments[0].bpm : 120.0;
     if (routedAudioGraph_)
-        routedAudioGraph_->setProcessContext({advance.startBeat, tempo, true});
+        routedAudioGraph_->setProcessContext({advance.startBeat, tempo, advance.segmentCount > 0});
     if (!processGraphBlock(
             inputs, outputs, channels, frames, midiEventBuffer_.data(),
             midiEventCount_, midiOutputBuffer_.data(), midiOutputCount_)) {
@@ -437,7 +437,7 @@ void AudioEngine::processBuffered(const float* const* inputs,
     block.midiCount = std::min(midiEventCount_, block.midi.size());
     std::copy_n(midiEventBuffer_.begin(), block.midiCount,
                 block.midi.begin());
-    block.context = {advance.startBeat, tempo, true};
+    block.context = {advance.startBeat, tempo, advance.segmentCount > 0};
     block.endBeat = advance.endBeat;
     block.sequence = sequence;
     midiEventCount_ = 0;

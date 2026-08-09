@@ -386,3 +386,15 @@ dsp:guardian a trn:PluginProfile ;
     trn:produces trn:Audio ;
     trn:recommendedAfter dsp:orbit ;
     trn:caution "Guardian is intended for the end of autonomous audio chains and reports processing latency to the host." .
+
+dsp:syrinx a trn:PluginProfile ;
+    rdfs:label "Syrinx" ;
+    rdfs:comment "Polyphonic avian vocal synthesizer using Mindlin-Laje ODE models with ten bird presets: Wren, Thrush, Warbler, Finch, Robin, Nightjar, Pigeon, Hummingbird, Starling, and Custom." ;
+    trn:bundleName "syrinx.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:Instrument ;
+    trn:accepts trn:Midi ;
+    trn:produces trn:Audio ;
+    trn:genre "Ambient", "Electronic", "Nature", "Dance" ;
+    trn:recommendedAfter dsp:melgen ;
+    trn:caution "Ten presets share one MIDI channel; select a preset via the Selected Preset master parameter before connecting multiple Syrinx instances." .

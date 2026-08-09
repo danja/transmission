@@ -138,7 +138,8 @@ bool AudioEngine::start() {
     }
     // PipeWire can assign a different quantum after jack_activate. If the
     // actual block size differs from what the graph was prepared for, re-prepare
-    // and rebuild render buffers while the callback has not yet produced any blocks.
+    // and rebuild render buffers. This happens before enableCallbacks so that
+    // no audio callback fires while processors are being reconfigured.
     if (device_) {
         const auto actual = device_->actualBlockSize();
         if (actual != 0 && actual != graphFrames_) {
@@ -187,6 +188,7 @@ bool AudioEngine::start() {
             }
         }
     }
+    if (device_) device_->enableCallbacks(*this);
     return true;
 }
 

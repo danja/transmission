@@ -45,6 +45,9 @@ public:
     virtual bool start(AudioCallback& callback) = 0;
     virtual void stop() noexcept = 0;
     virtual std::size_t actualBlockSize() const noexcept { return 0; }
+    // Called after start() once the graph is fully prepared for the actual block size.
+    // Implementations should begin dispatching callbacks only after this call.
+    virtual void enableCallbacks(AudioCallback& /*callback*/) noexcept {}
 };
 
 } // namespace transmission

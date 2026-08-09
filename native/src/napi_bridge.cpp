@@ -4,6 +4,7 @@
 #include "transmission/JackAudioDevice.h"
 #endif
 #ifdef TRANSMISSION_NAPI_WITH_VST3
+#include "transmission/AudioProcessor.h"
 #include "transmission/Vst3Processor.h"
 #endif
 
@@ -15,6 +16,7 @@
 #include <limits>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 std::unique_ptr<transmission::AudioEngine> engine;
@@ -143,6 +145,25 @@ napi_value createEngine(napi_env env, napi_callback_info info) {
     return undefined(env);
 }
 
+std::vector<std::uint8_t> decodeBase64(const std::string& input) {
+    static const std::string chars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::vector<std::uint8_t> result;
+    int val = 0, bits = -8;
+    for (const unsigned char c : input) {
+        if (c == '=') break;
+        const auto pos = chars.find(static_cast<char>(c));
+        if (pos == std::string::npos) continue;
+        val = (val << 6) + static_cast<int>(pos);
+        bits += 6;
+        if (bits >= 0) {
+            result.push_back(static_cast<std::uint8_t>((val >> bits) & 0xFF));
+            bits -= 8;
+        }
+    }
+    return result;
+}
+
 napi_value loadProject(napi_env env, napi_callback_info info) {
     napi_value argv[1];
     std::size_t argc = 1;
@@ -208,6 +229,42 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
         if ((type == "AudioOutput" || type == "system-output") &&
             !routed->setExternalAudioOutput(id))
             return fail(env, "Unable to configure native audio output endpoint");
+#ifdef TRANSMISSION_NAPI_WITH_VST3
+        napi_value stateObj;
+        napi_valuetype stateType = napi_undefined;
+        if (napi_get_named_property(env, node, "state", &stateObj) == napi_ok &&
+            napi_typeof(env, stateObj, &stateType) == napi_ok && stateType == napi_object) {
+            std::string componentB64, controllerB64;
+            getString(env, stateObj, "component", componentB64);
+            getString(env, stateObj, "controller", controllerB64);
+            if (!componentB64.empty() || !controllerB64.empty()) {
+                transmission::ProcessorState procState;
+                if (!componentB64.empty()) procState.component = decodeBase64(componentB64);
+                if (!controllerB64.empty()) procState.controller = decodeBase64(controllerB64);
+                std::string stateError;
+                if (!routed->restoreProcessorState(id, procState, stateError))
+                    return fail(env, stateError.empty() ? "Unable to restore processor state" : stateError.c_str());
+            }
+        }
+        napi_value paramsArr;
+        bool hasParams = false;
+        if (napi_get_named_property(env, node, "parameters", &paramsArr) == napi_ok)
+            napi_is_array(env, paramsArr, &hasParams);
+        if (hasParams) {
+            std::uint32_t paramCount = 0;
+            napi_get_array_length(env, paramsArr, &paramCount);
+            for (std::uint32_t pi = 0; pi < paramCount; ++pi) {
+                napi_value param;
+                napi_get_element(env, paramsArr, pi, &param);
+                double idValue = 0.0, normValue = 0.0;
+                if (!getNumber(env, param, "id", idValue) || !getNumber(env, param, "normalizedValue", normValue))
+                    continue;
+                std::string paramError;
+                if (!routed->setParameter(id, static_cast<std::uint32_t>(idValue), normValue, paramError))
+                    return fail(env, paramError.empty() ? "Unable to restore parameter" : paramError.c_str());
+            }
+        }
+#endif
     }
     std::uint32_t connectionCount = 0;
     napi_get_array_length(env, connections, &connectionCount);

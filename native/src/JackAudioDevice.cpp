@@ -127,19 +127,21 @@ bool JackAudioDevice::connectPhysicalPorts() {
            connectDirection(outputPorts_, JackPortIsInput, false);
 }
 
-bool JackAudioDevice::start(AudioCallback& callback) {
+bool JackAudioDevice::start(AudioCallback& /*callback*/) {
     if (!configured_ || running_.load(std::memory_order_acquire) || !client_) return false;
-    callback_.store(&callback, std::memory_order_release);
     running_.store(true, std::memory_order_release);
     if (jack_activate(client_) != 0) {
         running_.store(false, std::memory_order_release);
-        callback_.store(nullptr, std::memory_order_release);
         lastError_ = "unable to activate JACK client";
         return false;
     }
     // PipeWire may assign a different quantum after activation.
     config_.blockSize = static_cast<std::size_t>(jack_get_buffer_size(client_));
     return true;
+}
+
+void JackAudioDevice::enableCallbacks(AudioCallback& callback) noexcept {
+    callback_.store(&callback, std::memory_order_release);
 }
 
 std::size_t JackAudioDevice::actualBlockSize() const noexcept {

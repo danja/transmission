@@ -26,6 +26,7 @@ public:
 
     bool configure(const AudioDeviceConfig& config) override;
     bool start(AudioCallback& callback) override;
+    void enableCallbacks(AudioCallback& callback) noexcept override;
     void stop() noexcept override;
     std::size_t actualBlockSize() const noexcept override;
 

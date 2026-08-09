@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -532,9 +533,19 @@ void Vst3Processor::setProcessContext(const AudioProcessContext& context) noexce
     if (!impl_) return;
     impl_->processContext.projectTimeMusic = context.projectTimeMusic;
     impl_->processContext.tempo = context.tempo;
+    const double beatsPerBar = impl_->processContext.timeSigNumerator > 0
+        ? static_cast<double>(impl_->processContext.timeSigNumerator)
+        : 4.0;
+    const double beatType = impl_->processContext.timeSigDenominator > 0
+        ? static_cast<double>(impl_->processContext.timeSigDenominator)
+        : 4.0;
+    const double barLengthQuarters = beatsPerBar * 4.0 / beatType;
+    const double bar = std::floor(context.projectTimeMusic / barLengthQuarters);
+    impl_->processContext.barPositionMusic = bar * barLengthQuarters;
     impl_->processContext.state = Steinberg::Vst::ProcessContext::kTempoValid |
                                   Steinberg::Vst::ProcessContext::kProjectTimeMusicValid |
-                                  Steinberg::Vst::ProcessContext::kTimeSigValid;
+                                  Steinberg::Vst::ProcessContext::kTimeSigValid |
+                                  Steinberg::Vst::ProcessContext::kBarPositionValid;
     if (context.playing)
         impl_->processContext.state |= Steinberg::Vst::ProcessContext::kPlaying;
 }

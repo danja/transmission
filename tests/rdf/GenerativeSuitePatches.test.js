@@ -3,12 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { ProjectSession } from '../../src/session/ProjectSession.js'
 
 const patchUrls = [
-  new URL('../../patches/hardcore-melodic-techno.ttl', import.meta.url),
-  new URL('../../patches/kraurock-jazz.ttl', import.meta.url),
-  new URL('../../patches/generative-suite-harmony.ttl', import.meta.url),
-  new URL('../../patches/generative-suite-rhythm-memory.ttl', import.meta.url),
-  new URL('../../patches/generative-suite-reactive.ttl', import.meta.url),
-  new URL('../../patches/generative-suite-mosaic.ttl', import.meta.url)
+  new URL('../../projects/patches/hardcore-melodic-techno.ttl', import.meta.url),
+  new URL('../../projects/patches/kraurock-jazz.ttl', import.meta.url),
+  new URL('../../projects/patches/generative-suite-harmony.ttl', import.meta.url),
+  new URL('../../projects/patches/generative-suite-rhythm-memory.ttl', import.meta.url),
+  new URL('../../projects/patches/generative-suite-reactive.ttl', import.meta.url),
+  new URL('../../projects/patches/generative-suite-mosaic.ttl', import.meta.url)
 ]
 
 const expectedBundles = [

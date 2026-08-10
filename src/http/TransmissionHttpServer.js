@@ -76,6 +76,9 @@ export class TransmissionHttpServer {
     if (path === '/diagnostics') {
       return sendJson(res, 200, control.diagnostics())
     }
+    if (path === '/peaks') {
+      return sendJson(res, 200, control.peaks())
+    }
     if (path === '/plugins') {
       await control.waitForPluginScan()
       return sendJson(res, 200, control.plugins())

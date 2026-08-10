@@ -29,6 +29,7 @@ export class NativeBridge {
   }
   sendMidi(nodeId, event) { return this.#call('sendMidi', nodeId, event) }
   getDiagnostics() { return this.#call('getDiagnostics') }
+  getPeaks() { return this.#call('getPeaks') }
   savePluginState(nodeId) { return this.#call('savePluginState', nodeId) }
   restorePluginState(nodeId, state) { return this.#call('restorePluginState', nodeId, state) }
   dispose() {

@@ -439,6 +439,18 @@ napi_value diagnostics(napi_env env, napi_callback_info info) {
     return result;
 }
 
+napi_value getPeaks(napi_env env, napi_callback_info info) {
+    (void)info;
+    auto* current = requireEngine(env);
+    napi_value result, vL, vR;
+    napi_create_object(env, &result);
+    napi_create_double(env, current ? current->peakL() : 0.0, &vL);
+    napi_create_double(env, current ? current->peakR() : 0.0, &vR);
+    napi_set_named_property(env, result, "peakL", vL);
+    napi_set_named_property(env, result, "peakR", vR);
+    return result;
+}
+
 napi_value disposeEngine(napi_env env, napi_callback_info info) {
     (void)info;
     engine.reset();
@@ -450,7 +462,7 @@ napi_value disposeEngine(napi_env env, napi_callback_info info) {
 } // namespace
 
 NAPI_MODULE_INIT() {
-    const std::array<napi_property_descriptor, 9> properties{{
+    const std::array<napi_property_descriptor, 10> properties{{
         {"createEngine", nullptr, createEngine, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"loadProject", nullptr, loadProject, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"configureTransport", nullptr, configureTransport, nullptr, nullptr, nullptr, napi_default, nullptr},
@@ -459,6 +471,7 @@ NAPI_MODULE_INIT() {
         {"sendMidi", nullptr, sendMidi, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setParameter", nullptr, setParameter, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"getDiagnostics", nullptr, diagnostics, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"getPeaks", nullptr, getPeaks, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"disposeEngine", nullptr, disposeEngine, nullptr, nullptr, nullptr, napi_default, nullptr},
     }};
     napi_define_properties(env, exports, properties.size(), properties.data());

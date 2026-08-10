@@ -29,6 +29,8 @@ public:
     bool setProcessingThreadCount(std::size_t threads);
     bool running() const;
     Diagnostics diagnostics() const;
+    float peakL() const noexcept { return engine_.peakL(); }
+    float peakR() const noexcept { return engine_.peakR(); }
     std::vector<ProcessorTiming> processorTimings() const;
     std::vector<NodeProcessorState> processorStates(std::string& error);
 

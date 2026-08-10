@@ -80,6 +80,11 @@ export class EngineSession {
     return this.bridge.getDiagnostics()
   }
 
+  peaks() {
+    if (!this.engineCreated) return { peakL: 0, peakR: 0 }
+    return this.bridge.getPeaks()
+  }
+
   synchronizeTransport() {
     if (!this.engineCreated) throw new Error('A native engine must be created before configuring transport')
     this.#configureTransport()

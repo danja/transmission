@@ -65,6 +65,8 @@ public:
     void seek(double beat);
     TransportAdvance advanceTransport(std::size_t frames) noexcept;
     Diagnostics diagnostics() const;
+    float peakL() const noexcept { return peakL_.load(std::memory_order_relaxed); }
+    float peakR() const noexcept { return peakR_.load(std::memory_order_relaxed); }
     std::vector<ProcessorTiming> processorTimings() const;
     std::vector<NodeProcessorState> processorStates(std::string& error);
     void process(const float* const* inputs, float* const* outputs,
@@ -132,6 +134,8 @@ private:
     std::atomic<std::uint64_t> timedRenderBlocks_{0};
     std::atomic<double> positionBeats_{0.0};
     std::atomic<std::size_t> lastCallbackFrames_{0};
+    std::atomic<float> peakL_{0.f};
+    std::atomic<float> peakR_{0.f};
     std::array<MidiEvent, maxMidiEventsPerBlock> midiEventBuffer_{};
     std::size_t midiEventCount_ = 0;
     std::array<MidiEvent, maxMidiEventsPerBlock> midiOutputBuffer_{};

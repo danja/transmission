@@ -134,9 +134,13 @@ struct GraphView {
     std::string liveServerUrl{"http://127.0.0.1:7878"};
     bool liveServerAvailable = false;
     int liveServerRevision = -1;
+    std::string liveServerFilePath;
     guint liveServerPollTimer = 0;
     GSubprocess* liveServerProcess = nullptr;
 #endif
+    std::atomic<float> outputPeakL{0.f};
+    std::atomic<float> outputPeakR{0.f};
+    guint peakMeterTimer = 0;
     std::size_t requestedBufferSize = 0;
     std::size_t renderAheadMilliseconds = 200;
     std::size_t processingThreads = 0;
@@ -2088,6 +2092,48 @@ gboolean drawGraph(GtkWidget*, cairo_t* cr, gpointer data) {
             cairo_move_to(cr, node.x + 15.0, node.y + 52.0);
             cairo_show_text(cr, details);
         }
+        if (node.kind == NodeKind::SystemOutput) {
+            const float peakL = view.outputPeakL.load(std::memory_order_relaxed);
+            const float peakR = view.outputPeakR.load(std::memory_order_relaxed);
+            const double meterTop    = node.y + 42.0;
+            const double meterBottom = node.y + height - 8.0;
+            const double meterH      = meterBottom - meterTop;
+            const double barW = 16.0;
+            const double gapX = 6.0;
+            const double originX = node.x + (nodeWidth - 2.0 * barW - gapX) / 2.0;
+            const auto drawMeter = [&](double x, float peak) {
+                // Background track
+                cairo_set_source_rgba(cr, 0.08, 0.08, 0.10, 0.9);
+                cairo_rectangle(cr, x, meterTop, barW, meterH);
+                cairo_fill(cr);
+                if (peak <= 0.001f) return;
+                const double fillH = std::min(static_cast<double>(peak), 1.0) * meterH;
+                const double fillY = meterBottom - fillH;
+                // Colour: green → yellow → red
+                double r, g, b;
+                if (peak < 0.7f)      { r = 0.15; g = 0.85; b = 0.25; }
+                else if (peak < 0.9f) { r = 0.95; g = 0.80; b = 0.10; }
+                else                  { r = 0.95; g = 0.18; b = 0.12; }
+                cairo_set_source_rgb(cr, r, g, b);
+                cairo_rectangle(cr, x, fillY, barW, fillH);
+                cairo_fill(cr);
+                // Subtle border
+                cairo_set_source_rgba(cr, 1, 1, 1, 0.15);
+                cairo_set_line_width(cr, 0.75);
+                cairo_rectangle(cr, x, meterTop, barW, meterH);
+                cairo_stroke(cr);
+            };
+            drawMeter(originX,             peakL);
+            drawMeter(originX + barW + gapX, peakR);
+            // Labels
+            cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+            cairo_set_font_size(cr, 9.0);
+            cairo_set_source_rgba(cr, 0.7, 0.7, 0.7, 0.9);
+            cairo_move_to(cr, originX + 4.0, meterTop - 3.0);
+            cairo_show_text(cr, "L");
+            cairo_move_to(cr, originX + barW + gapX + 4.0, meterTop - 3.0);
+            cairo_show_text(cr, "R");
+        }
         for (std::size_t port = 0; port < node.audioInputs; ++port)
             drawPort(cr, node.x, portY(node, PortKind::Audio, port, false),
                      false, PortKind::Audio);
@@ -2323,6 +2369,7 @@ static void syncToLiveServer(GraphView& view, const std::string& path) {
     if (httpPost(view.liveServerUrl + "/projects/open", body, "text/turtle", response)) {
         const int rev = parseRevisionFromJson(response);
         if (rev >= 0) view.liveServerRevision = rev;
+        view.liveServerFilePath = path;
         logConsole(view, "Live server synced: " + path);
     } else {
         logConsole(view, "Warning: live server sync failed — server may have stopped");
@@ -2402,13 +2449,17 @@ static gboolean liveServerPollTick(gpointer data) {
         logConsole(view, "Live server reconnected at " + view.liveServerUrl);
     }
     const int serverRevision = parseRevisionFromTurtle(status);
-    if (serverRevision >= 0 && serverRevision != view.liveServerRevision) {
-        if (view.liveServerRevision >= 0)
+    const std::string serverFilePath = parseFilePathFromTurtle(status);
+    const bool revisionChanged = serverRevision >= 0 && serverRevision != view.liveServerRevision;
+    const bool projectChanged = !serverFilePath.empty() && serverFilePath != view.liveServerFilePath;
+    if (revisionChanged || projectChanged) {
+        if (view.liveServerRevision >= 0 && revisionChanged)
             logConsole(view, "External edit detected (revision " +
                        std::to_string(view.liveServerRevision) + " → " +
                        std::to_string(serverRevision) + ")");
-        reloadFromLiveServer(view, parseFilePathFromTurtle(status));
+        reloadFromLiveServer(view, serverFilePath);
         view.liveServerRevision = serverRevision;
+        view.liveServerFilePath = serverFilePath;
         updateWindowTitle(view);
     }
     return G_SOURCE_CONTINUE;
@@ -3199,6 +3250,7 @@ void onWindowDestroy(GtkWidget*, gpointer data) {
     }
     if (view->renderProgressTimer) g_source_remove(view->renderProgressTimer);
     if (view->connectionWatchTimer) g_source_remove(view->connectionWatchTimer);
+    if (view->peakMeterTimer) g_source_remove(view->peakMeterTimer);
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
     if (view->liveServerPollTimer) g_source_remove(view->liveServerPollTimer);
     if (view->liveServerProcess) {
@@ -3210,6 +3262,41 @@ void onWindowDestroy(GtkWidget*, gpointer data) {
 #endif
     if (view->consoleWindow) gtk_widget_destroy(view->consoleWindow);
     delete view;
+}
+
+static gboolean peakMeterTick(gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    float newL = 0.f, newR = 0.f;
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    if (view.liveServerAvailable) {
+        const auto json = httpGet(view.liveServerUrl + "/peaks");
+        if (!json.empty()) {
+            const auto findFloat = [&](const char* key) -> float {
+                const auto pos = json.find(key);
+                if (pos == std::string::npos) return 0.f;
+                const auto colon = json.find(':', pos);
+                if (colon == std::string::npos) return 0.f;
+                return static_cast<float>(std::strtod(json.data() + colon + 1, nullptr));
+            };
+            newL = findFloat("\"peakL\"");
+            newR = findFloat("\"peakR\"");
+        }
+    }
+#endif
+#if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
+    if (newL == 0.f && newR == 0.f && view.runtime && view.runtime->running()) {
+        newL = view.runtime->peakL();
+        newR = view.runtime->peakR();
+    }
+#endif
+    const float prevL = view.outputPeakL.load(std::memory_order_relaxed);
+    const float prevR = view.outputPeakR.load(std::memory_order_relaxed);
+    if (std::fabs(newL - prevL) > 0.001f || std::fabs(newR - prevR) > 0.001f) {
+        view.outputPeakL.store(newL, std::memory_order_relaxed);
+        view.outputPeakR.store(newR, std::memory_order_relaxed);
+        gtk_widget_queue_draw(view.canvas);
+    }
+    return G_SOURCE_CONTINUE;
 }
 
 void activate(GtkApplication* application, gpointer) {
@@ -3351,6 +3438,7 @@ void activate(GtkApplication* application, gpointer) {
     }
     view->liveServerPollTimer = g_timeout_add(500, liveServerPollTick, view);
 #endif
+    view->peakMeterTimer = g_timeout_add(80, peakMeterTick, view);
 
     loopChanged(nullptr, view);
     g_signal_connect(playButton, "clicked", G_CALLBACK(playStopClicked), view);

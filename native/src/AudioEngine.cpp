@@ -3,6 +3,7 @@
 #include "transmission/AudioEngine.h"
 
 #include <algorithm>
+#include <cmath>
 #include <chrono>
 #include <thread>
 #include <utility>
@@ -286,6 +287,18 @@ void AudioEngine::process(const float* const* inputs, float* const* outputs,
         processDirect(inputs, outputs, channels, frames);
     else
         processBuffered(inputs, outputs, channels, frames);
+    // Output peak tracking with ~1.5 s exponential decay.
+    const float sr = static_cast<float>(deviceConfig_.sampleRate > 0 ? deviceConfig_.sampleRate : 48000);
+    const float decay = std::exp(-static_cast<float>(frames) / (1.5f * sr));
+    for (std::size_t ch = 0; ch < std::min(channels, std::size_t{2}); ++ch) {
+        if (!outputs[ch]) continue;
+        float peak = 0.f;
+        for (std::size_t s = 0; s < frames; ++s)
+            peak = std::max(peak, std::abs(outputs[ch][s]));
+        auto& atom = ch == 0 ? peakL_ : peakR_;
+        float prev = atom.load(std::memory_order_relaxed);
+        atom.store(std::max(peak, prev * decay), std::memory_order_relaxed);
+    }
 }
 
 void AudioEngine::drainControlMidi() noexcept {

@@ -184,6 +184,11 @@ export class TransmissionControlService {
     return { ...this.status(), native }
   }
 
+  peaks() {
+    if (this.engine) return this.engine.peaks()
+    return { peakL: 0, peakR: 0 }
+  }
+
   plugins({ installedOnly = false } = {}) {
     this.#requirePluginCatalogue()
     return {

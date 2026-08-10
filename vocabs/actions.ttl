@@ -1,0 +1,79 @@
+@prefix trn:  <http://purl.org/stuff/transmissions/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+## ── Action class hierarchy ───────────────────────────────────────────────────
+
+trn:Action          a owl:Class ; rdfs:label "Action" .
+trn:GraphAction     a owl:Class ; rdfs:subClassOf trn:Action ; rdfs:label "Graph Action" .
+trn:TransportAction a owl:Class ; rdfs:subClassOf trn:Action ; rdfs:label "Transport Action" .
+trn:ProjectAction   a owl:Class ; rdfs:subClassOf trn:Action ; rdfs:label "Project Action" .
+trn:PluginAction    a owl:Class ; rdfs:subClassOf trn:Action ; rdfs:label "Plugin Action" .
+
+## Graph operations
+trn:ChangeSet          a owl:Class ; rdfs:subClassOf trn:GraphAction ;
+    rdfs:label "Change Set" ;
+    rdfs:comment "Atomic list of graph operations applied against an expected revision." .
+trn:AddNode            a owl:Class ; rdfs:subClassOf trn:GraphAction .
+trn:UpdateNode         a owl:Class ; rdfs:subClassOf trn:GraphAction .
+trn:RemoveNode         a owl:Class ; rdfs:subClassOf trn:GraphAction .
+trn:AddConnection      a owl:Class ; rdfs:subClassOf trn:GraphAction .
+trn:RemoveConnection   a owl:Class ; rdfs:subClassOf trn:GraphAction .
+trn:SetProjectMetadata a owl:Class ; rdfs:subClassOf trn:GraphAction .
+
+## Transport operations
+trn:PlayAction         a owl:Class ; rdfs:subClassOf trn:TransportAction .
+trn:StopAction         a owl:Class ; rdfs:subClassOf trn:TransportAction .
+trn:ConfigureTransport a owl:Class ; rdfs:subClassOf trn:TransportAction .
+
+## Parameter operation
+trn:SetParameter a owl:Class ; rdfs:subClassOf trn:Action .
+
+## Project operations
+trn:OpenProject a owl:Class ; rdfs:subClassOf trn:ProjectAction .
+trn:SaveProject a owl:Class ; rdfs:subClassOf trn:ProjectAction .
+trn:NewProject  a owl:Class ; rdfs:subClassOf trn:ProjectAction .
+
+## Plugin operations
+trn:ScanPlugins a owl:Class ; rdfs:subClassOf trn:PluginAction .
+
+## ── Common action properties ─────────────────────────────────────────────────
+
+trn:operations       a owl:ObjectProperty ;
+    rdfs:comment "rdf:List of operation blank nodes within a ChangeSet." .
+trn:expectedRevision a owl:DatatypeProperty ; rdfs:range xsd:integer ;
+    rdfs:comment "Project revision the client last observed; rejected if stale." .
+trn:dryRun           a owl:DatatypeProperty ; rdfs:range xsd:boolean ;
+    rdfs:comment "Validate without committing when true." .
+trn:filePath         a owl:DatatypeProperty ; rdfs:range xsd:string .
+trn:nodeId           a owl:DatatypeProperty ; rdfs:range xsd:string .
+trn:parameterId      a owl:DatatypeProperty ; rdfs:range xsd:integer .
+trn:normalizedValue  a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+trn:sampleOffset     a owl:DatatypeProperty ; rdfs:range xsd:integer .
+
+## Transport configure properties
+trn:tempo            a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+trn:atBeat           a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+trn:positionBeats    a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+trn:clearLoop        a owl:DatatypeProperty ; rdfs:range xsd:boolean .
+trn:loopStartBeat    a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+trn:loopEndBeat      a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+trn:loopEnabled      a owl:DatatypeProperty ; rdfs:range xsd:boolean .
+
+## Operation payload encoding (JSON literals for complex nested structures)
+trn:nodeJson         a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:comment "JSON-encoded node definition within an AddNode or UpdateNode operation." .
+trn:connectionJson   a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:comment "JSON-encoded connection definition within an AddConnection or RemoveConnection operation." .
+trn:changesJson      a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:comment "JSON-encoded partial node changes within an UpdateNode operation." .
+trn:metadataJson     a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:comment "JSON-encoded metadata object within a SetProjectMetadata operation." .
+
+## ── Server configuration ─────────────────────────────────────────────────────
+
+trn:ServerConfig   a owl:Class ; rdfs:label "Server Configuration" .
+trn:port           a owl:DatatypeProperty ; rdfs:domain trn:ServerConfig ; rdfs:range xsd:integer .
+trn:bindAddress    a owl:DatatypeProperty ; rdfs:domain trn:ServerConfig ; rdfs:range xsd:string .
+trn:allowedRoots   a owl:ObjectProperty   ; rdfs:domain trn:ServerConfig .

@@ -50,3 +50,14 @@ UI additions:
 - Add persisted VST3 parameter, bypass, and send automation with bounded
   sample-offset delivery to the native engine.
 - Add a deterministic capture/freeze path for MIDI generator output.
+
+## MCP Live — remaining work
+
+Phase 1 (foundation) is complete: HTTP server, HTTP client, live entry point, GTK poll+sync.
+
+Deferred to Phase 2:
+- GTK full two-way sync: send every in-editor change (add node, connect, drag) to live server
+  as `trn:ChangeSet` POST so MCP always sees the latest graph without waiting for a save.
+- SSE (`GET /events`) for push notifications to GTK and MCP instead of 500 ms polling.
+- Auto-reload GTK view when external edit detected (currently only logs a message).
+- `transmission-live.js` subprocess launch from GTK on startup (currently manual).

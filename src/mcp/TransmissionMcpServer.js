@@ -82,19 +82,19 @@ function registerResources(server, control) {
     'current-project',
     'transmission://project',
     { title: 'Current Transmission project', description: 'Current graph, revision, transport, and runtime status', mimeType: 'application/json' },
-    async uri => resource(uri, JSON.stringify(control.describeProject(), null, 2), 'application/json')
+    async uri => resource(uri, JSON.stringify(await control.describeProject(), null, 2), 'application/json')
   )
   server.registerResource(
     'current-project-turtle',
     'transmission://project/turtle',
     { title: 'Current project as RDF Turtle', description: 'Canonical persisted representation of the current graph', mimeType: 'text/turtle' },
-    async uri => resource(uri, control.projectTurtle(), 'text/turtle')
+    async uri => resource(uri, await control.projectTurtle(), 'text/turtle')
   )
   server.registerResource(
     'diagnostics',
     'transmission://diagnostics',
     { title: 'Transmission diagnostics', description: 'Project, transport, engine, and native processing status', mimeType: 'application/json' },
-    async uri => resource(uri, JSON.stringify(control.diagnostics(), null, 2), 'application/json')
+    async uri => resource(uri, JSON.stringify(await control.diagnostics(), null, 2), 'application/json')
   )
   if (control.pluginCatalogue) {
     server.registerResource(
@@ -103,14 +103,14 @@ function registerResources(server, control) {
       { title: 'Transmission plugin catalogue', description: 'Discovered VST3 facts merged with curated behavioural profiles', mimeType: 'application/json' },
       async uri => {
         await control.waitForPluginScan()
-        return resource(uri, JSON.stringify(control.plugins(), null, 2), 'application/json')
+        return resource(uri, JSON.stringify(await control.plugins(), null, 2), 'application/json')
       }
     )
     server.registerResource(
       'plugin-profiles',
       'transmission://plugins/profiles',
       { title: 'Curated plugin profiles as RDF Turtle', description: 'The RDF source of curated musical and behavioural plugin knowledge', mimeType: 'text/turtle' },
-      async uri => resource(uri, control.pluginProfilesTurtle(), 'text/turtle')
+      async uri => resource(uri, await control.pluginProfilesTurtle(), 'text/turtle')
     )
     server.registerResource(
       'discovered-plugins',
@@ -118,7 +118,7 @@ function registerResources(server, control) {
       { title: 'Discovered VST3 metadata as RDF Turtle', description: 'Technical plugin, topology, and parameter evidence produced by the isolated VST3 scanner', mimeType: 'text/turtle' },
       async uri => {
         await control.waitForPluginScan()
-        return resource(uri, control.discoveredPluginsTurtle(), 'text/turtle')
+        return resource(uri, await control.discoveredPluginsTurtle(), 'text/turtle')
       }
     )
   }
@@ -129,20 +129,20 @@ function registerTools(server, control) {
     title: 'Inspect Transmission status',
     description: 'Get project revision, dirty state, transport, and native engine availability.',
     annotations: readOnly
-  }, async () => result(control.status()))
+  }, async () => result(await control.status()))
 
   server.registerTool('project_get', {
     title: 'Inspect current project',
     description: 'Get the complete current graph and its revision.',
     annotations: readOnly
-  }, async () => result(control.describeProject()))
+  }, async () => result(await control.describeProject()))
 
   server.registerTool('project_new', {
     title: 'Create project',
     description: 'Replace the current project with a new validated graph. This can discard unsaved changes.',
     inputSchema: { project: graphSchema },
     annotations: destructive
-  }, async ({ project }) => result(control.newProject(project)))
+  }, async ({ project }) => result(await control.newProject(project)))
 
   server.registerTool('project_open', {
     title: 'Open project',
@@ -167,7 +167,7 @@ function registerTools(server, control) {
       operations: z.array(operationSchema).min(1).max(256)
     },
     annotations: destructive
-  }, async input => result(control.applyGraphChanges(input)))
+  }, async input => result(await control.applyGraphChanges(input)))
 
   server.registerTool('transport_configure', {
     title: 'Configure transport',
@@ -185,19 +185,19 @@ function registerTools(server, control) {
       positionBeats: z.number().nonnegative().optional()
     },
     annotations: mutatingIdempotent
-  }, async input => result(control.configureTransport(input)))
+  }, async input => result(await control.configureTransport(input)))
 
   server.registerTool('transport_play', {
     title: 'Start audio',
     description: 'Start native audio processing for the loaded project.',
     annotations: mutatingIdempotent
-  }, async () => result(control.startTransport()))
+  }, async () => result(await control.startTransport()))
 
   server.registerTool('transport_stop', {
     title: 'Stop audio',
     description: 'Stop native audio processing.',
     annotations: mutatingIdempotent
-  }, async () => result(control.stopTransport()))
+  }, async () => result(await control.stopTransport()))
 
   server.registerTool('parameter_set', {
     title: 'Set plugin parameter',
@@ -210,13 +210,13 @@ function registerTools(server, control) {
       sampleOffset: z.number().int().nonnegative().default(0)
     },
     annotations: mutatingIdempotent
-  }, async input => result(control.setParameter(input)))
+  }, async input => result(await control.setParameter(input)))
 
   server.registerTool('transmission_diagnostics', {
     title: 'Inspect engine diagnostics',
     description: 'Read native processing and control-plane diagnostics.',
     annotations: readOnly
-  }, async () => result(control.diagnostics()))
+  }, async () => result(await control.diagnostics()))
 
   if (control.pluginCatalogue) {
     server.registerTool('plugins_list', {
@@ -226,7 +226,7 @@ function registerTools(server, control) {
       annotations: readOnly
     }, async input => {
       await control.waitForPluginScan()
-      return result(control.plugins(input))
+      return result(await control.plugins(input))
     })
 
     server.registerTool('plugins_search', {
@@ -243,7 +243,7 @@ function registerTools(server, control) {
       annotations: readOnly
     }, async input => {
       await control.waitForPluginScan()
-      return result(control.searchPlugins(input))
+      return result(await control.searchPlugins(input))
     })
 
     server.registerTool('plugin_describe', {
@@ -253,7 +253,7 @@ function registerTools(server, control) {
       annotations: readOnly
     }, async ({ identifier }) => {
       await control.waitForPluginScan()
-      return result(control.describePlugin(identifier))
+      return result(await control.describePlugin(identifier))
     })
 
     server.registerTool('plugin_validate_chain', {
@@ -263,7 +263,7 @@ function registerTools(server, control) {
       annotations: readOnly
     }, async ({ identifiers }) => {
       await control.waitForPluginScan()
-      return result(control.validatePluginChain(identifiers))
+      return result(await control.validatePluginChain(identifiers))
     })
 
     server.registerTool('plugins_scan', {

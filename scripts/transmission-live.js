@@ -1,43 +1,44 @@
 #!/usr/bin/env node
+// scripts/transmission-live.js
+// Persistent live server: combines TransmissionControlService with an HTTP REST API.
+// The GTK app and MCP server (in --live mode) connect to this process.
 
 import { createRequire } from 'node:module'
 import { availableParallelism, homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { NativeBridge } from '../src/bridge/NativeBridge.js'
 import { TransmissionControlService } from '../src/control/TransmissionControlService.js'
-import { TransmissionHttpClient } from '../src/http/TransmissionHttpClient.js'
-import { createTransmissionMcpServer } from '../src/mcp/TransmissionMcpServer.js'
+import { TransmissionHttpServer } from '../src/http/TransmissionHttpServer.js'
 import { EngineSession } from '../src/session/EngineSession.js'
 import { ProjectSession } from '../src/session/ProjectSession.js'
 import { PluginCatalogue } from '../src/registry/PluginCatalogue.js'
 import { Vst3Discovery } from '../src/registry/Vst3Discovery.js'
+import { parseServerConfig } from '../src/http/TurtleCodec.js'
 
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const options = parseArguments(process.argv.slice(2))
 
-// ── Live mode: delegate everything to a running transmission-live server ──────
-if (options.liveEndpoint) {
-  const control = new TransmissionHttpClient(options.liveEndpoint)
-  const server = createTransmissionMcpServer(control)
-  const transport = new StdioServerTransport()
-  server.server.onerror = error => console.error(`Transmission MCP server error: ${error.message}`)
-  for (const signal of ['SIGINT', 'SIGTERM']) {
-    process.once(signal, async () => { await server.close(); process.exit(0) })
-  }
-  await server.connect(transport)
-  console.error(`Transmission MCP server ready (live mode → ${options.liveEndpoint})`)
-  const keepAlive = setInterval(() => {}, 60_000)
-  try {
-    await new Promise(resolve => process.stdin.once('end', resolve))
-  } finally {
-    clearInterval(keepAlive)
-    await server.close()
-  }
-  process.exit(0)
+// ── Load configuration ────────────────────────────────────────────────────────
+
+let serverConfig = { port: 7878, bindAddress: '127.0.0.1', allowedRoots: ['.'] }
+const configPath = options.config
+  ?? (existsSync(join(repositoryRoot, 'config.ttl')) ? join(repositoryRoot, 'config.ttl') : null)
+  ?? join(repositoryRoot, 'config.defaults.ttl')
+try {
+  const configTurtle = await readFile(configPath, 'utf8')
+  serverConfig = await parseServerConfig(configTurtle)
+} catch (error) {
+  console.error(`[transmission-live] Warning: could not load config from ${configPath}: ${error.message}`)
 }
-const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const port = options.port ?? serverConfig.port
+const bindAddress = options.bindAddress ?? serverConfig.bindAddress
+const allowedRoots = options.projectRoots.length ? options.projectRoots : serverConfig.allowedRoots
+
+// ── Plugin discovery ──────────────────────────────────────────────────────────
+
 const profilePaths = options.pluginProfiles.length
   ? options.pluginProfiles
   : [join(repositoryRoot, 'profiles/downspout.ttl')]
@@ -57,6 +58,9 @@ const discovery = existsSync(inspectorPath)
   : null
 const pluginCatalogue = new PluginCatalogue({ discovery })
 for (const profilePath of profilePaths) await pluginCatalogue.loadProfileFile(resolve(profilePath))
+
+// ── Control service ───────────────────────────────────────────────────────────
+
 const project = new ProjectSession()
 const engine = options.nativeAddon
   ? new EngineSession({
@@ -68,67 +72,54 @@ const engine = options.nativeAddon
 const control = new TransmissionControlService({
   project,
   engine,
-  allowedRoots: options.projectRoots.length ? options.projectRoots : [process.cwd()],
+  allowedRoots: allowedRoots.map(root => resolve(root)),
   pluginCatalogue,
   pluginRoots: pluginRoots.map(root => resolve(root))
 })
 
 if (options.project) await control.openProject(options.project)
 
-const server = createTransmissionMcpServer(control)
-const transport = new StdioServerTransport()
-server.server.onerror = error => {
-  console.error(`Transmission MCP server error: ${error.message}`)
+// ── HTTP server ───────────────────────────────────────────────────────────────
+
+const httpServer = new TransmissionHttpServer(control, { port, bindAddress })
+await httpServer.listen()
+console.log(`Transmission live server ready on http://${bindAddress}:${port}`)
+
+// ── Plugin scan ───────────────────────────────────────────────────────────────
+
+if (discovery && !options.noPluginScan) {
+  pluginCatalogue.startScan(pluginRoots.map(root => resolve(root)))
+    .then(scan => {
+      console.log(`Plugin catalogue: ${scan.discovered} classes, ${scan.profiled} profiled, ${scan.failures.length} scan failures`)
+    })
+    .catch(error => {
+      console.error(`Plugin catalogue scan failed: ${error.message}`)
+    })
 }
-let initialPluginScan = Promise.resolve()
-server.server.oninitialized = () => {
-  if (!discovery || options.noPluginScan) return
-  initialPluginScan = pluginCatalogue.startScan(
-    pluginRoots.map(root => resolve(root))
-  ).then(scan => {
-    console.error(`Transmission plugin catalogue: ${scan.discovered} classes, ${scan.profiled} profiled, ${scan.failures.length} scan failures`)
-  }).catch(error => {
-    console.error(`Transmission plugin catalogue scan failed: ${errorMessage(error)}`)
-  })
-}
+
+// ── Shutdown ──────────────────────────────────────────────────────────────────
+
 let disposed = false
-const disposeControl = () => {
+const dispose = async () => {
   if (disposed) return
   disposed = true
   control.dispose()
+  await httpServer.close()
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, async () => {
-    disposeControl()
-    await server.close()
+    await dispose()
     process.exit(0)
   })
 }
-process.once('exit', disposeControl)
+process.once('exit', () => { if (!disposed) control.dispose() })
 
-await server.connect(transport)
-console.error(`Transmission MCP server ready (${engine ? 'native audio enabled' : 'project-only mode'})`)
-// A pending Promise does not keep Node alive when the SDK's stdio pipe is idle.
-const keepAlive = setInterval(() => {}, 60_000)
-try {
-  await new Promise(resolveInputEnd => {
-    process.stdin.once('end', resolveInputEnd)
-  })
-  await initialPluginScan
-} finally {
-  clearInterval(keepAlive)
-  disposeControl()
-  await server.close()
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function loadNativeAddon(filePath) {
   const require = createRequire(import.meta.url)
   return require(resolve(filePath))
-}
-
-function errorMessage(error) {
-  return error instanceof Error ? error.message : String(error)
 }
 
 function parseArguments(arguments_) {
@@ -141,7 +132,9 @@ function parseArguments(arguments_) {
     pluginRoots: [],
     vst3Inspector: null,
     noPluginScan: false,
-    liveEndpoint: null
+    config: null,
+    port: null,
+    bindAddress: null
   }
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index]
@@ -155,27 +148,26 @@ function parseArguments(arguments_) {
     } else if (argument === '--no-plugin-scan') {
       result.noPluginScan = true
       continue
-    } else if (argument === '--live') {
-      result.liveEndpoint = (value && !value.startsWith('--')) ? (index += 1, value) : 'http://localhost:7878'
-      continue
     } else if (argument === '--native-addon' && value) result.nativeAddon = value
     else if (argument === '--project' && value) result.project = value
     else if (argument === '--project-root' && value) result.projectRoots.push(value)
     else if (argument === '--plugin-profile' && value) result.pluginProfiles.push(value)
     else if (argument === '--plugin-root' && value) result.pluginRoots.push(value)
     else if (argument === '--vst3-inspector' && value) result.vst3Inspector = value
+    else if (argument === '--config' && value) result.config = value
+    else if (argument === '--port' && value) result.port = positiveNumber('--port', value)
+    else if (argument === '--bind' && value) result.bindAddress = value
     else if (argument === '--block-size' && value) result.engineOptions.blockSize = positiveNumber(argument, value)
     else if (argument === '--sample-rate' && value) result.engineOptions.sampleRate = positiveNumber(argument, value)
     else if (argument === '--channels' && value) result.engineOptions.channels = positiveNumber(argument, value)
     else if (argument === '--help') {
-      console.error([
-        'Usage: transmission-mcp [--live [URL]] [--project-root DIR] [--project FILE]',
-        '                        [--native-addon FILE] [--jack] [--auto-connect]',
-        '                        [--block-size FRAMES] [--sample-rate HZ] [--channels COUNT]',
-        '                        [--plugin-profile FILE] [--plugin-root DIR]',
-        '                        [--vst3-inspector FILE] [--no-plugin-scan]',
-        '',
-        '  --live [URL]  Connect to a running transmission-live server (default: http://localhost:7878)'
+      console.log([
+        'Usage: transmission-live [--config FILE] [--port PORT] [--bind ADDRESS]',
+        '                         [--project-root DIR] [--project FILE]',
+        '                         [--native-addon FILE] [--jack] [--auto-connect]',
+        '                         [--block-size FRAMES] [--sample-rate HZ] [--channels COUNT]',
+        '                         [--plugin-profile FILE] [--plugin-root DIR]',
+        '                         [--vst3-inspector FILE] [--no-plugin-scan]'
       ].join('\n'))
       process.exit(0)
     } else if (argument.startsWith('--')) {

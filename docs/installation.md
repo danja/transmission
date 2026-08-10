@@ -148,38 +148,113 @@ render, while autonomous plugin generators run normally.
 
 ## MCP setup
 
-Transmission's MCP server can run as a project and catalogue service without
-opening an audio device:
+Transmission has two MCP modes: **live** (recommended, shares state with the
+running GTK window) and **project-only** (no audio device needed).
+
+### Live mode
+
+The live server is a persistent Node.js process that runs the control plane
+and exposes an HTTP REST API at `localhost:7878`. Both the GTK application and
+the MCP client connect to it, so all three share one authoritative project.
+
+Start the live server (with JACK audio):
+
+```sh
+node scripts/transmission-live.js --jack --auto-connect
+```
+
+Or use the npm shortcut:
+
+```sh
+npm run live:start:jack
+```
+
+Start the GTK window pointing at it:
+
+```sh
+TRANSMISSION_LIVE_URL=http://localhost:7878 ./transmission
+```
+
+The title bar shows `[live]` when connected. Saving from the UI automatically
+syncs the server. External edits from MCP are detected every 500 ms and logged
+to the console window.
+
+Start MCP in live mode (stdio transport, for Claude Code or Codex):
+
+```sh
+node scripts/transmission-mcp.js --live
+```
+
+Or with a non-default server URL:
+
+```sh
+node scripts/transmission-mcp.js --live http://localhost:8080
+```
+
+Register with Claude Code (`~/.claude/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "transmission": {
+      "command": "node",
+      "args": ["/path/to/transmission/scripts/transmission-mcp.js", "--live"]
+    }
+  }
+}
+```
+
+Register with Codex:
+
+```sh
+codex mcp add transmission -- \
+  node "$PWD/scripts/transmission-mcp.js" --live
+```
+
+### Project-only mode
+
+Runs the control plane inline over stdio — no live server or audio device
+needed. Suitable for offline project editing, plugin exploration, and CI.
+
+```sh
+node scripts/transmission-mcp.js --project-root "$PWD"
+```
+
+Or the npm shortcut:
 
 ```sh
 npm run mcp:start -- --project-root "$PWD"
 ```
 
-Run the protocol smoke test with:
+Run the protocol smoke test:
 
 ```sh
 npm run mcp:smoke
 ```
 
-Register the project-only server with Codex:
+Register with Claude Code:
 
-```sh
-codex mcp add transmission -- \
-  node "$PWD/scripts/transmission-mcp.js" \
-  --project-root "$PWD"
+```json
+{
+  "mcpServers": {
+    "transmission": {
+      "command": "node",
+      "args": [
+        "/path/to/transmission/scripts/transmission-mcp.js",
+        "--project-root", "/path/to/projects"
+      ]
+    }
+  }
+}
 ```
 
-Restart Codex after registration. Project access is restricted to configured
-roots; repeat `--project-root` to allow additional locations.
+Project access is restricted to configured roots; repeat `--project-root` to
+allow additional directories. Graph mutations require the current revision;
+complex edits should use `dryRun` validation first.
 
-Project-only mode can inspect, edit, validate, open, and save Turtle projects
-and search the installed plugin catalogue, but it cannot run audio. Graph
-mutations require the current revision and complex edits should first use dry
-run validation.
+### MCP with a native audio engine (project-only)
 
-### MCP with a native audio engine
-
-Build an addon with VST3 and JACK support:
+To drive audio directly from MCP without the GTK window, build the N-API addon:
 
 ```sh
 cmake -S native -B native/build-napi-jack-vst3 \
@@ -194,17 +269,26 @@ cmake --build native/build-napi-jack-vst3 \
 Start MCP with that addon:
 
 ```sh
-npm run mcp:start -- \
+node scripts/transmission-mcp.js \
   --project-root "$PWD" \
   --native-addon native/build-napi-jack-vst3/transmission_native.node \
-  --jack \
-  --block-size 1024 \
-  --sample-rate 48000
+  --jack --auto-connect
 ```
 
-Add `--auto-connect` to request automatic physical audio connections. The
-addon and GTK application are currently independent hosts; MCP does not attach
-to an already-running GTK process.
+### Live server configuration
+
+Copy `config.defaults.ttl` to `config.ttl` and edit the port or allowed roots:
+
+```turtle
+@prefix trn: <http://purl.org/stuff/transmissions/> .
+
+[] a trn:ServerConfig ;
+    trn:port 7878 ;
+    trn:bindAddress "127.0.0.1" ;
+    trn:allowedRoots ( "." ) .
+```
+
+Command-line flags (`--port`, `--bind`, `--project-root`) override the file.
 
 ## Developer builds and tests
 
@@ -316,5 +400,29 @@ WAV rendering remains available without `ffmpeg`.
 
 ### MCP can edit projects but cannot play them
 
-That is expected in project-only mode. Build the combined N-API/JACK/VST3 addon
-and pass it with `--native-addon`, or use the GTK application for playback.
+In project-only mode that is expected. Switch to live mode: start
+`transmission-live.js --jack --auto-connect` and run MCP with `--live`.
+Alternatively, build the N-API/JACK/VST3 addon and pass `--native-addon`.
+
+### The GTK window shows `[offline]` instead of `[live]`
+
+The window could not reach the live server at startup or the server stopped.
+Check that `transmission-live.js` is running and that `TRANSMISSION_LIVE_URL`
+matches its address. The window retries every 500 ms and updates to `[live]`
+as soon as the server responds.
+
+### The live server build does not include HTTP support
+
+`build.sh` prints `Live server support: disabled` if libcurl was not found at
+configure time. Install the development headers and rebuild:
+
+```sh
+sudo apt install libcurl4-openssl-dev
+cmake -S native -B native/build-ui-jack-vst3 \
+  -DTRANSMISSION_WITH_GTK_UI=ON \
+  -DTRANSMISSION_WITH_JACK=ON \
+  -DTRANSMISSION_WITH_VST3=ON \
+  -DVST3_SDK_ROOT="$HOME/VST_SDK/vst3sdk" \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build native/build-ui-jack-vst3 --target transmission_graph_ui --parallel
+```

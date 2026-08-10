@@ -1,0 +1,117 @@
+@prefix : <http://purl.org/stuff/transmissions/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+:nocturnal-drift a :Transmission ;
+    rdfs:label "Nocturnal Drift" ;
+    :tempoMap ( [ :atBeat 0 ; :bpm 95 ] ) ;
+    :loopStart 0 ;
+    :loopEnd 64 ;
+    :loopEnabled true ;
+    :systemInputConnections ( "No connection" "No connection" ) ;
+    :systemOutputConnections ( "system:playback_1" "system:playback_2" ) ;
+    :pipe (
+        :system-input
+        :drumgen
+        :bassgen
+        :arpgen
+        :drumkit
+        :syrinx
+        :canticle
+        :t_mix
+        :ambo
+        :system-output
+    ) ;
+    :connections (
+        [ :from :drumgen  ; :to :drumkit  ; :kind "midi"  ; :fromPort 0 ; :toPort 0 ]
+        [ :from :bassgen  ; :to :syrinx   ; :kind "midi"  ; :fromPort 0 ; :toPort 0 ]
+        [ :from :arpgen   ; :to :canticle ; :kind "midi"  ; :fromPort 0 ; :toPort 0 ]
+        [ :from :drumkit  ; :to :t_mix    ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :drumkit  ; :to :t_mix    ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :syrinx   ; :to :t_mix    ; :kind "audio" ; :fromPort 0 ; :toPort 2 ]
+        [ :from :syrinx   ; :to :t_mix    ; :kind "audio" ; :fromPort 1 ; :toPort 3 ]
+        [ :from :canticle ; :to :t_mix    ; :kind "audio" ; :fromPort 0 ; :toPort 4 ]
+        [ :from :canticle ; :to :t_mix    ; :kind "audio" ; :fromPort 1 ; :toPort 5 ]
+        [ :from :t_mix    ; :to :ambo     ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :t_mix    ; :to :ambo     ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :ambo     ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :ambo     ; :to :system-output ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+    ) .
+
+:system-input a :AudioInput ;
+    rdfs:label "System Input" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 480 .
+
+:drumgen a :VST3Plugin ;
+    rdfs:label "DrumGen" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 80 ;
+    :settings [ :pluginPath "/home/danny/.vst3/drumgen.vst3" ] .
+
+:bassgen a :VST3Plugin ;
+    rdfs:label "BassGen" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 230 ;
+    :settings [ :pluginPath "/home/danny/.vst3/bassgen.vst3" ] .
+
+:arpgen a :VST3Plugin ;
+    rdfs:label "ArpGen" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 360 ;
+    :settings [ :pluginPath "/home/danny/.vst3/arpgen.vst3" ] .
+
+:drumkit a :VST3Plugin ;
+    rdfs:label "DrumKit" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 300 ;
+    :editorY 80 ;
+    :settings [ :pluginPath "/home/danny/.vst3/drumkit.vst3" ] .
+
+:syrinx a :VST3Plugin ;
+    rdfs:label "Syrinx" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 300 ;
+    :editorY 230 ;
+    :settings [ :pluginPath "/home/danny/.vst3/syrinx.vst3" ] .
+
+:canticle a :VST3Plugin ;
+    rdfs:label "Canticle" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 300 ;
+    :editorY 360 ;
+    :settings [ :pluginPath "/home/danny/.vst3/canticle.vst3" ] .
+
+:t_mix a :VST3Plugin ;
+    rdfs:label "T-Mix" ;
+    :audioInputs 8 ;
+    :audioOutputs 2 ;
+    :editorX 590 ;
+    :editorY 200 ;
+    :settings [ :pluginPath "/home/danny/.vst3/t_mix.vst3" ] .
+
+:ambo a :VST3Plugin ;
+    rdfs:label "Ambo" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :editorX 860 ;
+    :editorY 200 ;
+    :settings [ :pluginPath "/home/danny/.vst3/ambo.vst3" ] .
+
+:system-output a :AudioOutput ;
+    rdfs:label "System Output" ;
+    :audioInputs 2 ;
+    :midiInputs 1 ;
+    :editorX 1120 ;
+    :editorY 200 .

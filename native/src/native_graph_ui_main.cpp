@@ -33,6 +33,9 @@
 #include <utility>
 #include <vector>
 #include <unistd.h>
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+#include <curl/curl.h>
+#endif
 
 namespace {
 constexpr double nodeWidth = 190.0;
@@ -126,6 +129,12 @@ struct GraphView {
     std::string filePath;
     std::string projectHelperPath;
     std::string lastSavedSnapshot;
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    std::string liveServerUrl{"http://127.0.0.1:7878"};
+    bool liveServerAvailable = false;
+    int liveServerRevision = -1;
+    guint liveServerPollTimer = 0;
+#endif
     std::size_t requestedBufferSize = 0;
     std::size_t renderAheadMilliseconds = 200;
     std::size_t processingThreads = 0;
@@ -2223,8 +2232,122 @@ void updateWindowTitle(GraphView& view) {
     std::string title = "Transmission — Graph";
     if (!view.filePath.empty())
         title = "Transmission — " + std::filesystem::path(view.filePath).filename().string();
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    title += view.liveServerAvailable ? " [live]" : " [offline]";
+#endif
     gtk_window_set_title(GTK_WINDOW(view.window), title.c_str());
 }
+
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+static std::size_t curlWriteCallback(char* ptr, std::size_t size, std::size_t nmemb, void* userdata) {
+    static_cast<std::string*>(userdata)->append(ptr, size * nmemb);
+    return size * nmemb;
+}
+
+static std::string httpGet(const std::string& url) {
+    auto* curl = curl_easy_init();
+    if (!curl) return {};
+    std::string response;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 2000L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    const auto result = curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
+    return result == CURLE_OK ? response : std::string{};
+}
+
+static bool httpPost(const std::string& url, const std::string& body,
+                     const std::string& contentType, std::string& response) {
+    auto* curl = curl_easy_init();
+    if (!curl) return false;
+    struct curl_slist* headers = nullptr;
+    const auto ctHeader = "Content-Type: " + contentType;
+    headers = curl_slist_append(headers, ctHeader.c_str());
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(body.size()));
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 500L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    const auto result = curl_easy_perform(curl);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    return result == CURLE_OK;
+}
+
+static int parseRevisionFromTurtle(const std::string& turtle) {
+    const std::string marker = "trn:revision ";
+    const auto pos = turtle.find(marker);
+    if (pos == std::string::npos) return -1;
+    try { return std::stoi(turtle.substr(pos + marker.size())); } catch (...) { return -1; }
+}
+
+static int parseRevisionFromJson(const std::string& json) {
+    const std::string marker = "\"revision\":";
+    const auto pos = json.find(marker);
+    if (pos == std::string::npos) return -1;
+    try { return std::stoi(json.substr(pos + marker.size())); } catch (...) { return -1; }
+}
+
+static bool pingLiveServer(GraphView& view) {
+    const auto status = httpGet(view.liveServerUrl + "/status");
+    view.liveServerAvailable = !status.empty();
+    if (view.liveServerAvailable)
+        view.liveServerRevision = parseRevisionFromTurtle(status);
+    return view.liveServerAvailable;
+}
+
+static void syncToLiveServer(GraphView& view, const std::string& path) {
+    if (!view.liveServerAvailable) return;
+    const std::string body =
+        "@prefix trn: <http://purl.org/stuff/transmissions/> .\n"
+        "[] a trn:OpenProject ; trn:filePath \"" + path + "\" .\n";
+    std::string response;
+    if (httpPost(view.liveServerUrl + "/projects/open", body, "text/turtle", response)) {
+        const int rev = parseRevisionFromJson(response);
+        if (rev >= 0) view.liveServerRevision = rev;
+        logConsole(view, "Live server synced: " + path);
+    } else {
+        logConsole(view, "Warning: live server sync failed — server may have stopped");
+        view.liveServerAvailable = false;
+    }
+    updateWindowTitle(view);
+}
+
+static gboolean liveServerPollTick(gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    const auto status = httpGet(view.liveServerUrl + "/status");
+    if (status.empty()) {
+        if (view.liveServerAvailable) {
+            view.liveServerAvailable = false;
+            updateWindowTitle(view);
+            logConsole(view, "Live server disconnected");
+        }
+        return G_SOURCE_CONTINUE;
+    }
+    if (!view.liveServerAvailable) {
+        view.liveServerAvailable = true;
+        updateWindowTitle(view);
+        logConsole(view, "Live server reconnected at " + view.liveServerUrl);
+    }
+    const int serverRevision = parseRevisionFromTurtle(status);
+    if (serverRevision >= 0 && serverRevision != view.liveServerRevision) {
+        if (view.liveServerRevision >= 0)
+            logConsole(view, "External edit detected (revision " +
+                       std::to_string(view.liveServerRevision) + " → " +
+                       std::to_string(serverRevision) + ") — reload project to sync");
+        view.liveServerRevision = serverRevision;
+        updateWindowTitle(view);
+    }
+    return G_SOURCE_CONTINUE;
+}
+#endif
 
 transmission::UiProject captureProject(const GraphView& view) {
     transmission::UiProject project;
@@ -2543,6 +2666,9 @@ bool saveProject(GraphView& view, const std::string& path) {
     view.filePath = path;
     view.lastSavedSnapshot = snapshot;
     updateWindowTitle(view);
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    syncToLiveServer(view, path);
+#endif
     return true;
 }
 
@@ -2609,6 +2735,9 @@ void openProjectActivated(GtkMenuItem*, gpointer data) {
                 view.lastSavedSnapshot =
                     transmission::encodeUiProject(captureProject(view));
                 updateWindowTitle(view);
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+                syncToLiveServer(view, path);
+#endif
             }
         }
     }
@@ -2991,6 +3120,27 @@ gboolean confirmClose(GtkWidget*, GdkEvent*, gpointer data) {
     return saved ? FALSE : TRUE;
 }
 
+void onWindowDestroy(GtkWidget*, gpointer data) {
+    auto* view = static_cast<GraphView*>(data);
+    if (view->transportTimer) g_source_remove(view->transportTimer);
+    if (view->externalConnectionTimer) g_source_remove(view->externalConnectionTimer);
+    view->renderCancel.store(true, std::memory_order_release);
+    if (view->renderThread.joinable()) view->renderThread.join();
+    {
+        std::lock_guard lock(view->renderCompletionMutex);
+        if (view->renderCompletionSource) g_source_remove(view->renderCompletionSource);
+        view->renderCompletionSource = 0;
+    }
+    if (view->renderProgressTimer) g_source_remove(view->renderProgressTimer);
+    if (view->connectionWatchTimer) g_source_remove(view->connectionWatchTimer);
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    if (view->liveServerPollTimer) g_source_remove(view->liveServerPollTimer);
+    curl_global_cleanup();
+#endif
+    if (view->consoleWindow) gtk_widget_destroy(view->consoleWindow);
+    delete view;
+}
+
 void activate(GtkApplication* application, gpointer) {
     auto* view = new GraphView();
     view->jackConnections = std::make_unique<transmission::JackConnectionManager>();
@@ -3118,6 +3268,17 @@ void activate(GtkApplication* application, gpointer) {
         view->projectHelperPath =
             (std::filesystem::current_path() / "scripts/native-ui-project.js").string();
 
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+    if (const char* liveUrl = std::getenv("TRANSMISSION_LIVE_URL"))
+        view->liveServerUrl = liveUrl;
+    if (pingLiveServer(*view)) {
+        logConsole(*view, "Connected to live server at " + view->liveServerUrl);
+        updateWindowTitle(*view);
+        view->liveServerPollTimer = g_timeout_add(500, liveServerPollTick, view);
+    }
+#endif
+
     loopChanged(nullptr, view);
     g_signal_connect(playButton, "clicked", G_CALLBACK(playStopClicked), view);
     g_signal_connect(resetButton, "clicked", G_CALLBACK(resetTransportClicked), view);
@@ -3148,26 +3309,7 @@ void activate(GtkApplication* application, gpointer) {
     gtk_box_pack_start(GTK_BOX(frame), transportBar, FALSE, FALSE, 0);
     gtk_container_add(GTK_CONTAINER(window), frame);
     g_signal_connect(window, "delete-event", G_CALLBACK(confirmClose), view);
-    g_signal_connect(window, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) {
-        auto* view = static_cast<GraphView*>(data);
-        if (view->transportTimer) g_source_remove(view->transportTimer);
-        if (view->externalConnectionTimer)
-            g_source_remove(view->externalConnectionTimer);
-        view->renderCancel.store(true, std::memory_order_release);
-        if (view->renderThread.joinable()) view->renderThread.join();
-        {
-            std::lock_guard lock(view->renderCompletionMutex);
-            if (view->renderCompletionSource)
-                g_source_remove(view->renderCompletionSource);
-            view->renderCompletionSource = 0;
-        }
-        if (view->renderProgressTimer)
-            g_source_remove(view->renderProgressTimer);
-        if (view->connectionWatchTimer)
-            g_source_remove(view->connectionWatchTimer);
-        if (view->consoleWindow) gtk_widget_destroy(view->consoleWindow);
-        delete view;
-    }), view);
+    g_signal_connect(window, "destroy", G_CALLBACK(onWindowDestroy), view);
     gtk_widget_show_all(window);
 }
 } // namespace

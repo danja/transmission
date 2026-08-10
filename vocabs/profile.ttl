@@ -1,0 +1,63 @@
+@prefix trn:  <http://purl.org/stuff/transmissions/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+## ── Classes ──────────────────────────────────────────────────────────────────
+
+trn:PluginProfile    a owl:Class ; rdfs:label "Plugin Profile" ;
+    rdfs:comment "Curated behavioural knowledge about a VST3 plugin." .
+
+trn:DiscoveredPlugin a owl:Class ; rdfs:label "Discovered Plugin" ;
+    rdfs:comment "Technical metadata extracted by the isolated VST3 inspector." .
+
+## Role taxonomy
+trn:PluginRole       a owl:Class ; rdfs:label "Plugin Role" .
+trn:AudioEffect      a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "Audio Effect" .
+trn:AudioMixer       a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "Audio Mixer" .
+trn:AudioInstrument  a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "Audio Instrument" .
+trn:AudioSource      a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "Audio Source" .
+trn:AudioSink        a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "Audio Sink" .
+trn:MidiGenerator    a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "MIDI Generator" .
+trn:MidiProcessor    a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "MIDI Processor" .
+
+## Signal type instances
+trn:Audio      a owl:NamedIndividual ; rdfs:label "Audio" .
+trn:Midi       a owl:NamedIndividual ; rdfs:label "MIDI" .
+trn:BassMidi   a owl:NamedIndividual ; rdfs:label "Bass MIDI" .
+trn:DrumMidi   a owl:NamedIndividual ; rdfs:label "Drum MIDI" .
+trn:MelodyMidi a owl:NamedIndividual ; rdfs:label "Melody MIDI" .
+
+## Host requirement instances
+trn:HostTransport a owl:NamedIndividual ; rdfs:label "Host Transport" ;
+    rdfs:comment "Plugin requires the host to provide tempo/beat position." .
+
+## ── Profile properties ───────────────────────────────────────────────────────
+
+trn:role              a owl:ObjectProperty ; rdfs:domain trn:PluginProfile ; rdfs:range trn:PluginRole .
+trn:produces          a owl:ObjectProperty ; rdfs:domain trn:PluginProfile .
+trn:accepts           a owl:ObjectProperty ; rdfs:domain trn:PluginProfile .
+trn:requires          a owl:ObjectProperty ; rdfs:domain trn:PluginProfile .
+trn:recommendedBefore a owl:ObjectProperty ; rdfs:domain trn:PluginProfile .
+trn:recommendedAfter  a owl:ObjectProperty ; rdfs:domain trn:PluginProfile .
+trn:companion         a owl:ObjectProperty ; rdfs:domain trn:PluginProfile .
+trn:genre             a owl:DatatypeProperty ; rdfs:domain trn:PluginProfile ; rdfs:range xsd:string .
+trn:caution           a owl:DatatypeProperty ; rdfs:domain trn:PluginProfile ; rdfs:range xsd:string .
+trn:homepage          a owl:DatatypeProperty ; rdfs:domain trn:PluginProfile ; rdfs:range xsd:anyURI .
+
+## ── Discovery properties ─────────────────────────────────────────────────────
+
+trn:bundleName      a owl:DatatypeProperty ; rdfs:range xsd:string .
+trn:vstClassId      a owl:DatatypeProperty ; rdfs:range xsd:string .
+trn:vendor          a owl:DatatypeProperty ; rdfs:range xsd:string .
+trn:category        a owl:DatatypeProperty ; rdfs:range xsd:string .
+trn:modulePath      a owl:DatatypeProperty ; rdfs:range xsd:string .
+trn:discoverySource a owl:DatatypeProperty ; rdfs:range xsd:string .
+
+trn:parameter         a owl:ObjectProperty .
+trn:parameterTitle    a owl:DatatypeProperty ; rdfs:range xsd:string .
+trn:shortTitle        a owl:DatatypeProperty ; rdfs:range xsd:string .
+trn:units             a owl:DatatypeProperty ; rdfs:range xsd:string .
+trn:defaultNormalized a owl:DatatypeProperty ; rdfs:range xsd:decimal .
+trn:stepCount         a owl:DatatypeProperty ; rdfs:range xsd:integer .
+trn:parameterFlags    a owl:DatatypeProperty ; rdfs:range xsd:integer .

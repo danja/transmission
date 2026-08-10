@@ -145,3 +145,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Local server config (override config.defaults.ttl)
+config.ttl

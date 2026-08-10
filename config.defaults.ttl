@@ -1,0 +1,7 @@
+@prefix trn: <http://purl.org/stuff/transmissions/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+[] a trn:ServerConfig ;
+    trn:port 7878 ;
+    trn:bindAddress "127.0.0.1" ;
+    trn:allowedRoots ( "." ) .

@@ -551,7 +551,6 @@ void addPluginFromDialog(GtkDialog*, gint response, gpointer data) {
             const auto& path = context->view->pluginPaths[static_cast<std::size_t>(selected)];
             const auto stem = std::filesystem::path(path).stem().string();
             const auto id = "plugin-" + std::to_string(context->view->nextPluginId++);
-            const auto offset = static_cast<double>(context->view->nodes.size() % 3) * 35.0;
             transmission::Vst3PluginTopology topology;
             std::string error;
             if (!transmission::Vst3Inspector().inspectTopology(path, topology, error)) {
@@ -571,8 +570,8 @@ void addPluginFromDialog(GtkDialog*, gint response, gpointer data) {
                 id, topology.name.empty() ? stem : topology.name, NodeKind::Plugin,
                 topology.audioInputs.size(), topology.audioOutputs.size(),
                 std::max<std::size_t>(1, topology.midiInputs),
-                topology.midiOutputs, 300.0 + offset,
-                300.0 + offset, path, "", std::move(inputLabels),
+                topology.midiOutputs, context->view->pointerX,
+                context->view->pointerY, path, "", std::move(inputLabels),
                 std::move(outputLabels)});
             gtk_widget_queue_draw(context->canvas);
         }
@@ -1006,14 +1005,13 @@ void addMidiNodeFromDialog(GtkDialog*, gint response, gpointer data) {
                 const auto id =
                     std::string(context->input ? "midi-input-" : "midi-output-") +
                     std::to_string(nextId++);
-                const auto offset =
-                    static_cast<double>(context->view->nodes.size() % 3) * 35.0;
                 context->view->nodes.push_back({
                     id, context->input ? "MIDI Input"
                                        : midiOutputLabel(selected),
                     context->input ? NodeKind::MidiInput : NodeKind::MidiOutput,
                     0, 0, context->input ? 0U : 1U, context->input ? 1U : 0U,
-                    300.0 + offset, 300.0 + offset, "", selected, {}, {}});
+                    context->view->pointerX, context->view->pointerY,
+                    "", selected, {}, {}});
             }
             g_free(selected);
             gtk_widget_queue_draw(context->canvas);
@@ -1077,10 +1075,9 @@ void addGainActivated(GtkMenuItem*, gpointer data) {
     auto& view = *context->view;
     stopRuntime(view, "Graph changed — press Play to compile and start audio");
     const auto id = "gain-" + std::to_string(view.nextGainId++);
-    const auto offset = static_cast<double>(view.nodes.size() % 3) * 35.0;
     view.nodes.push_back({
         id, "Gain / Pan", NodeKind::Gain, 2, 2, 1, 0,
-        300.0 + offset, 300.0 + offset, "", "", {}, {}, 0.0, 0.0});
+        view.pointerX, view.pointerY, "", "", {}, {}, 0.0, 0.0});
     gtk_widget_queue_draw(context->canvas);
 }
 
@@ -1670,6 +1667,66 @@ void showConsoleWindow(GraphView& view) {
 
 void showConsoleActivated(GtkMenuItem*, gpointer data) {
     showConsoleWindow(*static_cast<GraphView*>(data));
+}
+
+void autolayoutActivated(GtkMenuItem*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    const auto n = view.nodes.size();
+    if (n == 0) return;
+
+    // Assign each node a layer = longest path from any root
+    std::vector<int> layer(n, 0);
+    std::vector<int> inDegree(n, 0);
+    std::vector<std::vector<std::size_t>> children(n);
+
+    // Deduplicate edges per (from,to) pair for degree counting
+    std::unordered_set<std::size_t> seen;
+    for (const auto& edge : view.edges) {
+        if (edge.from >= n || edge.to >= n) continue;
+        const auto key = edge.from * 100000 + edge.to;
+        if (seen.insert(key).second) {
+            children[edge.from].push_back(edge.to);
+            inDegree[edge.to]++;
+        }
+    }
+
+    // Kahn-style layering: process sources first, push deepest layer to each child
+    std::vector<std::size_t> queue;
+    for (std::size_t i = 0; i < n; ++i)
+        if (inDegree[i] == 0) queue.push_back(i);
+
+    std::size_t head = 0;
+    while (head < queue.size()) {
+        const auto u = queue[head++];
+        for (const auto v : children[u]) {
+            if (layer[v] < layer[u] + 1) layer[v] = layer[u] + 1;
+            if (--inDegree[v] == 0) queue.push_back(v);
+        }
+    }
+
+    // Group by layer
+    int maxLayer = *std::max_element(layer.begin(), layer.end());
+    std::vector<std::vector<std::size_t>> columns(maxLayer + 1);
+    for (std::size_t i = 0; i < n; ++i)
+        columns[layer[i]].push_back(i);
+
+    constexpr double xStart = 40.0;
+    constexpr double yStart = 80.0;
+    constexpr double xGap = 40.0;
+    constexpr double yGap = 30.0;
+
+    double x = xStart;
+    for (auto& col : columns) {
+        double y = yStart;
+        for (const auto idx : col) {
+            view.nodes[idx].x = x;
+            view.nodes[idx].y = y;
+            y += minimumNodeHeight + yGap;
+        }
+        x += nodeWidth + xGap;
+    }
+
+    gtk_widget_queue_draw(view.canvas);
 }
 
 void reconnectJackActivated(GtkMenuItem*, gpointer data) {
@@ -3355,12 +3412,14 @@ void activate(GtkApplication* application, gpointer) {
     gtk_menu_item_set_submenu(
         GTK_MENU_ITEM(settingsItem), settingsMenu);
     gtk_menu_shell_append(GTK_MENU_SHELL(menuBar), settingsItem);
-    auto* consoleItem = gtk_menu_item_new_with_mnemonic("_Console");
-    auto* consoleMenu = gtk_menu_new();
+    auto* viewItem = gtk_menu_item_new_with_mnemonic("_View");
+    auto* viewMenu = gtk_menu_new();
     auto* showConsoleItem = gtk_menu_item_new_with_mnemonic("_Show Console");
-    gtk_menu_shell_append(GTK_MENU_SHELL(consoleMenu), showConsoleItem);
-    gtk_menu_item_set_submenu(GTK_MENU_ITEM(consoleItem), consoleMenu);
-    gtk_menu_shell_append(GTK_MENU_SHELL(menuBar), consoleItem);
+    auto* autolayoutItem = gtk_menu_item_new_with_mnemonic("_Autolayout");
+    gtk_menu_shell_append(GTK_MENU_SHELL(viewMenu), showConsoleItem);
+    gtk_menu_shell_append(GTK_MENU_SHELL(viewMenu), autolayoutItem);
+    gtk_menu_item_set_submenu(GTK_MENU_ITEM(viewItem), viewMenu);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menuBar), viewItem);
     gtk_box_pack_start(GTK_BOX(frame), menuBar, FALSE, FALSE, 0);
 
     auto* accelerators = gtk_accel_group_new();
@@ -3457,6 +3516,8 @@ void activate(GtkApplication* application, gpointer) {
                      G_CALLBACK(reconnectJackActivated), view);
     g_signal_connect(showConsoleItem, "activate",
                      G_CALLBACK(showConsoleActivated), view);
+    g_signal_connect(autolayoutItem, "activate",
+                     G_CALLBACK(autolayoutActivated), view);
     g_signal_connect(quitItem, "activate", G_CALLBACK(quitActivated), view);
     gtk_widget_set_hexpand(canvas, TRUE);
     gtk_widget_set_vexpand(canvas, TRUE);

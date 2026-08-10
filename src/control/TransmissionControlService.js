@@ -18,13 +18,15 @@ export class TransmissionControlService {
     engine = null,
     allowedRoots = [process.cwd()],
     pluginCatalogue = null,
-    pluginRoots = []
+    pluginRoots = [],
+    defaultOutputConnections = null
   } = {}) {
     this.project = engine?.project ?? project
     this.engine = engine
     this.pluginCatalogue = pluginCatalogue
     this.pluginRoots = [...pluginRoots]
     this.allowedRoots = allowedRoots.map(root => resolve(root))
+    this.defaultOutputConnections = defaultOutputConnections
     if (!this.allowedRoots.length) throw new TypeError('At least one allowed project root is required')
   }
 
@@ -58,12 +60,17 @@ export class TransmissionControlService {
   }
 
   newProject(definition) {
+    const metadata = { ...definition.metadata }
+    if (this.defaultOutputConnections &&
+        !metadata.systemOutputConnections?.length) {
+      metadata.systemOutputConnections = this.defaultOutputConnections
+    }
     const normalized = {
       id: definition.id,
       label: definition.label ?? '',
       nodes: definition.nodes ?? [],
       connections: definition.connections ?? [],
-      metadata: definition.metadata ?? {},
+      metadata,
       transport: definition.transport,
       arrangement: definition.arrangement
     }

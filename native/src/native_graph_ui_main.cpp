@@ -32,6 +32,7 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <signal.h>
 #include <unistd.h>
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
 #include <curl/curl.h>
@@ -134,6 +135,7 @@ struct GraphView {
     bool liveServerAvailable = false;
     int liveServerRevision = -1;
     guint liveServerPollTimer = 0;
+    GSubprocess* liveServerProcess = nullptr;
 #endif
     std::size_t requestedBufferSize = 0;
     std::size_t renderAheadMilliseconds = 200;
@@ -2288,6 +2290,16 @@ static int parseRevisionFromTurtle(const std::string& turtle) {
     try { return std::stoi(turtle.substr(pos + marker.size())); } catch (...) { return -1; }
 }
 
+static std::string parseFilePathFromTurtle(const std::string& turtle) {
+    const std::string key = "trn:filePath \"";
+    const auto pos = turtle.find(key);
+    if (pos == std::string::npos) return {};
+    const auto start = pos + key.size();
+    const auto end = turtle.find('"', start);
+    if (end == std::string::npos) return {};
+    return turtle.substr(start, end - start);
+}
+
 static int parseRevisionFromJson(const std::string& json) {
     const std::string marker = "\"revision\":";
     const auto pos = json.find(marker);
@@ -2298,8 +2310,7 @@ static int parseRevisionFromJson(const std::string& json) {
 static bool pingLiveServer(GraphView& view) {
     const auto status = httpGet(view.liveServerUrl + "/status");
     view.liveServerAvailable = !status.empty();
-    if (view.liveServerAvailable)
-        view.liveServerRevision = parseRevisionFromTurtle(status);
+    // Leave liveServerRevision = -1 so the first poll tick triggers an initial project load.
     return view.liveServerAvailable;
 }
 
@@ -2318,6 +2329,60 @@ static void syncToLiveServer(GraphView& view, const std::string& path) {
         view.liveServerAvailable = false;
     }
     updateWindowTitle(view);
+}
+
+static bool runProjectHelper(const GraphView&, const char*, const std::string&,
+                             const std::string&, std::string&, std::string&);
+bool applyProject(GraphView&, const transmission::UiProject&, std::string&);
+transmission::UiProject captureProject(const GraphView&);
+
+static void launchLiveServer(GraphView& view) {
+    if (view.projectHelperPath.empty()) return;
+    const auto scriptPath = (std::filesystem::path(view.projectHelperPath).parent_path()
+                             / "transmission-live.js").string();
+    if (!std::filesystem::exists(scriptPath)) {
+        logConsole(view, "Live server script not found: " + scriptPath);
+        return;
+    }
+    GError* err = nullptr;
+    view.liveServerProcess = g_subprocess_new(
+        G_SUBPROCESS_FLAGS_NONE, &err,
+        "node", scriptPath.c_str(), "--jack", "--auto-connect", nullptr);
+    if (!view.liveServerProcess) {
+        logConsole(view, std::string("Could not launch live server: ") +
+                   (err ? err->message : "unknown error"));
+        g_clear_error(&err);
+    } else {
+        logConsole(view, "Live server launched (" + scriptPath + ")");
+    }
+}
+
+static void reloadFromLiveServer(GraphView& view, const std::string& serverFilePath) {
+    const auto turtle = httpGet(view.liveServerUrl + "/graph");
+    if (turtle.empty() || turtle.find("trn:NoProject") != std::string::npos) return;
+    const auto tempPath = (std::filesystem::temp_directory_path() /
+        ("transmission-reload-" + std::to_string(::getpid()) + ".ttl")).string();
+    GError* writeErr = nullptr;
+    if (!g_file_set_contents(tempPath.c_str(), turtle.data(),
+                              static_cast<gssize>(turtle.size()), &writeErr)) {
+        logConsole(view, "Reload: failed to write temp file");
+        g_clear_error(&writeErr);
+        return;
+    }
+    std::string interchange, error;
+    const bool ok = runProjectHelper(view, "load", tempPath, "", interchange, error);
+    g_unlink(tempPath.c_str());
+    if (!ok) { logConsole(view, "Reload: parse failed — " + error); return; }
+    transmission::UiProject project;
+    if (!transmission::decodeUiProject(interchange, project, error) ||
+        !applyProject(view, project, error)) {
+        logConsole(view, "Reload: apply failed — " + error);
+        return;
+    }
+    if (!serverFilePath.empty()) view.filePath = serverFilePath;
+    view.lastSavedSnapshot = transmission::encodeUiProject(captureProject(view));
+    updateWindowTitle(view);
+    logConsole(view, "Graph reloaded from live server");
 }
 
 static gboolean liveServerPollTick(gpointer data) {
@@ -2341,7 +2406,8 @@ static gboolean liveServerPollTick(gpointer data) {
         if (view.liveServerRevision >= 0)
             logConsole(view, "External edit detected (revision " +
                        std::to_string(view.liveServerRevision) + " → " +
-                       std::to_string(serverRevision) + ") — reload project to sync");
+                       std::to_string(serverRevision) + ")");
+        reloadFromLiveServer(view, parseFilePathFromTurtle(status));
         view.liveServerRevision = serverRevision;
         updateWindowTitle(view);
     }
@@ -3135,6 +3201,11 @@ void onWindowDestroy(GtkWidget*, gpointer data) {
     if (view->connectionWatchTimer) g_source_remove(view->connectionWatchTimer);
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
     if (view->liveServerPollTimer) g_source_remove(view->liveServerPollTimer);
+    if (view->liveServerProcess) {
+        g_subprocess_send_signal(view->liveServerProcess, SIGTERM);
+        g_object_unref(view->liveServerProcess);
+        view->liveServerProcess = nullptr;
+    }
     curl_global_cleanup();
 #endif
     if (view->consoleWindow) gtk_widget_destroy(view->consoleWindow);
@@ -3275,8 +3346,10 @@ void activate(GtkApplication* application, gpointer) {
     if (pingLiveServer(*view)) {
         logConsole(*view, "Connected to live server at " + view->liveServerUrl);
         updateWindowTitle(*view);
-        view->liveServerPollTimer = g_timeout_add(500, liveServerPollTick, view);
+    } else {
+        launchLiveServer(*view);
     }
+    view->liveServerPollTimer = g_timeout_add(500, liveServerPollTick, view);
 #endif
 
     loopChanged(nullptr, view);

@@ -1,0 +1,118 @@
+@prefix : <http://purl.org/stuff/transmissions/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+:cellular-bloom a :Transmission ;
+    rdfs:label "Cellular Bloom" ;
+    :tempoMap ( [ :atBeat 0 ; :bpm 78 ] ) ;
+    :loopStart 0 ;
+    :loopEnd 96 ;
+    :loopEnabled true ;
+    :systemInputConnections ( "No connection" "No connection" ) ;
+    :systemOutputConnections ( "UMC404HD 192k-86:playback_AUX0" "UMC404HD 192k-86:playback_AUX1" ) ;
+    :pipe (
+        :system-input
+        :automata
+        :harmonic-atlas
+        :conductor
+        :canticle
+        :lifeform
+        :t-mix
+        :ambo
+        :orbit
+        :system-output
+    ) ;
+    :connections (
+        [ :from :automata       ; :to :harmonic-atlas ; :kind "midi"  ; :fromPort 0 ; :toPort 0 ]
+        [ :from :harmonic-atlas ; :to :canticle       ; :kind "midi"  ; :fromPort 0 ; :toPort 0 ]
+        [ :from :conductor      ; :to :lifeform        ; :kind "midi"  ; :fromPort 0 ; :toPort 0 ]
+        [ :from :canticle       ; :to :t-mix           ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :canticle       ; :to :t-mix           ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :lifeform       ; :to :t-mix           ; :kind "audio" ; :fromPort 0 ; :toPort 2 ]
+        [ :from :lifeform       ; :to :t-mix           ; :kind "audio" ; :fromPort 1 ; :toPort 3 ]
+        [ :from :t-mix          ; :to :ambo            ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :t-mix          ; :to :ambo            ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :ambo           ; :to :orbit           ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :ambo           ; :to :orbit           ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :orbit          ; :to :system-output   ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :orbit          ; :to :system-output   ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+    ) .
+
+:system-input a :AudioInput ;
+    rdfs:label "System Input" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 500 .
+
+:automata a :VST3Plugin ;
+    rdfs:label "Automata" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 80 ;
+    :settings [ :pluginPath "/home/danny/.vst3/automata.vst3" ] .
+
+:harmonic-atlas a :VST3Plugin ;
+    rdfs:label "Harmonic Atlas" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 270 ;
+    :editorY 80 ;
+    :settings [ :pluginPath "/home/danny/.vst3/harmonic_atlas.vst3" ] .
+
+:conductor a :VST3Plugin ;
+    rdfs:label "Conductor" ;
+    :audioOutputs 2 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 260 ;
+    :settings [ :pluginPath "/home/danny/.vst3/conductor.vst3" ] .
+
+:canticle a :VST3Plugin ;
+    rdfs:label "Canticle" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 500 ;
+    :editorY 80 ;
+    :settings [ :pluginPath "/home/danny/.vst3/canticle.vst3" ] .
+
+:lifeform a :VST3Plugin ;
+    rdfs:label "Lifeform" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 270 ;
+    :editorY 260 ;
+    :settings [ :pluginPath "/home/danny/.vst3/lifeform.vst3" ] .
+
+:t-mix a :VST3Plugin ;
+    rdfs:label "T-Mix" ;
+    :audioInputs 8 ;
+    :audioOutputs 2 ;
+    :editorX 730 ;
+    :editorY 160 ;
+    :settings [ :pluginPath "/home/danny/.vst3/t_mix.vst3" ] .
+
+:ambo a :VST3Plugin ;
+    rdfs:label "Ambo" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :editorX 960 ;
+    :editorY 160 ;
+    :settings [ :pluginPath "/home/danny/.vst3/ambo.vst3" ] .
+
+:orbit a :VST3Plugin ;
+    rdfs:label "Orbit" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :editorX 1190 ;
+    :editorY 160 ;
+    :settings [ :pluginPath "/home/danny/.vst3/orbit.vst3" ] .
+
+:system-output a :AudioOutput ;
+    rdfs:label "System Output" ;
+    :audioInputs 2 ;
+    :midiInputs 1 ;
+    :editorX 1420 ;
+    :editorY 160 .

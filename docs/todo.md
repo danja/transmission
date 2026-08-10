@@ -55,9 +55,14 @@ UI additions:
 
 Phase 1 (foundation) is complete: HTTP server, HTTP client, live entry point, GTK poll+sync.
 
-Deferred to Phase 2:
+Phase 2 — implemented (2026-08-10):
+- Auto-reload GTK view when external edit detected: `liveServerPollTick` fetches `/graph`,
+  writes to a temp `.ttl`, runs the project helper, calls `applyProject`, redraws.
+- `transmission-live.js` subprocess launch from GTK on startup: if the initial ping fails,
+  `launchLiveServer` starts the server via `g_subprocess_new`; poll timer always runs.
+  On window destroy, the subprocess receives SIGTERM.
+
+Still open (Phase 3):
 - GTK full two-way sync: send every in-editor change (add node, connect, drag) to live server
   as `trn:ChangeSet` POST so MCP always sees the latest graph without waiting for a save.
 - SSE (`GET /events`) for push notifications to GTK and MCP instead of 500 ms polling.
-- Auto-reload GTK view when external edit detected (currently only logs a message).
-- `transmission-live.js` subprocess launch from GTK on startup (currently manual).

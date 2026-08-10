@@ -36,6 +36,7 @@ try {
 const port = options.port ?? serverConfig.port
 const bindAddress = options.bindAddress ?? serverConfig.bindAddress
 const allowedRoots = options.projectRoots.length ? options.projectRoots : serverConfig.allowedRoots
+const defaultOutputConnections = serverConfig.defaultOutputConnections ?? null
 
 // ── Plugin discovery ──────────────────────────────────────────────────────────
 
@@ -74,7 +75,8 @@ const control = new TransmissionControlService({
   engine,
   allowedRoots: allowedRoots.map(root => resolve(root)),
   pluginCatalogue,
-  pluginRoots: pluginRoots.map(root => resolve(root))
+  pluginRoots: pluginRoots.map(root => resolve(root)),
+  defaultOutputConnections
 })
 
 if (options.project) await control.openProject(options.project)

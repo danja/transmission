@@ -180,7 +180,9 @@ export async function parseServerConfig(turtleBody) {
   const bindAddress = stringValue(getOne(dataset, subject, `${TRN}bindAddress`)) ?? '127.0.0.1'
   const rootsHead = getOne(dataset, subject, `${TRN}allowedRoots`)
   const allowedRoots = rootsHead ? getList(dataset, rootsHead).map(t => t.value) : ['.']
-  return { port, bindAddress, allowedRoots }
+  const outputsHead = getOne(dataset, subject, `${TRN}defaultOutputConnections`)
+  const defaultOutputConnections = outputsHead ? getList(dataset, outputsHead).map(t => t.value) : null
+  return { port, bindAddress, allowedRoots, defaultOutputConnections }
 }
 
 // ── Response serializers ──────────────────────────────────────────────────────

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "transmission": {
+      "command": "node",
+      "args": [
+        "/home/danny/github/transmission/scripts/transmission-mcp.js",
+        "--live",
+        "http://localhost:7878"
+      ]
+    }
+  }
+}

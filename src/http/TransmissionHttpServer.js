@@ -70,6 +70,9 @@ export class TransmissionHttpServer {
     if (path === '/status') {
       return sendTurtle(res, 200, serializeStatus(control.status()))
     }
+    if (path === '/project') {
+      return sendJson(res, 200, control.describeProject())
+    }
     if (path === '/graph') {
       return sendTurtle(res, 200, control.projectTurtle())
     }

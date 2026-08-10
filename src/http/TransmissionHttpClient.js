@@ -17,11 +17,12 @@ export class TransmissionHttpClient {
   // ── Reads ─────────────────────────────────────────────────────────────────
 
   async status() {
-    return this._get('/status', 'json')
+    const body = await this._getRaw('/status')
+    return parseTurtleStatus(body)
   }
 
   async describeProject() {
-    return this._get('/graph', 'json')
+    return this._get('/project', 'json')
   }
 
   projectTurtle() {
@@ -127,6 +128,10 @@ export class TransmissionHttpClient {
     const body = await fetch_(this._endpoint + path, { method: 'GET', headers: { Accept: accept } })
     if (format === 'turtle') return body
     return JSON.parse(body)
+  }
+
+  _getRaw(path) {
+    return fetch_(this._endpoint + path, { method: 'GET', headers: { Accept: 'text/turtle, application/json' } })
   }
 
   async _post(path, body, contentType) {

@@ -19,6 +19,8 @@ Linux VST3 host.
 - Connect JACK or PipeWire-JACK audio and MIDI ports.
 - Save complete patches as readable RDF Turtle (`.ttl`) files.
 - Render a patch offline to WAV or MP3.
+- Auto-arrange the visible graph with **View → Autolayout**, which wraps
+  columns to fit the window width.
 - Ask an LLM through MCP to discover plugins, compare their behaviour, design
   compatible chains, edit projects, and validate the resulting graph — while
   the GTK application is running.
@@ -67,12 +69,15 @@ native VST3 editor embedding.
 ## Basic workflow
 
 1. Right-click the graph background to add a VST3 plugin or MIDI endpoint.
+   New nodes are placed at the cursor position.
 2. Drag between matching audio or MIDI ports to connect nodes.
 3. Double-click a plugin to open its native editor.
 4. Double-click System Input or System Output to select JACK connections.
 5. Set tempo and loop length, then press **Play**.
-6. Use **File → Save** to store the graph as Turtle.
-7. Use **File → Render Audio** to export a chosen number of bars.
+6. Use **View → Autolayout** to automatically arrange nodes into a layered
+   left-to-right layout that wraps to fit the window.
+7. Use **File → Save** to store the graph as Turtle.
+8. Use **File → Render Audio** to export a chosen number of bars.
 
 ## Generative control through MCP
 
@@ -80,35 +85,30 @@ Transmission has two MCP modes:
 
 ### Live mode (recommended)
 
-Start the live server, then connect MCP to it. The GTK window and the MCP
-client share a single authoritative project state — changes from either side
-are visible to the other.
+`./transmission` starts the live HTTP control plane automatically and connects
+the GTK window to it. The MCP server, the GTK editor, and any other client all
+share the same authoritative project state — changes from any side are
+reflected everywhere within 500 ms.
 
 ```sh
-# Terminal 1 — live control plane (with JACK audio)
-node scripts/transmission-live.js --jack --auto-connect
+# Start the GTK application (launches the live server automatically)
+./transmission
 
-# Terminal 2 — GTK graph editor (connects automatically if server is running)
-TRANSMISSION_LIVE_URL=http://localhost:7878 ./transmission
-
-# MCP client configuration (Claude Code, Codex, etc.)
+# MCP client configuration — point at the running server
 node scripts/transmission-mcp.js --live
 ```
 
-When the GTK window is connected to a live server, its title bar shows
-`[live]`. Saving a project from the UI automatically syncs the server state.
-External edits (e.g. from an MCP client) are detected every 500 ms and logged
-to the console.
+The live server runs at `http://localhost:7878` by default (configurable in
+`config.ttl`). When connected, the GTK title bar shows `[live]`.
 
-Register the live MCP server with Claude Code from the command line:
+Register the MCP server with Claude Code:
 
 ```sh
 claude mcp add transmission -- node "$PWD/scripts/transmission-mcp.js" --live
 ```
 
-This adds a project-scoped entry. Use `-s user` to register it globally across
-all projects, or `-s local` (the default) to keep it to the current directory.
-The equivalent manual entry in `settings.json` is:
+Or add `.mcp.json` to the project root (created automatically by Claude Code
+on first use from this directory):
 
 ```json
 {
@@ -120,6 +120,9 @@ The equivalent manual entry in `settings.json` is:
   }
 }
 ```
+
+Use `-s user` to register it globally across all projects, or `-s local` (the
+default) to keep it to the current directory.
 
 ### Project-only mode
 
@@ -156,9 +159,11 @@ The live server exposes a REST API at `http://localhost:7878` (configurable in
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/status` | Project revision, dirty flag, transport state |
+| `GET` | `/status` | Project revision, dirty flag, transport state (Turtle) |
+| `GET` | `/project` | Full project description (JSON) |
 | `GET` | `/graph` | Full project as Turtle |
 | `GET` | `/plugins` | Plugin catalogue (JSON) |
+| `GET` | `/peaks` | Current output peak levels L/R (JSON) |
 | `GET` | `/diagnostics` | Engine and runtime stats (JSON) |
 | `POST` | `/graph/changes` | Apply node/connection operations |
 | `POST` | `/transport/play` | Start audio engine |

@@ -1712,18 +1712,38 @@ void autolayoutActivated(GtkMenuItem*, gpointer data) {
 
     constexpr double xStart = 40.0;
     constexpr double yStart = 80.0;
-    constexpr double xGap = 40.0;
+    constexpr double xStep = nodeWidth + 40.0;
     constexpr double yGap = 30.0;
+    constexpr double rowGap = 60.0;
 
-    double x = xStart;
-    for (auto& col : columns) {
-        double y = yStart;
-        for (const auto idx : col) {
+    // Wrap columns into rows so layout fits within the visible canvas width
+    const int canvasW = gtk_widget_get_allocated_width(view.canvas);
+    const int colsPerRow = std::max(1, static_cast<int>((canvasW - xStart) / xStep));
+
+    // Compute per-column height so we know the row band height
+    std::vector<double> colHeight(columns.size());
+    for (std::size_t c = 0; c < columns.size(); ++c)
+        colHeight[c] = static_cast<double>(columns[c].size()) * (minimumNodeHeight + yGap);
+
+    // Max height in each row band
+    const int numRows = (static_cast<int>(columns.size()) + colsPerRow - 1) / colsPerRow;
+    std::vector<double> rowBandHeight(numRows, 0.0);
+    for (int c = 0; c < static_cast<int>(columns.size()); ++c)
+        rowBandHeight[c / colsPerRow] = std::max(rowBandHeight[c / colsPerRow], colHeight[c]);
+
+    for (int c = 0; c < static_cast<int>(columns.size()); ++c) {
+        const int gridCol = c % colsPerRow;
+        const int gridRow = c / colsPerRow;
+        double yBase = yStart;
+        for (int r = 0; r < gridRow; ++r)
+            yBase += rowBandHeight[r] + rowGap;
+        const double x = xStart + gridCol * xStep;
+        double y = yBase;
+        for (const auto idx : columns[c]) {
             view.nodes[idx].x = x;
             view.nodes[idx].y = y;
             y += minimumNodeHeight + yGap;
         }
-        x += nodeWidth + xGap;
     }
 
     gtk_widget_queue_draw(view.canvas);

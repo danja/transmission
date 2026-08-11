@@ -4,6 +4,10 @@
 
 Build Transmission as a maintainable Linux VST3 host with a Node.js control plane and a C++ real-time engine. Keep project persistence, graph editing, plugin control, and audio processing separate.
 
+## Song Generation
+
+When asked to generate music and patches read /home/danny/github/downspout/README.agents.md if available. You should use MCP to communicate with a live Transmission instance.
+
 ## Non-negotiable real-time rules
 
 - Never allocate, access the filesystem or network, log through an unbounded sink, call JavaScript, or take an unpredictable lock on the audio callback thread.
@@ -54,6 +58,29 @@ DISPLAY=:0 XAUTHORITY=/run/user/1000/gdm/Xauthority import -window <window-id> /
 ```
 
 Keep the UI running in a terminal session while iterating. Inspect the captured PNG with the image viewer tool. `gnome-screenshot` can capture the whole desktop, but ImageMagick `import -window` is more reliable for the specific GTK window.
+
+## Patch authoring via MCP
+
+When building a graph with `graph_apply_changes`, the port counts you declare on each node are
+overwritten by the GTK UI's `applyProject`, which calls `Vst3Inspector::inspectTopology` to read
+the real port counts from each plugin binary. `validateProject` then checks every connection
+against those real counts. A mismatch causes a silent "apply failed" and the UI keeps its previous
+graph.
+
+Before wiring connections, verify real port counts with:
+
+```sh
+native/build-ui-jack-vst3/transmission_vst3_inspect /home/danny/.vst3/<name>.vst3 \
+  | grep -E 'audioInputs|audioOutputs|midiInputs|midiOutputs'
+```
+
+Use only port indices that fall within those counts (0-based). Declaring a higher count on the
+node has no effect — the inspector result wins.
+
+The live-reload trigger relies on the server revision changing. After `project_new` (which resets
+revision to 0), any sequence of edits that lands back on the same revision number the UI last saw
+will not trigger a reload. Apply a no-op `setProjectMetadata` change to force a unique revision
+if needed.
 
 ## VST3 and licensing
 

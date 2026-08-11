@@ -162,7 +162,7 @@ function registerTools(server, control) {
     title: 'Apply graph transaction',
     description: 'Validate and atomically apply typed node and connection operations. Use dryRun first for complex edits.',
     inputSchema: {
-      expectedRevision: z.number().int().nonnegative(),
+      expectedRevision: z.coerce.number().int().nonnegative(),
       dryRun: z.boolean().default(false),
       operations: z.array(operationSchema).min(1).max(256)
     },
@@ -173,16 +173,16 @@ function registerTools(server, control) {
     title: 'Configure transport',
     description: 'Configure tempo, loop, or position while audio is stopped.',
     inputSchema: {
-      expectedRevision: z.number().int().nonnegative(),
-      tempo: z.number().positive().optional(),
-      atBeat: z.number().nonnegative().optional(),
+      expectedRevision: z.coerce.number().int().nonnegative(),
+      tempo: z.coerce.number().positive().optional(),
+      atBeat: z.coerce.number().nonnegative().optional(),
       loop: z.object({
-        startBeat: z.number().nonnegative(),
-        endBeat: z.number().positive(),
+        startBeat: z.coerce.number().nonnegative(),
+        endBeat: z.coerce.number().positive(),
         enabled: z.boolean().optional()
       }).optional(),
       clearLoop: z.boolean().default(false),
-      positionBeats: z.number().nonnegative().optional()
+      positionBeats: z.coerce.number().nonnegative().optional()
     },
     annotations: mutatingIdempotent
   }, async input => result(await control.configureTransport(input)))
@@ -203,11 +203,11 @@ function registerTools(server, control) {
     title: 'Set plugin parameter',
     description: 'Set and persist a normalized plugin parameter value. Applies live when a native engine is available.',
     inputSchema: {
-      expectedRevision: z.number().int().nonnegative(),
+      expectedRevision: z.coerce.number().int().nonnegative(),
       nodeId: z.string().min(1),
-      parameterId: z.number().int().nonnegative(),
-      value: z.number().min(0).max(1),
-      sampleOffset: z.number().int().nonnegative().default(0)
+      parameterId: z.coerce.number().int().nonnegative(),
+      value: z.coerce.number().min(0).max(1),
+      sampleOffset: z.coerce.number().int().nonnegative().default(0)
     },
     annotations: mutatingIdempotent
   }, async input => result(await control.setParameter(input)))

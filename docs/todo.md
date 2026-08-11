@@ -66,3 +66,8 @@ Still open (Phase 3):
 - GTK full two-way sync: send every in-editor change (add node, connect, drag) to live server
   as `trn:ChangeSet` POST so MCP always sees the latest graph without waiting for a save.
 - SSE (`GET /events`) for push notifications to GTK and MCP instead of 500 ms polling.
+
+- UI live-reload missed when `project_new` resets revision to 0 and edits land it back at the
+  same number as the previously cached revision: UI sees no change and skips reload. Fix: C++
+  should treat `project_new` (filePath change to null) as a forced reload trigger, or the server
+  should use a monotonically-increasing generation counter that never resets.

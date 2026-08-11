@@ -12,25 +12,38 @@ trn:DiscoveredPlugin a owl:Class ; rdfs:label "Discovered Plugin" ;
     rdfs:comment "Technical metadata extracted by the isolated VST3 inspector." .
 
 ## Role taxonomy
-trn:PluginRole       a owl:Class ; rdfs:label "Plugin Role" .
-trn:AudioEffect      a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "Audio Effect" .
-trn:AudioMixer       a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "Audio Mixer" .
-trn:AudioInstrument  a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "Audio Instrument" .
-trn:AudioSource      a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "Audio Source" .
-trn:AudioSink        a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "Audio Sink" .
-trn:MidiGenerator    a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "MIDI Generator" .
-trn:MidiProcessor    a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "MIDI Processor" .
+trn:PluginRole            a owl:Class ; rdfs:label "Plugin Role" .
+trn:AudioEffect           a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "Audio Effect" .
+trn:AudioMixer            a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "Audio Mixer" .
+trn:AudioInstrument       a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "Audio Instrument" .
+trn:AudioSource           a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "Audio Source" .
+trn:AudioSink             a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "Audio Sink" .
+trn:MidiGenerator         a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "MIDI Generator" .
+trn:MidiProcessor         a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "MIDI Processor" .
+trn:Instrument            a owl:Class ; rdfs:subClassOf trn:PluginRole ; rdfs:label "Instrument" .
+trn:DrumInstrument        a owl:Class ; rdfs:subClassOf trn:Instrument  ; rdfs:label "Drum Instrument" .
+trn:BassInstrument        a owl:Class ; rdfs:subClassOf trn:Instrument  ; rdfs:label "Bass Instrument" .
+trn:Controller            a owl:Class ; rdfs:subClassOf trn:PluginRole  ; rdfs:label "Controller" ;
+    rdfs:comment "Emits control signals (CC, scene notes) that reshape other plugins rather than producing musical audio or notes." .
+trn:PerformanceInstrument a owl:Class ; rdfs:subClassOf trn:PluginRole  ; rdfs:label "Performance Instrument" .
+trn:Utility               a owl:Class ; rdfs:subClassOf trn:PluginRole  ; rdfs:label "Utility" .
 
 ## Signal type instances
-trn:Audio      a owl:NamedIndividual ; rdfs:label "Audio" .
-trn:Midi       a owl:NamedIndividual ; rdfs:label "MIDI" .
-trn:BassMidi   a owl:NamedIndividual ; rdfs:label "Bass MIDI" .
-trn:DrumMidi   a owl:NamedIndividual ; rdfs:label "Drum MIDI" .
-trn:MelodyMidi a owl:NamedIndividual ; rdfs:label "Melody MIDI" .
+trn:Audio         a owl:NamedIndividual ; rdfs:label "Audio" .
+trn:Midi          a owl:NamedIndividual ; rdfs:label "MIDI" .
+trn:BassMidi      a owl:NamedIndividual ; rdfs:label "Bass MIDI" .
+trn:DrumMidi      a owl:NamedIndividual ; rdfs:label "Drum MIDI" .
+trn:MelodyMidi    a owl:NamedIndividual ; rdfs:label "Melody MIDI" .
+trn:HarmonyMidi   a owl:NamedIndividual ; rdfs:label "Harmony MIDI" .
+trn:MultiPartMidi a owl:NamedIndividual ; rdfs:label "Multi-part MIDI" .
+trn:ControlMidi   a owl:NamedIndividual ; rdfs:label "Control MIDI" ;
+    rdfs:comment "MIDI CCs and scene notes used to reshape other generators rather than to produce musical content directly." .
 
 ## Host requirement instances
 trn:HostTransport a owl:NamedIndividual ; rdfs:label "Host Transport" ;
     rdfs:comment "Plugin requires the host to provide tempo/beat position." .
+trn:Launchpad     a owl:NamedIndividual ; rdfs:label "Launchpad" ;
+    rdfs:comment "Plugin expects a Novation Launchpad MIDI controller for full functionality." .
 
 ## ── Profile properties ───────────────────────────────────────────────────────
 
@@ -44,6 +57,44 @@ trn:companion         a owl:ObjectProperty ; rdfs:domain trn:PluginProfile .
 trn:genre             a owl:DatatypeProperty ; rdfs:domain trn:PluginProfile ; rdfs:range xsd:string .
 trn:caution           a owl:DatatypeProperty ; rdfs:domain trn:PluginProfile ; rdfs:range xsd:string .
 trn:homepage          a owl:DatatypeProperty ; rdfs:domain trn:PluginProfile ; rdfs:range xsd:anyURI .
+
+## ── Conductor / CC-control routing ──────────────────────────────────────────
+##
+## These properties let agents understand which plugins feed CC control signals
+## into which receivers and what parameter to set to enable the link.
+
+trn:feedsControls a owl:ObjectProperty ; rdfs:domain trn:PluginProfile ;
+    rdfs:label "feeds controls" ;
+    rdfs:comment "This plugin emits MIDI CC or scene control signals that can reshape live parameters on the target plugin. Route its MIDI output to the target's MIDI input and set the target's conductor channel parameter to match." .
+
+trn:conductorChannelParam a owl:DatatypeProperty ; rdfs:domain trn:PluginProfile ; rdfs:range xsd:string ;
+    rdfs:label "conductor channel parameter" ;
+    rdfs:comment "Name of the parameter on this (receiver) plugin that selects which MIDI channel to listen on for Conductor CCs. Set to 0 to disable." .
+
+## ── CC mapping vocabulary ────────────────────────────────────────────────────
+##
+## Use trn:ccMapping to attach one or more mapping blank nodes to a profile.
+## Each blank node carries trn:ccNumber, trn:ccRole, and trn:targetParameter.
+
+trn:ccMapping      a owl:ObjectProperty ; rdfs:domain trn:PluginProfile ;
+    rdfs:label "CC mapping" ;
+    rdfs:comment "Links a plugin profile to a blank node describing one CC→parameter binding." .
+
+trn:ccNumber       a owl:DatatypeProperty ; rdfs:range xsd:integer ;
+    rdfs:label "CC number" ;
+    rdfs:comment "MIDI continuous controller number (0–127)." .
+
+trn:ccRole         a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:label "CC role" ;
+    rdfs:comment "Semantic name for this CC as emitted by the controller (e.g. Density, Energy, Scene, Reset)." .
+
+trn:targetParameter a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:label "target parameter" ;
+    rdfs:comment "Symbol or display name of the plugin parameter driven by this CC." .
+
+trn:ccTriggerValue a owl:DatatypeProperty ; rdfs:range xsd:integer ;
+    rdfs:label "CC trigger value" ;
+    rdfs:comment "When set, the mapping fires only when the CC value equals this integer (e.g. 127 for Reset triggers)." .
 
 ## ── Discovery properties ─────────────────────────────────────────────────────
 

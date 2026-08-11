@@ -1,17 +1,20 @@
-@prefix trn: <http://purl.org/stuff/transmissions/> .
-@prefix dsp: <http://purl.org/stuff/transmissions/plugins/downspout/> .
+@prefix trn:  <http://purl.org/stuff/transmissions/> .
+@prefix dsp:  <http://purl.org/stuff/transmissions/plugins/downspout/> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
 
 dsp:bassgen a trn:PluginProfile ;
     rdfs:label "BassGen" ;
     rdfs:comment "Transport-aware bass generator with persistent patterns, meter-aware rhythm, variation, and Follow/Dodge input controls." ;
     trn:bundleName "bassgen.vst3" ;
     trn:vendor "danja" ;
+    foaf:homepage <https://danja.github.io/downspout/plugins/bassgen/> ;
     trn:role trn:MidiGenerator ;
     trn:produces trn:Midi, trn:BassMidi ;
-    trn:accepts trn:Midi ;
+    trn:accepts trn:Midi, trn:ControlMidi ;
     trn:requires trn:HostTransport ;
     trn:genre "Straight", "Reel", "Waltz", "Jig", "Slip Jig" ;
+    trn:conductorChannelParam "conductor_ch" ;
     trn:recommendedBefore dsp:basilico .
 
 dsp:p-mix a trn:PluginProfile ;
@@ -99,10 +102,13 @@ dsp:drumgen a trn:PluginProfile ;
     rdfs:comment "Transport- and meter-aware drum generator with pattern variation, fills, and broad genre vocabulary." ;
     trn:bundleName "drumgen.vst3" ;
     trn:vendor "danja" ;
+    foaf:homepage <https://danja.github.io/downspout/plugins/drumgen/> ;
     trn:role trn:MidiGenerator ;
     trn:produces trn:Midi, trn:DrumMidi ;
+    trn:accepts trn:ControlMidi ;
     trn:requires trn:HostTransport ;
     trn:genre "Breakbeat", "Amen", "Jungle", "Hip Hop", "Jazz", "Rock", "Dub" ;
+    trn:conductorChannelParam "conductor_ch" ;
     trn:recommendedBefore dsp:drumkit ;
     trn:caution "The stereo audio output is intentionally silent compatibility output; connect its MIDI output to an instrument." .
 
@@ -192,13 +198,16 @@ dsp:gater a trn:PluginProfile ;
 
 dsp:ground a trn:PluginProfile ;
     rdfs:label "Ground" ;
-    rdfs:comment "Long-form bass generator with Dub and Jazz styles, phrase planning, and guarded bass-register output." ;
+    rdfs:comment "Long-form bass generator with Dub and Jazz styles, phrase planning, arc-tension control, and guarded bass-register output." ;
     trn:bundleName "ground.vst3" ;
     trn:vendor "danja" ;
+    foaf:homepage <https://danja.github.io/downspout/plugins/ground/> ;
     trn:role trn:MidiGenerator ;
     trn:produces trn:Midi, trn:BassMidi ;
+    trn:accepts trn:ControlMidi ;
     trn:requires trn:HostTransport ;
     trn:genre "Dub", "Jazz" ;
+    trn:conductorChannelParam "conductor_ch" ;
     trn:recommendedBefore dsp:basilico .
 
 dsp:floozy a trn:PluginProfile ;
@@ -295,9 +304,11 @@ dsp:conductor a trn:PluginProfile ;
     rdfs:comment "Long-form section generator emitting bar-aligned section notes and scene, density, energy, mutation, and reset CC values." ;
     trn:bundleName "conductor.vst3" ;
     trn:vendor "danja" ;
+    foaf:homepage <https://danja.github.io/downspout/plugins/conductor/> ;
     trn:role trn:MidiGenerator, trn:Controller ;
     trn:produces trn:Midi, trn:ControlMidi ;
     trn:requires trn:HostTransport ;
+    trn:feedsControls dsp:bassgen, dsp:drumgen, dsp:ground, dsp:harmonic-atlas ;
     trn:recommendedBefore dsp:harmonic-atlas .
 
 dsp:drift a trn:PluginProfile ;
@@ -398,3 +409,40 @@ dsp:syrinx a trn:PluginProfile ;
     trn:genre "Ambient", "Electronic", "Nature", "Dance" ;
     trn:recommendedAfter dsp:melgen ;
     trn:caution "Ten presets share one MIDI channel; select a preset via the Selected Preset master parameter before connecting multiple Syrinx instances." .
+
+dsp:loopdelay a trn:PluginProfile ;
+    rdfs:label "Loopdelay" ;
+    rdfs:comment "Stereo delay and capture looper. Time freely settable (20–4000 ms) or BBT-synced from a quarter beat to four bars. Delay mode: filtered feedback and ping-pong crossfeed. Loop mode: captures one length with feedback-controlled memory and live overdubbing." ;
+    trn:bundleName "loopdelay.vst3" ;
+    trn:vendor "danja" ;
+    foaf:homepage <https://danja.github.io/downspout/plugins/loopdelay/> ;
+    trn:role trn:AudioEffect ;
+    trn:accepts trn:Audio, trn:ControlMidi ;
+    trn:produces trn:Audio ;
+    trn:requires trn:HostTransport ;
+    trn:recommendedAfter dsp:t-mix ;
+    trn:recommendedBefore dsp:lightverb .
+
+dsp:lightverb a trn:PluginProfile ;
+    rdfs:label "Lightverb" ;
+    rdfs:comment "Minimal stereo reverb using a fixed four-line feedback-delay network. No convolution, FFT, or modulation bank. Suits insert use (default 20% wet) or aux return (100% wet). Producer MIDI CC 32/33 temporarily override wet and space." ;
+    trn:bundleName "lightverb.vst3" ;
+    trn:vendor "danja" ;
+    foaf:homepage <https://danja.github.io/downspout/plugins/lightverb/> ;
+    trn:role trn:AudioEffect ;
+    trn:accepts trn:Audio, trn:ControlMidi ;
+    trn:produces trn:Audio ;
+    trn:recommendedAfter dsp:loopdelay ;
+    trn:recommendedBefore dsp:guardian .
+
+dsp:mixgen a trn:PluginProfile ;
+    rdfs:label "Mixgen" ;
+    rdfs:comment "Transport-synchronized automatic producer for the Transmission Producer Control Bus. Generates eight repeatable gain lanes (random, quasi-random, or Euclidean) emitted as MIDI CC 20–27. Four effect macros default to Loopdelay time/feedback (CC 30/31) and Lightverb wet/space (CC 32/33). Stereo audio passes through unchanged." ;
+    trn:bundleName "mixgen.vst3" ;
+    trn:vendor "danja" ;
+    foaf:homepage <https://danja.github.io/downspout/plugins/mixgen/> ;
+    trn:role trn:MidiGenerator, trn:Controller, trn:AudioEffect ;
+    trn:accepts trn:Audio ;
+    trn:produces trn:Audio, trn:ControlMidi ;
+    trn:requires trn:HostTransport ;
+    trn:feedsControls dsp:t-mix, dsp:loopdelay, dsp:lightverb .

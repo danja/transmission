@@ -158,6 +158,8 @@ struct GraphView {
     GtkWidget* consoleEntry = nullptr;
     guint connectionWatchTimer = 0;
     std::array<std::string, 2> lastWatchedConnections{};
+    double zoomLevel = 1.0;
+    GtkWidget* scrolledWindow = nullptr;
 };
 
 struct PluginDialogContext {
@@ -2100,10 +2102,60 @@ void drawArrow(cairo_t* cr, double x1, double y1, double x2, double y2) {
     cairo_stroke(cr);
 }
 
+static void updateCanvasSize(GraphView& view) {
+    double maxX = 800.0, maxY = 400.0;
+    for (const auto& node : view.nodes) {
+        const auto ports = std::max(node.audioInputs + node.midiInputs,
+                                    node.audioOutputs + node.midiOutputs);
+        const auto h = std::max(minimumNodeHeight,
+                                static_cast<double>(ports + 1) * portSpacing);
+        maxX = std::max(maxX, node.x + nodeWidth + 120.0);
+        maxY = std::max(maxY, node.y + h + 80.0);
+    }
+    gtk_widget_set_size_request(view.canvas,
+        static_cast<int>(std::ceil(maxX * view.zoomLevel)),
+        static_cast<int>(std::ceil(maxY * view.zoomLevel)));
+}
+
+gboolean scrollEvent(GtkWidget* widget, GdkEventScroll* event, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    if (!(event->state & GDK_CONTROL_MASK)) return FALSE;
+    double factor = 1.0;
+    if (event->direction == GDK_SCROLL_UP)
+        factor = 1.1;
+    else if (event->direction == GDK_SCROLL_DOWN)
+        factor = 1.0 / 1.1;
+    else if (event->direction == GDK_SCROLL_SMOOTH)
+        factor = event->delta_y < 0 ? 1.1 : 1.0 / 1.1;
+    if (factor == 1.0) return FALSE;
+    view.zoomLevel = std::clamp(view.zoomLevel * factor, 0.2, 4.0);
+    updateCanvasSize(view);
+    gtk_widget_queue_draw(widget);
+    return TRUE;
+}
+
+gboolean keyPress(GtkWidget*, GdkEventKey* event, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    if (!(event->state & GDK_CONTROL_MASK)) return FALSE;
+    double newZoom = view.zoomLevel;
+    if (event->keyval == GDK_KEY_equal || event->keyval == GDK_KEY_plus)
+        newZoom = std::min(4.0, view.zoomLevel * 1.2);
+    else if (event->keyval == GDK_KEY_minus)
+        newZoom = std::max(0.2, view.zoomLevel / 1.2);
+    else if (event->keyval == GDK_KEY_0)
+        newZoom = 1.0;
+    else return FALSE;
+    view.zoomLevel = newZoom;
+    updateCanvasSize(view);
+    gtk_widget_queue_draw(view.canvas);
+    return TRUE;
+}
+
 gboolean drawGraph(GtkWidget*, cairo_t* cr, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
     cairo_set_source_rgb(cr, 0.075, 0.085, 0.11);
     cairo_paint(cr);
+    cairo_scale(cr, view.zoomLevel, view.zoomLevel);
 
     cairo_set_line_width(cr, 2.5);
     cairo_set_source_rgb(cr, 0.32, 0.62, 0.86);
@@ -2245,37 +2297,39 @@ gboolean drawGraph(GtkWidget*, cairo_t* cr, gpointer data) {
 
 gboolean buttonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
+    const double cx = event->x / view.zoomLevel;
+    const double cy = event->y / view.zoomLevel;
     if (event->button == GDK_BUTTON_SECONDARY) {
-        const auto edge = edgeAt(view, event->x, event->y);
+        const auto edge = edgeAt(view, cx, cy);
         if (edge != static_cast<std::size_t>(-1)) {
             stopRuntime(view, "Graph changed — press Play to compile and start audio");
             view.edges.erase(view.edges.begin() + static_cast<std::ptrdiff_t>(edge));
             gtk_widget_queue_draw(widget);
             return TRUE;
         }
-        if (auto* node = nodeAt(view, event->x, event->y)) {
+        if (auto* node = nodeAt(view, cx, cy)) {
             showNodeMenu(widget, view, static_cast<std::size_t>(node - view.nodes.data()), event);
-        } else if (portAt(view, event->x, event->y).node == static_cast<std::size_t>(-1)) {
+        } else if (portAt(view, cx, cy).node == static_cast<std::size_t>(-1)) {
             showAddNodeMenu(widget, view, event);
         }
         return TRUE;
     }
     if (event->button != GDK_BUTTON_PRIMARY) return FALSE;
     if (event->type == GDK_2BUTTON_PRESS) {
-        if (auto* node = nodeAt(view, event->x, event->y);
+        if (auto* node = nodeAt(view, cx, cy);
             node && !node->pluginPath.empty() && view.editorHost) {
             cancelPointerInteraction(widget, view);
             openPluginEditor(view, *node);
             return TRUE;
         }
-        if (auto* node = nodeAt(view, event->x, event->y);
+        if (auto* node = nodeAt(view, cx, cy);
             node && (node->kind == NodeKind::SystemInput ||
                      node->kind == NodeKind::SystemOutput)) {
             cancelPointerInteraction(widget, view);
             showSystemDialog(widget, view, node->id == "system-input");
             return TRUE;
         }
-        if (auto* node = nodeAt(view, event->x, event->y);
+        if (auto* node = nodeAt(view, cx, cy);
             node && (node->kind == NodeKind::MidiInput ||
                      node->kind == NodeKind::MidiOutput)) {
             cancelPointerInteraction(widget, view);
@@ -2284,7 +2338,7 @@ gboolean buttonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
                 static_cast<std::size_t>(node - view.nodes.data()));
             return TRUE;
         }
-        if (auto* node = nodeAt(view, event->x, event->y);
+        if (auto* node = nodeAt(view, cx, cy);
             node && node->kind == NodeKind::Gain) {
             cancelPointerInteraction(widget, view);
             showGainDialog(
@@ -2293,37 +2347,38 @@ gboolean buttonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
             return TRUE;
         }
     }
-    const auto hit = portAt(view, event->x, event->y);
+    const auto hit = portAt(view, cx, cy);
     if (hit.output) {
         view.connectingFrom = hit.node;
         view.connectingPort = hit.port;
         view.connectingKind = hit.kind;
-        view.pointerX = event->x;
-        view.pointerY = event->y;
+        view.pointerX = cx;
+        view.pointerY = cy;
         gtk_widget_queue_draw(widget);
         return TRUE;
     }
-    auto* node = nodeAt(view, event->x, event->y);
+    auto* node = nodeAt(view, cx, cy);
     if (!node) return FALSE;
     view.dragging = static_cast<std::size_t>(node - view.nodes.data());
-    view.dragX = event->x - node->x;
-    view.dragY = event->y - node->y;
+    view.dragX = cx - node->x;
+    view.dragY = cy - node->y;
     gtk_widget_queue_draw(widget);
     return TRUE;
 }
 
 gboolean motion(GtkWidget* widget, GdkEventMotion* event, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
-    view.pointerX = event->x;
-    view.pointerY = event->y;
+    view.pointerX = event->x / view.zoomLevel;
+    view.pointerY = event->y / view.zoomLevel;
     if (view.connectingFrom != static_cast<std::size_t>(-1)) {
         gtk_widget_queue_draw(widget);
         return TRUE;
     }
     if (view.dragging == static_cast<std::size_t>(-1)) return FALSE;
     auto& node = view.nodes[view.dragging];
-    node.x = std::max(20.0, event->x - view.dragX);
-    node.y = std::max(70.0, event->y - view.dragY);
+    node.x = std::max(20.0, event->x / view.zoomLevel - view.dragX);
+    node.y = std::max(70.0, event->y / view.zoomLevel - view.dragY);
+    updateCanvasSize(view);
     gtk_widget_queue_draw(widget);
     return TRUE;
 }
@@ -2332,7 +2387,7 @@ gboolean buttonRelease(GtkWidget* widget, GdkEventButton* event, gpointer data) 
     if (event->button != GDK_BUTTON_PRIMARY) return FALSE;
     auto& view = *static_cast<GraphView*>(data);
     if (view.connectingFrom != static_cast<std::size_t>(-1)) {
-        const auto hit = portAt(view, event->x, event->y);
+        const auto hit = portAt(view, event->x / view.zoomLevel, event->y / view.zoomLevel);
         if (!hit.output && hit.node != static_cast<std::size_t>(-1) && hit.node != view.connectingFrom &&
             hit.kind == view.connectingKind) {
             const auto duplicate = std::find_if(view.edges.begin(), view.edges.end(), [&](const auto& edge) {
@@ -2779,6 +2834,7 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
     gtk_spin_button_set_value(view.loopBars, normalized.loopBars);
     gtk_toggle_button_set_active(view.loop, normalized.loopEnabled);
     updateTransportDisplay(view);
+    updateCanvasSize(view);
     gtk_widget_queue_draw(view.canvas);
     return true;
 }
@@ -3496,6 +3552,10 @@ void activate(GtkApplication* application, gpointer) {
     view->window = window;
     view->playButton = playButton;
 
+    GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled),
+        GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    view->scrolledWindow = scrolled;
     GtkWidget* canvas = gtk_drawing_area_new();
     view->canvas = canvas;
     if (const char* root = std::getenv("TRANSMISSION_ROOT"))
@@ -3539,15 +3599,19 @@ void activate(GtkApplication* application, gpointer) {
     g_signal_connect(autolayoutItem, "activate",
                      G_CALLBACK(autolayoutActivated), view);
     g_signal_connect(quitItem, "activate", G_CALLBACK(quitActivated), view);
-    gtk_widget_set_hexpand(canvas, TRUE);
-    gtk_widget_set_vexpand(canvas, TRUE);
     gtk_widget_set_size_request(canvas, 800, 400);
-    gtk_widget_add_events(canvas, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK);
+    gtk_widget_add_events(canvas, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK |
+        GDK_POINTER_MOTION_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
     g_signal_connect(canvas, "draw", G_CALLBACK(drawGraph), view);
     g_signal_connect(canvas, "button-press-event", G_CALLBACK(buttonPress), view);
     g_signal_connect(canvas, "motion-notify-event", G_CALLBACK(motion), view);
     g_signal_connect(canvas, "button-release-event", G_CALLBACK(buttonRelease), view);
-    gtk_box_pack_start(GTK_BOX(frame), canvas, TRUE, TRUE, 0);
+    g_signal_connect(canvas, "scroll-event", G_CALLBACK(scrollEvent), view);
+    g_signal_connect(window, "key-press-event", G_CALLBACK(keyPress), view);
+    gtk_container_add(GTK_CONTAINER(scrolled), canvas);
+    gtk_widget_set_hexpand(scrolled, TRUE);
+    gtk_widget_set_vexpand(scrolled, TRUE);
+    gtk_box_pack_start(GTK_BOX(frame), scrolled, TRUE, TRUE, 0);
     gtk_box_pack_start(GTK_BOX(frame), transportBar, FALSE, FALSE, 0);
     gtk_container_add(GTK_CONTAINER(window), frame);
     g_signal_connect(window, "delete-event", G_CALLBACK(confirmClose), view);

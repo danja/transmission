@@ -181,7 +181,8 @@ export class TransmissionControlService {
   diagnostics() {
     let native = null
     if (this.engine) native = this.engine.diagnostics()
-    return { ...this.status(), native }
+    const peaks = this.peaks()
+    return { ...this.status(), native, peaks }
   }
 
   peaks() {

@@ -26,8 +26,7 @@ std::string resolveJackPortName(const std::string& requested,
     std::string match;
     for (const auto& candidate : available) {
         if (stableJackPortIdentity(candidate) != identity) continue;
-        if (!match.empty()) return requested;
-        match = candidate;
+        if (match.empty()) match = candidate;
     }
     return match.empty() ? requested : match;
 }

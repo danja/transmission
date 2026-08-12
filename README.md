@@ -17,6 +17,7 @@ Linux VST3 host.
 - Use autonomous, probabilistic, and audio-reactive VST3 plugins.
 - Open plugins' native editors and hear parameter changes during playback.
 - Connect JACK or PipeWire-JACK audio and MIDI ports.
+- Reopen recent projects from **File → Open Recent** (last 5 files); the most recently used project opens automatically on launch.
 - Save complete patches as readable RDF Turtle (`.ttl`) files.
 - Render a patch offline to WAV or MP3.
 - Auto-arrange the visible graph with **View → Autolayout**, which wraps
@@ -78,6 +79,25 @@ native VST3 editor embedding.
    left-to-right layout that wraps to fit the window.
 7. Use **File → Save** to store the graph as Turtle.
 8. Use **File → Render Audio** to export a chosen number of bars.
+
+## Built-in diagnostics
+
+The GTK application includes a console (bottom of the window) that accepts
+commands for inspecting the running system:
+
+| Command | What it shows |
+|---------|---------------|
+| `lsp` | All available JACK input/output ports |
+| `connections` | What `transmission:out_1/2` are currently wired to |
+| `peaks` | Output peak levels; flags silence if both are near zero |
+| `status` | Runtime state, configured port names, last connection error |
+| `diag` | Engine block counts, timing, and last connection error |
+| `reconnect` | Retry JACK port connections without restarting audio |
+
+If a project loads but produces no audio, the typical sequence is: `peaks` to
+confirm silence, `connections` to see that outputs are unwired, `lsp` to find
+the correct port names, then edit the project's `systemOutputConnections` and
+`reconnect`.
 
 ## Generative control through MCP
 
@@ -164,7 +184,8 @@ The live server exposes a REST API at `http://localhost:7878` (configurable in
 | `GET` | `/graph` | Full project as Turtle |
 | `GET` | `/plugins` | Plugin catalogue (JSON) |
 | `GET` | `/peaks` | Current output peak levels L/R (JSON) |
-| `GET` | `/diagnostics` | Engine and runtime stats (JSON) |
+| `GET` | `/diagnostics` | Engine stats, transport, and output peaks (JSON) |
+| `GET` | `/jack-ports` | Available JACK playback/capture ports via `jack_lsp` (JSON) |
 | `POST` | `/graph/changes` | Apply node/connection operations |
 | `POST` | `/transport/play` | Start audio engine |
 | `POST` | `/transport/stop` | Stop audio engine |
@@ -188,8 +209,15 @@ Copy `config.defaults.ttl` to `config.ttl` and edit as needed:
 [] a trn:ServerConfig ;
     trn:port 7878 ;
     trn:bindAddress "127.0.0.1" ;
-    trn:allowedRoots ( "." ) .
+    trn:allowedRoots ( "." ) ;
+    trn:defaultOutputConnections ( "UMC404HD 192k:playback_FL" "UMC404HD 192k:playback_FR" ) .
 ```
+
+`defaultOutputConnections` sets the JACK ports new projects connect to. Use the
+suffix-free form (e.g. `"UMC404HD 192k:playback_FL"` rather than
+`"UMC404HD 192k-89:playback_FL"`) so that fuzzy matching resolves the correct
+port regardless of the session-assigned number suffix. Run `jack_lsp | grep
+playback` to find the right names for your hardware.
 
 The live server URL can also be overridden per-session:
 

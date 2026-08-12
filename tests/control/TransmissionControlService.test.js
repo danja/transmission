@@ -73,7 +73,8 @@ describe('TransmissionControlService', () => {
     const bridge = {
       createEngine: vi.fn(), loadProject: vi.fn(), configureTransport: vi.fn(),
       startAudio: vi.fn(), stopAudio: vi.fn(), setParameter: vi.fn(),
-      getDiagnostics: vi.fn(() => ({ processedBlocks: 12 })), dispose: vi.fn()
+      getDiagnostics: vi.fn(() => ({ processedBlocks: 12 })),
+      getPeaks: vi.fn(() => ({ peakL: 0, peakR: 0 })), dispose: vi.fn()
     }
     const engine = new EngineSession({ bridge })
     const control = new TransmissionControlService({ engine })

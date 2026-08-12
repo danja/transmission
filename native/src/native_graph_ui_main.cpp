@@ -119,6 +119,7 @@ struct GraphView {
     guint transportTimer = 0;
     guint externalConnectionTimer = 0;
     unsigned externalConnectionAttempts = 0;
+    std::string lastConnectionError;
     std::array<bool, 2> pendingInputConnections{};
     std::array<bool, 2> pendingOutputConnections{};
     std::vector<bool> pendingMidiConnections;
@@ -1128,8 +1129,8 @@ bool systemChannelUsed(const GraphView& view, bool input, std::size_t channel) {
             edge.from >= view.nodes.size() || edge.to >= view.nodes.size())
             return false;
         return input
-            ? view.nodes[edge.from].id == "system-input" && edge.fromPort == channel
-            : view.nodes[edge.to].id == "system-output" && edge.toPort == channel;
+            ? view.nodes[edge.from].kind == NodeKind::SystemInput && edge.fromPort == channel
+            : view.nodes[edge.to].kind == NodeKind::SystemOutput && edge.toPort == channel;
     });
 }
 
@@ -1247,14 +1248,26 @@ gboolean retryExternalConnections(gpointer data) {
     if (!pending) {
         view.externalConnectionTimer = 0;
         view.externalConnectionAttempts = 0;
+        view.lastConnectionError.clear();
         logConsole(view, "JACK connections established");
         return G_SOURCE_REMOVE;
     }
     ++view.externalConnectionAttempts;
+    if (!error.empty() && view.externalConnectionAttempts == 1)
+        logConsole(view, "[warn] JACK routing pending: " + error);
     if (view.externalConnectionAttempts >= 20) {
         view.externalConnectionTimer = 0;
         view.externalConnectionAttempts = 0;
-        setStatus(view, "Audio is running, but JACK routing failed: " + error, true);
+        std::string detail = error;
+        if (view.jackConnections) {
+            const auto outputs = view.jackConnections->outputDestinations();
+            if (!outputs.empty()) {
+                detail += " | available outputs:";
+                for (const auto& p : outputs) detail += " " + p;
+            }
+        }
+        view.lastConnectionError = detail;
+        setStatus(view, "Audio is running, but JACK routing failed: " + detail, true);
         return G_SOURCE_REMOVE;
     }
     return G_SOURCE_CONTINUE;
@@ -1513,7 +1526,7 @@ void consoleCommandActivated(GtkEntry* entry, gpointer data) {
     cmd = cmd.substr(start, end - start + 1);
     logConsole(view, "> " + cmd);
     if (cmd == "help" || cmd == "?") {
-        logConsole(view, "Commands: status  diag  lsp  connections  watch  unwatch  reconnect  clear  help");
+        logConsole(view, "Commands: status  diag  lsp  connections  peaks  watch  unwatch  reconnect  clear  help");
     } else if (cmd == "clear") {
         if (view.consoleTextView) {
             auto* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view.consoleTextView));
@@ -1527,6 +1540,10 @@ void consoleCommandActivated(GtkEntry* entry, gpointer data) {
                          ", " + view.systemOutputConnections[1]);
         logConsole(view, "Input ports: " + view.systemInputConnections[0] +
                          ", " + view.systemInputConnections[1]);
+        if (!view.lastConnectionError.empty())
+            logConsole(view, "[error] Last connection error: " + view.lastConnectionError);
+        else if (runtimeRunning(view))
+            logConsole(view, "Connection status: OK");
     } else if (cmd == "lsp") {
         if (!view.jackConnections || !view.jackConnections->available()) {
             logConsole(view, "JACK not available");
@@ -1588,9 +1605,16 @@ void consoleCommandActivated(GtkEntry* entry, gpointer data) {
                 logConsole(view, "  " + t.nodeId + ": " + std::to_string(t.calls) + " calls, " +
                     std::to_string(t.averageMicroseconds) + " µs avg");
         }
+        if (!view.lastConnectionError.empty())
+            logConsole(view, "[error] Connection error: " + view.lastConnectionError);
 #else
         logConsole(view, "Not available in this build");
 #endif
+    } else if (cmd == "peaks") {
+        const float l = view.outputPeakL.load(std::memory_order_relaxed);
+        const float r = view.outputPeakR.load(std::memory_order_relaxed);
+        logConsole(view, "Output peaks: L=" + std::to_string(l) + "  R=" + std::to_string(r) +
+            (l < 0.001f && r < 0.001f ? "  (silence — check connections)" : ""));
     } else if (cmd == "reconnect") {
         if (!runtimeRunning(view)) {
             logConsole(view, "Reconnect: audio is not running");

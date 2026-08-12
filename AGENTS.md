@@ -82,6 +82,48 @@ revision to 0), any sequence of edits that lands back on the same revision numbe
 will not trigger a reload. Apply a no-op `setProjectMetadata` change to force a unique revision
 if needed.
 
+## Diagnosing audio problems
+
+### No audio from a project
+
+1. **Run the headless probe first** — confirms the graph initialises and plugins produce signal without needing JACK or a display:
+   ```sh
+   node scripts/probe-project.js projects/<name>.ttl
+   ```
+   Look for `AUDIO node=guardian totalRms=...` near the bottom. If the probe fails with "module path, output channels, frames, and sample rate must be valid", a plugin has `audioOutputs 0` in the TTL — add the correct `:audioOutputs N` declaration (check with `transmission_vst3_inspect`).
+
+2. **Verify real port counts** before wiring connections:
+   ```sh
+   native/build-ui-jack-vst3/transmission_vst3_inspect /home/danny/.vst3/<name>.vst3 \
+     | grep -E 'audioInputs|audioOutputs|midiInputs|midiOutputs'
+   ```
+   The GTK UI overwrites declared counts with inspector results. A connection to a port index outside the real count causes a silent "apply failed".
+
+3. **Check JACK output port names** — port names with a numeric suffix (`UMC404HD 192k-89:...`) change every JACK session. Use the suffix-free stable form so fuzzy matching resolves it automatically:
+   - Good: `"UMC404HD 192k:playback_FL"` — matches any `UMC404HD 192k-NN:playback_FL`
+   - Bad: `"system:playback_1"` — does not exist in this JACK graph; fuzzy matching cannot help
+   - Check available ports: `jack_lsp | grep playback`
+   - Or via live server: `curl http://127.0.0.1:7878/jack-ports`
+
+4. **GTK UI console commands** (type into the console text entry):
+   - `lsp` — list all available JACK input/output ports
+   - `connections` — show what `transmission:out_1/2` are currently wired to
+   - `peaks` — show current output peak levels; `(silence — check connections)` means no audio is reaching the output
+   - `status` — show runtime state plus last connection error if connections failed
+   - `diag` — full engine diagnostics including timing, block counts, and last connection error
+   - `reconnect` — retry JACK connections without restarting audio
+
+5. **Live server diagnostics endpoints**:
+   - `GET /diagnostics` — engine state, transport, peaks
+   - `GET /peaks` — `{ peakL, peakR }` (both near zero → silence at output)
+   - `GET /jack-ports` — available JACK playback/capture ports via `jack_lsp`
+
+### Common TTL authoring mistakes
+
+- Missing `:audioOutputs N` on a MIDI-only generator causes the probe and live engine to reject it.
+- `canticle.vst3` has only 1 real MIDI input despite appearing to accept 2; connecting two sources to port 0 merges them.
+- MIDI port indices are 0-based; two sources wired to the same `:toPort` silently clobber each other — use separate instruments or a dedicated MIDI router.
+
 ## VST3 and licensing
 
 Use `/chalet/VST_SDK/vst3sdk` as the local SDK reference. Check the SDK licensing and redistribution requirements before packaging or distributing binaries.

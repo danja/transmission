@@ -23,6 +23,6 @@ int main() {
 
     const std::vector<std::string> ambiguous{
         "device-10:output", "device-11:output"};
-    assert(resolveJackPortName("device-3:output", ambiguous) == "device-3:output");
+    assert(resolveJackPortName("device-3:output", ambiguous) == "device-10:output");
     return 0;
 }

@@ -3,12 +3,16 @@
 
 <dub-reggae-birdsong> a :Transmission ;
     :tempoMap ( [ :atBeat 0 ; :bpm 75 ] ) ;
-    :systemOutputConnections ( "UMC404HD 192k-93:playback_AUX0" "UMC404HD 192k-93:playback_AUX1" ) ;
+    :loopStart 0 ;
+    :loopEnd 64 ;
+    :loopEnabled true ;
+    :systemOutputConnections ( "UMC404HD 192k:playback_FL" "UMC404HD 192k:playback_FR" ) ;
     :pipe ( <conductor> <mixgen> <drumgen> <drumkit> <ground> <basilico> <harmonic_atlas> <canticle> <melgen> <syrinx> <counterpointer> <t_mix> <loopdelay> <lightverb> <guardian> <audio_out> ) ;
-    :connections ( [ :from <conductor> ; :to <drumgen> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <conductor> ; :to <ground> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <conductor> ; :to <harmonic_atlas> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <conductor> ; :to <melgen> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <mixgen> ; :to <t_mix> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <drumgen> ; :to <drumkit> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <ground> ; :to <basilico> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <harmonic_atlas> ; :to <canticle> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <melgen> ; :to <syrinx> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <melgen> ; :to <counterpointer> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <drumkit> ; :to <t_mix> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <drumkit> ; :to <t_mix> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <basilico> ; :to <t_mix> ; :kind "audio" ; :fromPort 0 ; :toPort 2 ] [ :from <canticle> ; :to <t_mix> ; :kind "audio" ; :fromPort 0 ; :toPort 3 ] [ :from <canticle> ; :to <t_mix> ; :kind "audio" ; :fromPort 1 ; :toPort 4 ] [ :from <syrinx> ; :to <t_mix> ; :kind "audio" ; :fromPort 0 ; :toPort 5 ] [ :from <syrinx> ; :to <t_mix> ; :kind "audio" ; :fromPort 1 ; :toPort 6 ] [ :from <t_mix> ; :to <loopdelay> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <t_mix> ; :to <loopdelay> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <loopdelay> ; :to <lightverb> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <loopdelay> ; :to <lightverb> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <lightverb> ; :to <guardian> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <lightverb> ; :to <guardian> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <guardian> ; :to <audio_out> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <guardian> ; :to <audio_out> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <counterpointer> ; :to <canticle> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] ) .
+    :connections ( [ :from <conductor> ; :to <drumgen> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <conductor> ; :to <ground> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <conductor> ; :to <harmonic_atlas> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <conductor> ; :to <melgen> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <mixgen> ; :to <t_mix> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <drumgen> ; :to <drumkit> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <ground> ; :to <basilico> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <harmonic_atlas> ; :to <canticle> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <melgen> ; :to <syrinx> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <melgen> ; :to <counterpointer> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <counterpointer> ; :to <canticle> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <drumkit> ; :to <t_mix> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <drumkit> ; :to <t_mix> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <basilico> ; :to <t_mix> ; :kind "audio" ; :fromPort 0 ; :toPort 2 ] [ :from <canticle> ; :to <t_mix> ; :kind "audio" ; :fromPort 0 ; :toPort 3 ] [ :from <canticle> ; :to <t_mix> ; :kind "audio" ; :fromPort 1 ; :toPort 4 ] [ :from <syrinx> ; :to <t_mix> ; :kind "audio" ; :fromPort 0 ; :toPort 5 ] [ :from <syrinx> ; :to <t_mix> ; :kind "audio" ; :fromPort 1 ; :toPort 6 ] [ :from <t_mix> ; :to <loopdelay> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <t_mix> ; :to <loopdelay> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <loopdelay> ; :to <lightverb> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <loopdelay> ; :to <lightverb> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <lightverb> ; :to <guardian> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <lightverb> ; :to <guardian> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <guardian> ; :to <audio_out> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <guardian> ; :to <audio_out> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] ) .
 
 <conductor> a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Conductor" ;
+    :audioOutputs 2 ;
     :midiOutputs 1 ;
     :editorX 100 ;
     :editorY 50 ;
@@ -16,6 +20,8 @@
 
 <mixgen> a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Mixgen" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
     :midiOutputs 1 ;
     :editorX 350 ;
     :editorY 50 ;
@@ -23,6 +29,7 @@
 
 <drumgen> a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "DrumGen" ;
+    :audioOutputs 2 ;
     :midiInputs 1 ;
     :midiOutputs 1 ;
     :editorX 100 ;
@@ -39,6 +46,7 @@
 
 <ground> a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Ground" ;
+    :audioOutputs 2 ;
     :midiInputs 1 ;
     :midiOutputs 1 ;
     :editorX 350 ;
@@ -47,7 +55,7 @@
 
 <basilico> a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Basilico" ;
-    :audioOutputs 1 ;
+    :audioOutputs 2 ;
     :midiInputs 1 ;
     :editorX 350 ;
     :editorY 390 ;
@@ -55,6 +63,7 @@
 
 <harmonic_atlas> a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Harmonic Atlas" ;
+    :audioOutputs 2 ;
     :midiInputs 1 ;
     :midiOutputs 1 ;
     :editorX 600 ;
@@ -64,13 +73,14 @@
 <canticle> a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Canticle" ;
     :audioOutputs 2 ;
-    :midiInputs 2 ;
+    :midiInputs 1 ;
     :editorX 600 ;
     :editorY 390 ;
     :settings [ :pluginPath "/home/danny/.vst3/canticle.vst3" ] .
 
 <melgen> a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "MelGen" ;
+    :audioOutputs 2 ;
     :midiInputs 1 ;
     :midiOutputs 1 ;
     :editorX 850 ;
@@ -87,6 +97,7 @@
 
 <counterpointer> a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Counterpointer" ;
+    :audioOutputs 2 ;
     :midiInputs 1 ;
     :midiOutputs 1 ;
     :editorX 850 ;
@@ -131,4 +142,4 @@
     :audioInputs 2 ;
     :editorX 450 ;
     :editorY 1070 ;
-    :settings [ :externalPort "UMC404HD 192k-93:playback_AUX0" ] .
+    :settings [ :externalPort "UMC404HD 192k:playback_FL" ] .

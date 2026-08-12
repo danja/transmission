@@ -3,6 +3,7 @@
 // POST bodies: text/turtle. GET responses: text/turtle for project data, application/json otherwise.
 
 import { createServer } from 'node:http'
+import { execFile } from 'node:child_process'
 import { ProjectRevisionError } from '../control/TransmissionControlService.js'
 import {
   parseChangeSet,
@@ -81,6 +82,10 @@ export class TransmissionHttpServer {
     }
     if (path === '/peaks') {
       return sendJson(res, 200, control.peaks())
+    }
+    if (path === '/jack-ports') {
+      const ports = await listJackPorts()
+      return sendJson(res, 200, ports)
     }
     if (path === '/plugins') {
       await control.waitForPluginScan()
@@ -166,5 +171,27 @@ function readBody(req) {
     req.on('data', chunk => chunks.push(chunk))
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
     req.on('error', reject)
+  })
+}
+
+function listJackPorts() {
+  return new Promise(resolve => {
+    execFile('jack_lsp', ['-c'], { timeout: 3000 }, (err, stdout) => {
+      if (err) { resolve({ error: err.message, ports: [] }); return }
+      const lines = stdout.split('\n').map(l => l.trimEnd()).filter(Boolean)
+      const ports = []
+      let current = null
+      for (const line of lines) {
+        if (line.startsWith('   ')) {
+          if (current) current.connections.push(line.trim())
+        } else {
+          current = { name: line, connections: [] }
+          ports.push(current)
+        }
+      }
+      const playback = ports.filter(p => p.name.includes('playback') || p.name.includes('output'))
+      const capture = ports.filter(p => p.name.includes('capture') || p.name.includes('input'))
+      resolve({ playback, capture, all: ports })
+    })
   })
 }

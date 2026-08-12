@@ -131,4 +131,4 @@
     :audioInputs 2 ;
     :editorX 450 ;
     :editorY 1070 ;
-    :settings [ :externalPort "UMC404HD 192k-86:playback_AUX0" ; :externalPort "UMC404HD 192k-93:playback_AUX0" ] .
+    :settings [ :externalPort "UMC404HD 192k-93:playback_AUX0" ] .

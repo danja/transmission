@@ -23,6 +23,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -130,6 +131,8 @@ struct GraphView {
     std::string filePath;
     std::string projectHelperPath;
     std::string lastSavedSnapshot;
+    std::vector<std::string> recentFiles;
+    GtkWidget* recentMenu = nullptr;
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
     std::string liveServerUrl{"http://127.0.0.1:7878"};
     bool liveServerAvailable = false;
@@ -2902,6 +2905,112 @@ bool runProjectHelper(const GraphView& view, const char* command,
     return communicated && error.empty();
 }
 
+// --- Recent files ---
+static constexpr std::size_t kMaxRecentFiles = 5;
+
+std::filesystem::path recentFilesPath() {
+    const char* xdgConfig = std::getenv("XDG_CONFIG_HOME");
+    const char* home = std::getenv("HOME");
+    std::filesystem::path base = xdgConfig
+        ? std::filesystem::path(xdgConfig)
+        : std::filesystem::path(home ? home : ".") / ".config";
+    return base / "transmission" / "recent-files.txt";
+}
+
+std::vector<std::string> loadRecentFiles() {
+    std::vector<std::string> files;
+    std::ifstream f(recentFilesPath());
+    std::string line;
+    while (std::getline(f, line) && files.size() < kMaxRecentFiles)
+        if (!line.empty() && std::filesystem::exists(line))
+            files.push_back(line);
+    return files;
+}
+
+void saveRecentFiles(const std::vector<std::string>& files) {
+    const auto path = recentFilesPath();
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    std::ofstream f(path);
+    for (const auto& file : files)
+        f << file << '\n';
+}
+
+void addToRecentFiles(GraphView& view, const std::string& path) {
+    auto& files = view.recentFiles;
+    files.erase(std::remove(files.begin(), files.end(), path), files.end());
+    files.insert(files.begin(), path);
+    if (files.size() > kMaxRecentFiles)
+        files.resize(kMaxRecentFiles);
+    saveRecentFiles(files);
+}
+
+struct RecentItemData {
+    GraphView* view;
+    std::string path;
+};
+
+void rebuildRecentMenu(GraphView& view); // forward declaration
+
+void openRecentFileActivated(GtkMenuItem*, gpointer data) {
+    auto* rid = static_cast<RecentItemData*>(data);
+    GraphView& view = *rid->view;
+    const std::string path = rid->path;
+    std::string interchange;
+    std::string error;
+    if (!runProjectHelper(view, "load", path, "", interchange, error)) {
+        setStatus(view, "Unable to open project: " + error, true);
+    } else {
+        transmission::UiProject project;
+        if (!transmission::decodeUiProject(interchange, project, error) ||
+            !applyProject(view, project, error)) {
+            setStatus(view, "Unable to open project: " + error, true);
+        } else {
+            view.filePath = path;
+            view.lastSavedSnapshot = transmission::encodeUiProject(captureProject(view));
+            updateWindowTitle(view);
+            addToRecentFiles(view, path);
+            rebuildRecentMenu(view);
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+            syncToLiveServer(view, path);
+#endif
+        }
+    }
+}
+
+void clearRecentFilesActivated(GtkMenuItem*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    view.recentFiles.clear();
+    saveRecentFiles(view.recentFiles);
+    rebuildRecentMenu(view);
+}
+
+void rebuildRecentMenu(GraphView& view) {
+    gtk_container_foreach(GTK_CONTAINER(view.recentMenu),
+        [](GtkWidget* child, gpointer) { gtk_widget_destroy(child); }, nullptr);
+    if (view.recentFiles.empty()) {
+        auto* item = gtk_menu_item_new_with_label("(No recent files)");
+        gtk_widget_set_sensitive(item, FALSE);
+        gtk_menu_shell_append(GTK_MENU_SHELL(view.recentMenu), item);
+    } else {
+        for (const auto& filePath : view.recentFiles) {
+            const auto label = std::filesystem::path(filePath).filename().string();
+            auto* item = gtk_menu_item_new_with_label(label.c_str());
+            auto* rid = new RecentItemData{&view, filePath};
+            g_signal_connect_data(item, "activate", G_CALLBACK(openRecentFileActivated), rid,
+                [](gpointer d, GClosure*) { delete static_cast<RecentItemData*>(d); },
+                static_cast<GConnectFlags>(0));
+            gtk_menu_shell_append(GTK_MENU_SHELL(view.recentMenu), item);
+        }
+        auto* sep = gtk_separator_menu_item_new();
+        gtk_menu_shell_append(GTK_MENU_SHELL(view.recentMenu), sep);
+        auto* clearItem = gtk_menu_item_new_with_label("Clear Recent");
+        g_signal_connect(clearItem, "activate", G_CALLBACK(clearRecentFilesActivated), &view);
+        gtk_menu_shell_append(GTK_MENU_SHELL(view.recentMenu), clearItem);
+    }
+    gtk_widget_show_all(view.recentMenu);
+}
+
 bool saveProject(GraphView& view, const std::string& path) {
     if (runtimeRunning(view))
         stopRuntime(view, "Audio stopped to capture plugin state");
@@ -2916,6 +3025,8 @@ bool saveProject(GraphView& view, const std::string& path) {
     view.filePath = path;
     view.lastSavedSnapshot = snapshot;
     updateWindowTitle(view);
+    addToRecentFiles(view, path);
+    rebuildRecentMenu(view);
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
     syncToLiveServer(view, path);
 #endif
@@ -2985,6 +3096,8 @@ void openProjectActivated(GtkMenuItem*, gpointer data) {
                 view.lastSavedSnapshot =
                     transmission::encodeUiProject(captureProject(view));
                 updateWindowTitle(view);
+                addToRecentFiles(view, path);
+                rebuildRecentMenu(view);
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
                 syncToLiveServer(view, path);
 #endif
@@ -3460,6 +3573,10 @@ void activate(GtkApplication* application, gpointer) {
     auto* fileMenu = gtk_menu_new();
     auto* newItem = gtk_menu_item_new_with_mnemonic("_New");
     auto* openItem = gtk_menu_item_new_with_mnemonic("_Open…");
+    auto* openRecentItem = gtk_menu_item_new_with_mnemonic("Open _Recent");
+    auto* recentMenuWidget = gtk_menu_new();
+    view->recentMenu = recentMenuWidget;
+    gtk_menu_item_set_submenu(GTK_MENU_ITEM(openRecentItem), recentMenuWidget);
     auto* saveItem = gtk_menu_item_new_with_mnemonic("_Save");
     auto* saveAsItem = gtk_menu_item_new_with_mnemonic("Save _As…");
     auto* renderItem =
@@ -3468,6 +3585,7 @@ void activate(GtkApplication* application, gpointer) {
     auto* quitItem = gtk_menu_item_new_with_mnemonic("_Quit");
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), newItem);
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), openItem);
+    gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), openRecentItem);
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), saveItem);
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), saveAsItem);
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), renderItem);
@@ -3616,6 +3734,25 @@ void activate(GtkApplication* application, gpointer) {
     gtk_container_add(GTK_CONTAINER(window), frame);
     g_signal_connect(window, "delete-event", G_CALLBACK(confirmClose), view);
     g_signal_connect(window, "destroy", G_CALLBACK(onWindowDestroy), view);
+
+    view->recentFiles = loadRecentFiles();
+    rebuildRecentMenu(*view);
+    if (!view->recentFiles.empty()) {
+        const std::string lastPath = view->recentFiles.front();
+        std::string interchange;
+        std::string error;
+        if (runProjectHelper(*view, "load", lastPath, "", interchange, error)) {
+            transmission::UiProject project;
+            if (transmission::decodeUiProject(interchange, project, error) &&
+                applyProject(*view, project, error)) {
+                view->filePath = lastPath;
+                view->lastSavedSnapshot =
+                    transmission::encodeUiProject(captureProject(*view));
+                updateWindowTitle(*view);
+            }
+        }
+    }
+
     gtk_widget_show_all(window);
 }
 } // namespace

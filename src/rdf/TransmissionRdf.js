@@ -270,7 +270,10 @@ function settingsObject(dataset, settingsNode) {
   const values = {}
   for (const quad of dataset.match(settingsNode)) {
     if (quad.predicate.value === ns.rdf.type) continue
-    values[quad.predicate.value] = quad.object.value
+    const current = values[quad.predicate.value] ?? []
+    const v = quad.object.value
+    if (!current.includes(v)) current.push(v)
+    values[quad.predicate.value] = current
   }
   return values
 }

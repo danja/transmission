@@ -85,6 +85,13 @@ export class EngineSession {
     return this.bridge.getPeaks()
   }
 
+  captureMidi(durationBeats) {
+    if (this.state !== 'loaded') throw new Error('A compiled project must be loaded and stopped before capturing MIDI')
+    const transport = this.project.transport.toJSON()
+    const tempo = transport.tempoMap?.[0]?.bpm ?? 120
+    return this.bridge.captureMidi(this.project.compiledGraph, { durationBeats, tempo })
+  }
+
   synchronizeTransport() {
     if (!this.engineCreated) throw new Error('A native engine must be created before configuring transport')
     this.#configureTransport()
@@ -110,3 +117,4 @@ export class EngineSession {
     this.state = 'disposed'
   }
 }
+

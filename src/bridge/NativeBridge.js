@@ -32,6 +32,7 @@ export class NativeBridge {
   getPeaks() { return this.#call('getPeaks') }
   savePluginState(nodeId) { return this.#call('savePluginState', nodeId) }
   restorePluginState(nodeId, state) { return this.#call('restorePluginState', nodeId, state) }
+  captureMidi(compiledGraph, options = {}) { return this.#call('captureMidi', compiledGraph, options) }
   dispose() {
     if (!this.disposed && this.nativeModule?.disposeEngine) this.nativeModule.disposeEngine()
     this.disposed = true

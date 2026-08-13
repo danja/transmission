@@ -218,6 +218,189 @@ function registerTools(server, control) {
     annotations: readOnly
   }, async () => result(await control.diagnostics()))
 
+  server.registerTool('peaks_get', {
+    title: 'Read output peaks',
+    description: 'Read the current left and right output peak levels. Use after transport_play to confirm audio is flowing.',
+    annotations: readOnly
+  }, async () => result(control.peaks()))
+
+  server.registerTool('node_list', {
+    title: 'List graph nodes',
+    description: 'Return a compact summary of every node in the current project: id, type, label, and port counts. Lighter than project_get when you only need the node inventory.',
+    annotations: readOnly
+  }, async () => {
+    control.project  // triggers #requireProject indirectly via describeProject — use status check
+    const project = await control.describeProject()
+    const nodes = project.graph.nodes.map(({ id, type, label, ports }) => ({ id, type, label, ports }))
+    return result({ revision: project.revision, nodes })
+  })
+
+  server.registerTool('node_add', {
+    title: 'Add a plugin node',
+    description: 'Add a plugin node to the graph and optionally connect it in one step. Equivalent to a graph_apply_changes addNode + addConnection batch but with a simpler interface. Audio must be stopped.',
+    inputSchema: {
+      expectedRevision: z.coerce.number().int().nonnegative(),
+      node: nodeSchema,
+      connections: z.array(connectionSchema).default([])
+    },
+    annotations: destructive
+  }, async ({ expectedRevision, node, connections }) => {
+    const operations = [
+      { type: 'addNode', node },
+      ...connections.map(connection => ({ type: 'addConnection', connection }))
+    ]
+    return result(await control.applyGraphChanges({ expectedRevision, operations, dryRun: false }))
+  })
+
+  server.registerTool('node_remove', {
+    title: 'Remove a graph node',
+    description: 'Remove a node and all its connections. Audio must be stopped.',
+    inputSchema: {
+      expectedRevision: z.coerce.number().int().nonnegative(),
+      nodeId: z.string().min(1)
+    },
+    annotations: destructive
+  }, async ({ expectedRevision, nodeId }) => {
+    return result(await control.applyGraphChanges({
+      expectedRevision,
+      operations: [{ type: 'removeNode', nodeId }],
+      dryRun: false
+    }))
+  })
+
+  server.registerTool('connection_add', {
+    title: 'Add a connection',
+    description: 'Add a single audio or MIDI connection between two nodes. Audio must be stopped.',
+    inputSchema: {
+      expectedRevision: z.coerce.number().int().nonnegative(),
+      connection: connectionSchema
+    },
+    annotations: destructive
+  }, async ({ expectedRevision, connection }) => {
+    return result(await control.applyGraphChanges({
+      expectedRevision,
+      operations: [{ type: 'addConnection', connection }],
+      dryRun: false
+    }))
+  })
+
+  server.registerTool('connection_remove', {
+    title: 'Remove a connection',
+    description: 'Remove a single audio or MIDI connection. Audio must be stopped.',
+    inputSchema: {
+      expectedRevision: z.coerce.number().int().nonnegative(),
+      connection: connectionSchema
+    },
+    annotations: destructive
+  }, async ({ expectedRevision, connection }) => {
+    return result(await control.applyGraphChanges({
+      expectedRevision,
+      operations: [{ type: 'removeConnection', connection }],
+      dryRun: false
+    }))
+  })
+
+  server.registerTool('parameters_set_batch', {
+    title: 'Set multiple plugin parameters',
+    description: 'Set several normalized parameter values on one node atomically. Applies live when the native engine is running. Use instead of repeated parameter_set calls.',
+    inputSchema: {
+      expectedRevision: z.coerce.number().int().nonnegative(),
+      nodeId: z.string().min(1),
+      parameters: z.array(z.object({
+        id: z.coerce.number().int().nonnegative(),
+        normalizedValue: z.coerce.number().min(0).max(1)
+      })).min(1),
+      sampleOffset: z.coerce.number().int().nonnegative().default(0)
+    },
+    annotations: mutatingIdempotent
+  }, async input => result(await control.setParameters(input)))
+
+  server.registerTool('arrangement_get', {
+    title: 'Get arrangement',
+    description: 'Read the current arrangement: length, MIDI clips, and gain automation lanes.',
+    annotations: readOnly
+  }, async () => result(control.getArrangement()))
+
+  server.registerTool('arrangement_update', {
+    title: 'Replace arrangement',
+    description: 'Replace the arrangement length, MIDI clips, or gain lanes. Omit any field to leave it unchanged. Use clip_add / clip_remove for targeted edits.',
+    inputSchema: {
+      expectedRevision: z.coerce.number().int().nonnegative(),
+      lengthBeats: z.coerce.number().nonnegative().optional(),
+      midiClips: z.array(z.object({
+        id: z.string().min(1),
+        targetNodeId: z.string().min(1),
+        startBeat: z.coerce.number().nonnegative(),
+        lengthBeats: z.coerce.number().positive(),
+        notes: z.array(z.object({
+          startBeat: z.coerce.number().nonnegative(),
+          durationBeats: z.coerce.number().positive(),
+          pitch: z.coerce.number().int().min(0).max(127),
+          velocity: z.coerce.number().int().min(1).max(127),
+          channel: z.coerce.number().int().min(0).max(15).default(0)
+        })).default([])
+      })).optional(),
+      gainLanes: z.array(z.object({
+        targetNodeId: z.string().min(1),
+        parameterId: z.coerce.number().int().nonnegative(),
+        points: z.array(z.object({
+          beat: z.coerce.number().nonnegative(),
+          value: z.coerce.number().min(0).max(1)
+        })).default([])
+      })).optional()
+    },
+    annotations: mutatingIdempotent
+  }, async input => result(await control.updateArrangement(input)))
+
+  server.registerTool('clip_add', {
+    title: 'Add a MIDI clip',
+    description: 'Add a single MIDI clip with notes to the arrangement. The clip id must be unique.',
+    inputSchema: {
+      expectedRevision: z.coerce.number().int().nonnegative(),
+      clip: z.object({
+        id: z.string().min(1),
+        targetNodeId: z.string().min(1),
+        startBeat: z.coerce.number().nonnegative(),
+        lengthBeats: z.coerce.number().positive(),
+        notes: z.array(z.object({
+          startBeat: z.coerce.number().nonnegative(),
+          durationBeats: z.coerce.number().positive(),
+          pitch: z.coerce.number().int().min(0).max(127),
+          velocity: z.coerce.number().int().min(1).max(127),
+          channel: z.coerce.number().int().min(0).max(15).default(0)
+        })).default([])
+      })
+    },
+    annotations: mutatingIdempotent
+  }, async input => result(await control.addArrangementClip(input)))
+
+  server.registerTool('clip_remove', {
+    title: 'Remove a MIDI clip',
+    description: 'Remove a MIDI clip from the arrangement by id.',
+    inputSchema: {
+      expectedRevision: z.coerce.number().int().nonnegative(),
+      clipId: z.string().min(1)
+    },
+    annotations: mutatingIdempotent
+  }, async input => result(await control.removeArrangementClip(input)))
+
+  server.registerTool('project_capture_midi', {
+    title: 'Capture project MIDI to file',
+    description: 'Run the native engine for a given number of beats, intercept MIDI output from every node, and write a single multi-track SMF. One track per source node, named after the node label. Requires the native engine (--native-addon). Audio must be stopped before calling.',
+    inputSchema: {
+      filePath: z.string().min(1),
+      durationBeats: z.coerce.number().positive().default(64)
+    },
+    annotations: mutatingIdempotent
+  }, async ({ filePath, durationBeats }) => result(await control.captureProjectMidi({ filePath, durationBeats })))
+
+  server.registerTool('arrangement_render_midi', {
+    title: 'Render arrangement to MIDI file',
+    description: 'Write the arrangement MIDI clips to a Standard MIDI File (Type 1). Produces one tempo track and one track per target instrument node. A relative path is resolved below the configured project root.',
+    inputSchema: { filePath: z.string().min(1) },
+    annotations: mutatingIdempotent
+  }, async ({ filePath }) => result(await control.renderMidi(filePath)))
+
   if (control.pluginCatalogue) {
     server.registerTool('plugins_list', {
       title: 'List plugins',

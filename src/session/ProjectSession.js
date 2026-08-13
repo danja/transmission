@@ -72,6 +72,14 @@ export class ProjectSession {
     return true
   }
 
+  updateArrangement(mutator) {
+    if (!this.graph) throw new Error('No project is open')
+    const nextDef = mutator(this.arrangement.toJSON())
+    this.arrangement = new Arrangement(nextDef, this.graph)
+    this.revision += 1
+    return this.arrangement
+  }
+
   markChanged() {
     if (!this.graph) throw new Error('No project is open')
     this.revision += 1

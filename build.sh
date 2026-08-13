@@ -42,4 +42,14 @@ else
   echo "  Live server support: disabled (libcurl not found at configure time)"
 fi
 
+echo "Building the N-API MCP addon (JACK + VST3)"
+cmake -S native -B native/build-napi-vst3 \
+  -DTRANSMISSION_WITH_NAPI=ON \
+  -DTRANSMISSION_WITH_JACK=ON \
+  -DTRANSMISSION_WITH_VST3=ON \
+  -DVST3_SDK_ROOT="$VST3_SDK_ROOT" \
+  -DTRANSMISSION_BUILD_TESTS=OFF \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build native/build-napi-vst3 --target transmission_native --parallel
+
 echo "Build complete. Launch with ./transmission"

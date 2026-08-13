@@ -148,6 +148,41 @@ export class TransmissionControlService {
     return this.status()
   }
 
+  setParameters({ expectedRevision, nodeId, parameters, sampleOffset = 0 }) {
+    this.#requireProject()
+    this.#checkRevision(expectedRevision)
+    const node = this.project.graph.node(nodeId)
+    if (!node) throw new Error(`Node does not exist: ${nodeId}`)
+    const definition = this.project.graph.toJSON()
+    const nextDefinition = {
+      ...definition,
+      nodes: definition.nodes.map(current => {
+        if (current.id !== nodeId) return current
+        const kept = current.parameters.filter(p => !parameters.some(up => up.id === p.id))
+        const updated = parameters.map(({ id, normalizedValue }) => {
+          if (!Number.isInteger(id) || id < 0) throw new RangeError(`parameterId must be a non-negative integer: ${id}`)
+          if (!Number.isFinite(normalizedValue) || normalizedValue < 0 || normalizedValue > 1)
+            throw new RangeError(`value must be between 0 and 1 for parameter ${id}`)
+          return { id, normalizedValue }
+        })
+        const merged = [...kept, ...updated].sort((a, b) => a.id - b.id)
+        return { ...current, parameters: merged }
+      })
+    }
+    compileGraph(nextDefinition)
+    if (this.engine) {
+      for (const { id, normalizedValue } of parameters)
+        this.engine.setParameter(nodeId, id, normalizedValue, sampleOffset)
+    }
+    this.project.update(() => nextDefinition)
+    return {
+      revision: this.project.revision,
+      nodeId,
+      parameters,
+      appliedToRuntime: Boolean(this.engine)
+    }
+  }
+
   setParameter({ expectedRevision, nodeId, parameterId, value, sampleOffset = 0 }) {
     this.#requireProject()
     this.#checkRevision(expectedRevision)
@@ -176,6 +211,43 @@ export class TransmissionControlService {
       value,
       appliedToRuntime: Boolean(this.engine)
     }
+  }
+
+  getArrangement() {
+    this.#requireProject()
+    return { revision: this.project.revision, arrangement: this.project.arrangement.toJSON() }
+  }
+
+  updateArrangement({ expectedRevision, lengthBeats, midiClips, gainLanes }) {
+    this.#requireProject()
+    this.#checkRevision(expectedRevision)
+    this.project.updateArrangement(current => ({
+      lengthBeats: lengthBeats ?? current.lengthBeats,
+      midiClips: midiClips ?? current.midiClips,
+      gainLanes: gainLanes ?? current.gainLanes
+    }))
+    return { revision: this.project.revision, arrangement: this.project.arrangement.toJSON() }
+  }
+
+  addArrangementClip({ expectedRevision, clip }) {
+    this.#requireProject()
+    this.#checkRevision(expectedRevision)
+    this.project.updateArrangement(current => {
+      if (current.midiClips.some(c => c.id === clip.id))
+        throw new Error(`MIDI clip already exists: ${clip.id}`)
+      return { ...current, midiClips: [...current.midiClips, clip] }
+    })
+    return { revision: this.project.revision, arrangement: this.project.arrangement.toJSON() }
+  }
+
+  removeArrangementClip({ expectedRevision, clipId }) {
+    this.#requireProject()
+    this.#checkRevision(expectedRevision)
+    this.project.updateArrangement(current => ({
+      ...current,
+      midiClips: current.midiClips.filter(c => c.id !== clipId)
+    }))
+    return { revision: this.project.revision, arrangement: this.project.arrangement.toJSON() }
   }
 
   diagnostics() {
@@ -237,6 +309,26 @@ export class TransmissionControlService {
   discoveredPluginsTurtle() {
     this.#requirePluginCatalogue()
     return this.pluginCatalogue.discoveredTurtle()
+  }
+
+  async captureProjectMidi({ filePath, durationBeats = 64 }) {
+    this.#requireProject()
+    this.#requireStopped()
+    if (!this.engine) throw new Error('Native engine is required for MIDI capture; start the MCP server with --native-addon')
+    const target = this.#allowedPath(filePath)
+    const events = this.engine.captureMidi(durationBeats)
+    const nodeLabels = Object.fromEntries(
+      [...this.project.graph.nodes.values()].map(n => [n.id, n.label || n.id.split('/').pop()])
+    )
+    const { writeSmfFromEvents } = await import('../midi/SmfWriter.js')
+    return writeSmfFromEvents(target, events, nodeLabels, this.project.transport.toJSON())
+  }
+
+  async renderMidi(filePath) {
+    this.#requireProject()
+    const target = this.#allowedPath(filePath)
+    const { writeSmf } = await import('../midi/SmfWriter.js')
+    return writeSmf(target, this.project.arrangement.toJSON(), this.project.transport.toJSON())
   }
 
   dispose() {

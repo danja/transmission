@@ -24,6 +24,7 @@ add_library(transmission_engine STATIC
   src/OfflineAudioRenderer.cpp
   src/PluginScanner.cpp
   src/RoutedAudioGraph.cpp
+  src/SmfWriter.cpp
   src/TransportClock.cpp
   src/UiProjectCodec.cpp
 )

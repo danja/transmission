@@ -7,6 +7,7 @@
 #include "transmission/JackPortIdentity.h"
 #include "transmission/JackAudioDevice.h"
 #include "transmission/OfflineAudioRenderer.h"
+#include "transmission/SmfWriter.h"
 #include "transmission/UiProjectCodec.h"
 #include "transmission/Vst3EditorHost.h"
 #include "transmission/Vst3Inspector.h"
@@ -25,6 +26,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -3384,6 +3386,235 @@ void beginAudioRender(GraphView& view, std::string outputPath, bool mp3,
         });
 }
 
+struct MidiRenderCompletion {
+    GraphView* view = nullptr;
+    bool success = false;
+    std::string outputPath;
+    std::string error;
+    std::size_t trackCount = 0;
+    std::size_t eventCount = 0;
+};
+
+void midiRenderDialogResponse(GtkDialog* dialog, gint response, gpointer data) {
+    if (response != GTK_RESPONSE_CANCEL &&
+        response != GTK_RESPONSE_DELETE_EVENT)
+        return;
+    auto& view = *static_cast<GraphView*>(data);
+    view.renderCancel.store(true, std::memory_order_release);
+    gtk_window_set_title(GTK_WINDOW(dialog), "Cancelling MIDI Render");
+    gtk_dialog_set_response_sensitive(dialog, GTK_RESPONSE_CANCEL, FALSE);
+}
+
+gboolean midiRenderCompleted(gpointer data) {
+    auto& completion = *static_cast<MidiRenderCompletion*>(data);
+    auto& view = *completion.view;
+    {
+        std::lock_guard lock(view.renderCompletionMutex);
+        view.renderCompletionSource = 0;
+    }
+    if (view.renderThread.joinable()) view.renderThread.join();
+    if (view.renderProgressTimer) {
+        g_source_remove(view.renderProgressTimer);
+        view.renderProgressTimer = 0;
+    }
+    if (view.renderDialog) {
+        gtk_widget_destroy(view.renderDialog);
+        view.renderDialog = nullptr;
+    }
+    view.renderProgressBar = nullptr;
+    view.renderInProgress = false;
+    const auto type = completion.success ? GTK_MESSAGE_INFO : GTK_MESSAGE_ERROR;
+    const auto headline = completion.success ? "MIDI render complete" : "Unable to render MIDI";
+    auto* msg = gtk_message_dialog_new(
+        GTK_WINDOW(view.window),
+        static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
+        type, GTK_BUTTONS_CLOSE, "%s", headline);
+    if (completion.success) {
+        const auto detail = completion.outputPath + "\n" +
+            std::to_string(completion.trackCount) + " tracks, " +
+            std::to_string(completion.eventCount) + " events";
+        gtk_message_dialog_format_secondary_text(
+            GTK_MESSAGE_DIALOG(msg), "%s", detail.c_str());
+        setStatus(view, "MIDI rendered: " + completion.outputPath, false);
+    } else {
+        gtk_message_dialog_format_secondary_text(
+            GTK_MESSAGE_DIALOG(msg), "%s", completion.error.c_str());
+        setStatus(view, "MIDI render failed: " + completion.error, true);
+    }
+    g_signal_connect(msg, "response",
+        G_CALLBACK(+[](GtkDialog* d, gint, gpointer) {
+            gtk_widget_destroy(GTK_WIDGET(d));
+        }), nullptr);
+    gtk_widget_show(msg);
+    return G_SOURCE_REMOVE;
+}
+
+void beginMidiRender(GraphView& view, std::string outputPath, double bars) {
+    if (view.renderInProgress) return;
+    if (runtimeRunning(view))
+        stopRuntime(view, "Audio stopped for MIDI rendering");
+    const auto snapshot = runtimeSnapshot(view);
+    const auto bpm = gtk_spin_button_get_value(view.tempo);
+    const double sampleRate = 48000.0;
+    constexpr std::size_t blockSize = 1024;
+    const auto totalFrames = static_cast<std::uint64_t>(
+        std::ceil(bars * 4.0 * 60.0 * sampleRate / bpm));
+
+    view.renderCancel.store(false, std::memory_order_release);
+    view.renderProgress.store(0.0, std::memory_order_release);
+    view.renderInProgress = true;
+    auto* dialog = gtk_dialog_new_with_buttons(
+        "Rendering MIDI", GTK_WINDOW(view.window),
+        static_cast<GtkDialogFlags>(
+            GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
+        "_Cancel", GTK_RESPONSE_CANCEL, nullptr);
+    auto* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+    gtk_box_set_spacing(GTK_BOX(content), 10);
+    auto* label = gtk_label_new("Capturing MIDI from all nodes…");
+    auto* progress = GTK_PROGRESS_BAR(gtk_progress_bar_new());
+    gtk_widget_set_size_request(GTK_WIDGET(progress), 380, -1);
+    gtk_progress_bar_set_show_text(progress, TRUE);
+    gtk_box_pack_start(GTK_BOX(content), label, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(content), GTK_WIDGET(progress), FALSE, FALSE, 0);
+    view.renderDialog = dialog;
+    view.renderProgressBar = progress;
+    g_signal_connect(dialog, "response",
+        G_CALLBACK(midiRenderDialogResponse), &view);
+    gtk_widget_show_all(dialog);
+    view.renderProgressTimer = g_timeout_add(50, renderProgressTick, &view);
+
+    view.renderThread = std::thread(
+        [&view, snapshot, outputPath, bpm, sampleRate, totalFrames, bars]() mutable {
+            auto completion = std::make_unique<MidiRenderCompletion>();
+            completion->view = &view;
+            completion->outputPath = outputPath;
+
+            transmission::GraphRuntimeCompiler compiler(uiProcessorFactory());
+            std::string compileError;
+            const transmission::AudioDeviceConfig config{2, blockSize, sampleRate, false, 0, 0};
+            auto graph = compiler.compile(snapshot, config, compileError);
+            if (!graph || !graph->prepare(2, blockSize)) {
+                completion->error = compileError.empty()
+                    ? "Unable to compile graph for MIDI capture"
+                    : compileError;
+                std::lock_guard lock(view.renderCompletionMutex);
+                view.renderCompletionSource = g_idle_add_full(
+                    G_PRIORITY_DEFAULT, midiRenderCompleted,
+                    completion.release(),
+                    +[](gpointer d) { delete static_cast<MidiRenderCompletion*>(d); });
+                return;
+            }
+
+            std::vector<std::string> nodeIds;
+            nodeIds.reserve(snapshot.nodes.size());
+            for (const auto& n : snapshot.nodes) nodeIds.push_back(n.id);
+
+            std::vector<float> inputBuf(2 * blockSize, 0.0f);
+            std::vector<float> outputBuf(2 * blockSize, 0.0f);
+            std::vector<const float*> inputPtrs = {inputBuf.data(), inputBuf.data() + blockSize};
+            std::vector<float*> outputPtrs = {outputBuf.data(), outputBuf.data() + blockSize};
+
+            std::vector<transmission::CapturedMidiEvent> captured;
+            std::array<transmission::MidiEvent, transmission::maxMidiEventsPerBlock> midiBuffer{};
+            const double beatsPerBlock = static_cast<double>(blockSize) * bpm / (60.0 * sampleRate);
+
+            double beat = 0.0;
+            std::uint64_t framesWritten = 0;
+            const double totalBeats = bars * 4.0;
+            while (framesWritten < totalFrames) {
+                if (view.renderCancel.load(std::memory_order_acquire)) {
+                    completion->error = "MIDI rendering was cancelled";
+                    break;
+                }
+                graph->setProcessContext({beat, bpm, true});
+                graph->process(inputPtrs.data(), outputPtrs.data(), 2, blockSize);
+                for (const auto& nodeId : nodeIds) {
+                    const auto count = graph->copyNodeMidiOutput(
+                        nodeId, midiBuffer.data(), midiBuffer.size());
+                    for (std::size_t i = 0; i < count; ++i) {
+                        const auto& ev = midiBuffer[i];
+                        if (ev.size == 0 || (ev.data[0] & 0x80U) == 0) continue;
+                        const double evBeat = beat + static_cast<double>(ev.frameOffset)
+                            * bpm / (60.0 * sampleRate);
+                        if (evBeat > totalBeats) continue;
+                        captured.push_back({nodeId, evBeat, ev.data[0],
+                            ev.size > 1 ? ev.data[1] : std::uint8_t{0},
+                            ev.size > 2 ? ev.data[2] : std::uint8_t{0}});
+                    }
+                }
+                framesWritten += blockSize;
+                beat += beatsPerBlock;
+                view.renderProgress.store(
+                    static_cast<double>(framesWritten) / static_cast<double>(totalFrames),
+                    std::memory_order_release);
+            }
+
+            if (completion->error.empty()) {
+                completion->error = transmission::writeCapturedSmf(outputPath, captured, bpm);
+                if (completion->error.empty()) {
+                    std::map<std::string, int> tracksSeen;
+                    for (const auto& ev : captured) tracksSeen[ev.nodeId]++;
+                    completion->success = true;
+                    completion->trackCount = tracksSeen.size();
+                    completion->eventCount = captured.size();
+                    view.renderProgress.store(1.0, std::memory_order_release);
+                }
+            }
+            {
+                std::lock_guard lock(view.renderCompletionMutex);
+                view.renderCompletionSource = g_idle_add_full(
+                    G_PRIORITY_DEFAULT, midiRenderCompleted,
+                    completion.release(),
+                    +[](gpointer d) { delete static_cast<MidiRenderCompletion*>(d); });
+            }
+        });
+}
+
+void renderMidiActivated(GtkMenuItem*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    if (view.renderInProgress) {
+        setStatus(view, "A render is already in progress", true);
+        return;
+    }
+    auto* dialog = gtk_file_chooser_dialog_new(
+        "Render MIDI", GTK_WINDOW(view.window),
+        GTK_FILE_CHOOSER_ACTION_SAVE, "_Cancel", GTK_RESPONSE_CANCEL,
+        "_Render", GTK_RESPONSE_ACCEPT, nullptr);
+    gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(dialog), TRUE);
+    gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), "transmission.mid");
+    auto* midiFilter = gtk_file_filter_new();
+    gtk_file_filter_set_name(midiFilter, "MIDI file (*.mid)");
+    gtk_file_filter_add_pattern(midiFilter, "*.mid");
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), midiFilter);
+
+    auto* optionsGrid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(optionsGrid), 8);
+    gtk_grid_set_column_spacing(GTK_GRID(optionsGrid), 10);
+    auto* barsLabel = gtk_label_new("Length (bars)");
+    auto* bars = GTK_SPIN_BUTTON(gtk_spin_button_new_with_range(1.0, 4096.0, 1.0));
+    gtk_spin_button_set_value(bars,
+        view.arrangementLengthBeats > 0.0
+            ? view.arrangementLengthBeats / 4.0
+            : std::max(1.0, gtk_spin_button_get_value(view.loopBars)));
+    gtk_grid_attach(GTK_GRID(optionsGrid), barsLabel, 0, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(optionsGrid), GTK_WIDGET(bars), 1, 0, 1, 1);
+    gtk_widget_show_all(optionsGrid);
+    gtk_file_chooser_set_extra_widget(GTK_FILE_CHOOSER(dialog), optionsGrid);
+
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        gchar* selected = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+        std::filesystem::path path = selected ? selected : "";
+        g_free(selected);
+        path.replace_extension(".mid");
+        const auto lengthBars = gtk_spin_button_get_value(bars);
+        gtk_widget_destroy(dialog);
+        beginMidiRender(view, path.string(), lengthBars);
+        return;
+    }
+    gtk_widget_destroy(dialog);
+}
+
 void renderAudioActivated(GtkMenuItem*, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
     if (view.renderInProgress) {
@@ -3605,6 +3836,8 @@ void activate(GtkApplication* application, gpointer) {
     auto* saveAsItem = gtk_menu_item_new_with_mnemonic("Save _As…");
     auto* renderItem =
         gtk_menu_item_new_with_mnemonic("_Render Audio…");
+    auto* renderMidiItem =
+        gtk_menu_item_new_with_mnemonic("Render _MIDI…");
     auto* separator = gtk_separator_menu_item_new();
     auto* quitItem = gtk_menu_item_new_with_mnemonic("_Quit");
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), newItem);
@@ -3613,6 +3846,7 @@ void activate(GtkApplication* application, gpointer) {
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), saveItem);
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), saveAsItem);
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), renderItem);
+    gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), renderMidiItem);
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), separator);
     gtk_menu_shell_append(GTK_MENU_SHELL(fileMenu), quitItem);
     gtk_menu_item_set_submenu(GTK_MENU_ITEM(fileItem), fileMenu);
@@ -3654,6 +3888,10 @@ void activate(GtkApplication* application, gpointer) {
         GTK_ACCEL_VISIBLE);
     gtk_widget_add_accelerator(
         renderItem, "activate", accelerators, GDK_KEY_r,
+        static_cast<GdkModifierType>(GDK_CONTROL_MASK | GDK_SHIFT_MASK),
+        GTK_ACCEL_VISIBLE);
+    gtk_widget_add_accelerator(
+        renderMidiItem, "activate", accelerators, GDK_KEY_m,
         static_cast<GdkModifierType>(GDK_CONTROL_MASK | GDK_SHIFT_MASK),
         GTK_ACCEL_VISIBLE);
     gtk_widget_add_accelerator(quitItem, "activate", accelerators, GDK_KEY_q,
@@ -3732,6 +3970,7 @@ void activate(GtkApplication* application, gpointer) {
     g_signal_connect(saveItem, "activate", G_CALLBACK(saveProjectActivated), view);
     g_signal_connect(saveAsItem, "activate", G_CALLBACK(saveProjectAsActivated), view);
     g_signal_connect(renderItem, "activate", G_CALLBACK(renderAudioActivated), view);
+    g_signal_connect(renderMidiItem, "activate", G_CALLBACK(renderMidiActivated), view);
     g_signal_connect(audioSettingsItem, "activate",
                      G_CALLBACK(audioSettingsActivated), view);
     g_signal_connect(reconnectJackItem, "activate",

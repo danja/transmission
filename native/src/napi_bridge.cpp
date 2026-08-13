@@ -459,10 +459,209 @@ napi_value disposeEngine(napi_env env, napi_callback_info info) {
 #endif
     return undefined(env);
 }
+
+napi_value captureMidi(napi_env env, napi_callback_info info) {
+    napi_value argv[2];
+    std::size_t argc = 2;
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    if (argc < 1) return fail(env, "captureMidi requires a compiled project");
+
+    napi_value nodes, connections;
+    if (!getArray(env, argv[0], "nodes", nodes) || !getArray(env, argv[0], "connections", connections))
+        return fail(env, "captureMidi: compiled project must contain nodes and connections arrays");
+
+    double durationBeats = 64.0;
+    double tempo = 120.0;
+    double captureSampleRate = engineSampleRate;
+    double captureBlockSize = 512.0;
+    if (argc >= 2) {
+        getNumber(env, argv[1], "durationBeats", durationBeats);
+        getNumber(env, argv[1], "tempo", tempo);
+        getNumber(env, argv[1], "sampleRate", captureSampleRate);
+        getNumber(env, argv[1], "blockSize", captureBlockSize);
+    }
+    if (durationBeats <= 0.0 || tempo <= 0.0 || captureSampleRate <= 0.0 || captureBlockSize < 1.0)
+        return fail(env, "captureMidi: invalid options");
+    const std::size_t blockSz = static_cast<std::size_t>(captureBlockSize);
+    constexpr std::size_t capChannels = 2;
+
+    auto routed = std::make_unique<transmission::RoutedAudioGraph>();
+    std::vector<std::string> nodeIds;
+
+    std::uint32_t nodeCount = 0;
+    napi_get_array_length(env, nodes, &nodeCount);
+    for (std::uint32_t index = 0; index < nodeCount; ++index) {
+        napi_value node;
+        napi_get_element(env, nodes, index, &node);
+        std::string id, type;
+        if (!getString(env, node, "id", id)) return fail(env, "captureMidi: node id is required");
+        getString(env, node, "type", type);
+        std::size_t audioInputs = 0, audioOutputs = 0;
+        napi_value ports;
+        double portCount = 0.0;
+        if (getObject(env, node, "ports", ports)) {
+            if (getNumber(env, ports, "audioInputs", portCount) && portCount >= 0.0)
+                audioInputs = static_cast<std::size_t>(portCount);
+            if (getNumber(env, ports, "audioOutputs", portCount) && portCount >= 0.0)
+                audioOutputs = static_cast<std::size_t>(portCount);
+        }
+        std::unique_ptr<transmission::AudioProcessor> processor;
+        napi_value settings;
+        std::string pluginPath;
+        napi_valuetype settingsType = napi_undefined;
+        if (napi_get_named_property(env, node, "settings", &settings) == napi_ok &&
+            napi_typeof(env, settings, &settingsType) == napi_ok && settingsType == napi_object)
+            getString(env, settings, "pluginPath", pluginPath);
+        if (!pluginPath.empty()) {
+#ifdef TRANSMISSION_NAPI_WITH_VST3
+            auto vst = std::make_unique<transmission::Vst3Processor>();
+            std::string vstError;
+            if (!vst->initialize(pluginPath, audioInputs, audioOutputs, blockSz, captureSampleRate, vstError))
+                return fail(env, vstError.c_str());
+            processor = std::move(vst);
+#else
+            return fail(env, "VST3 graph nodes require a VST3-enabled N-API build");
+#endif
+        } else {
+            processor = std::make_unique<transmission::PassThroughProcessor>();
+        }
+        if (type == "AudioInput" || type == "AudioOutput" ||
+            type == "system-input" || type == "system-output") {
+            audioInputs = capChannels;
+            audioOutputs = capChannels;
+        }
+        if (!routed->addNode(id, std::move(processor), audioInputs, audioOutputs))
+            return fail(env, "captureMidi: unable to add node");
+        if ((type == "AudioInput" || type == "system-input") && !routed->setExternalAudioInput(id))
+            return fail(env, "captureMidi: unable to configure audio input");
+        if ((type == "AudioOutput" || type == "system-output") && !routed->setExternalAudioOutput(id))
+            return fail(env, "captureMidi: unable to configure audio output");
+#ifdef TRANSMISSION_NAPI_WITH_VST3
+        napi_value stateObj;
+        napi_valuetype stateType = napi_undefined;
+        if (napi_get_named_property(env, node, "state", &stateObj) == napi_ok &&
+            napi_typeof(env, stateObj, &stateType) == napi_ok && stateType == napi_object) {
+            std::string componentB64, controllerB64;
+            getString(env, stateObj, "component", componentB64);
+            getString(env, stateObj, "controller", controllerB64);
+            if (!componentB64.empty() || !controllerB64.empty()) {
+                transmission::ProcessorState procState;
+                if (!componentB64.empty()) procState.component = decodeBase64(componentB64);
+                if (!controllerB64.empty()) procState.controller = decodeBase64(controllerB64);
+                std::string stateError;
+                if (!routed->restoreProcessorState(id, procState, stateError))
+                    return fail(env, stateError.empty() ? "captureMidi: unable to restore state" : stateError.c_str());
+            }
+        }
+        napi_value paramsArr;
+        bool hasParams = false;
+        if (napi_get_named_property(env, node, "parameters", &paramsArr) == napi_ok)
+            napi_is_array(env, paramsArr, &hasParams);
+        if (hasParams) {
+            std::uint32_t paramCount = 0;
+            napi_get_array_length(env, paramsArr, &paramCount);
+            for (std::uint32_t pi = 0; pi < paramCount; ++pi) {
+                napi_value param;
+                napi_get_element(env, paramsArr, pi, &param);
+                double idValue = 0.0, normValue = 0.0;
+                if (!getNumber(env, param, "id", idValue) || !getNumber(env, param, "normalizedValue", normValue))
+                    continue;
+                std::string paramError;
+                if (!routed->setParameter(id, static_cast<std::uint32_t>(idValue), normValue, paramError))
+                    return fail(env, paramError.empty() ? "captureMidi: unable to set parameter" : paramError.c_str());
+            }
+        }
+#endif
+        nodeIds.push_back(std::move(id));
+    }
+
+    std::uint32_t connectionCount = 0;
+    napi_get_array_length(env, connections, &connectionCount);
+    for (std::uint32_t index = 0; index < connectionCount; ++index) {
+        napi_value connection;
+        napi_get_element(env, connections, index, &connection);
+        std::string kind, from, to;
+        if (!getString(env, connection, "kind", kind) || !getString(env, connection, "from", from) ||
+            !getString(env, connection, "to", to)) return fail(env, "captureMidi: invalid connection");
+        if (kind == "audio") {
+            double fromPort = 0.0, toPort = 0.0;
+            if (!getNumber(env, connection, "fromPort", fromPort) ||
+                !getNumber(env, connection, "toPort", toPort) ||
+                fromPort < 0.0 || toPort < 0.0 ||
+                !routed->connect(from, static_cast<std::size_t>(fromPort),
+                                 to, static_cast<std::size_t>(toPort)))
+                return fail(env, "captureMidi: unable to connect audio");
+        }
+        if (kind == "midi" && !routed->connectMidi(from, to))
+            return fail(env, "captureMidi: unable to connect MIDI");
+    }
+
+    if (!routed->prepare(capChannels, blockSz))
+        return fail(env, "captureMidi: unable to prepare graph");
+
+    const double beatsPerBlock = static_cast<double>(blockSz) * tempo / (60.0 * captureSampleRate);
+    const auto totalBlocks = static_cast<std::uint64_t>(std::ceil(durationBeats / beatsPerBlock));
+
+    std::vector<float> inputBuf(capChannels * blockSz, 0.0f);
+    std::vector<float> outputBuf(capChannels * blockSz, 0.0f);
+    std::vector<const float*> inputPtrs(capChannels);
+    std::vector<float*> outputPtrs(capChannels);
+    for (std::size_t ch = 0; ch < capChannels; ++ch) {
+        inputPtrs[ch] = inputBuf.data() + ch * blockSz;
+        outputPtrs[ch] = outputBuf.data() + ch * blockSz;
+    }
+
+    struct CapturedEvent {
+        std::string nodeId;
+        double beatPosition;
+        std::uint8_t status, data1, data2;
+    };
+    std::vector<CapturedEvent> captured;
+    std::array<transmission::MidiEvent, transmission::maxMidiEventsPerBlock> midiBuffer{};
+
+    double beat = 0.0;
+    for (std::uint64_t block = 0; block < totalBlocks; ++block) {
+        routed->setProcessContext({beat, tempo, true});
+        routed->process(inputPtrs.data(), outputPtrs.data(), capChannels, blockSz);
+        for (const auto& nodeId : nodeIds) {
+            const auto count = routed->copyNodeMidiOutput(nodeId, midiBuffer.data(), midiBuffer.size());
+            for (std::size_t i = 0; i < count; ++i) {
+                const auto& ev = midiBuffer[i];
+                if (ev.size == 0 || (ev.data[0] & 0x80U) == 0) continue;
+                const double evBeat = beat + static_cast<double>(ev.frameOffset) * tempo / (60.0 * captureSampleRate);
+                if (evBeat > durationBeats) continue;
+                captured.push_back({nodeId, evBeat, ev.data[0],
+                    ev.size > 1 ? ev.data[1] : std::uint8_t{0},
+                    ev.size > 2 ? ev.data[2] : std::uint8_t{0}});
+            }
+        }
+        beat += beatsPerBlock;
+    }
+
+    napi_value result;
+    napi_create_array_with_length(env, static_cast<std::uint32_t>(captured.size()), &result);
+    for (std::uint32_t i = 0; i < static_cast<std::uint32_t>(captured.size()); ++i) {
+        const auto& ev = captured[i];
+        napi_value obj, val;
+        napi_create_object(env, &obj);
+        napi_create_string_utf8(env, ev.nodeId.c_str(), ev.nodeId.size(), &val);
+        napi_set_named_property(env, obj, "nodeId", val);
+        napi_create_double(env, ev.beatPosition, &val);
+        napi_set_named_property(env, obj, "beatPosition", val);
+        napi_create_uint32(env, ev.status, &val);
+        napi_set_named_property(env, obj, "status", val);
+        napi_create_uint32(env, ev.data1, &val);
+        napi_set_named_property(env, obj, "data1", val);
+        napi_create_uint32(env, ev.data2, &val);
+        napi_set_named_property(env, obj, "data2", val);
+        napi_set_element(env, result, i, obj);
+    }
+    return result;
+}
 } // namespace
 
 NAPI_MODULE_INIT() {
-    const std::array<napi_property_descriptor, 10> properties{{
+    const std::array<napi_property_descriptor, 11> properties{{
         {"createEngine", nullptr, createEngine, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"loadProject", nullptr, loadProject, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"configureTransport", nullptr, configureTransport, nullptr, nullptr, nullptr, napi_default, nullptr},
@@ -473,6 +672,7 @@ NAPI_MODULE_INIT() {
         {"getDiagnostics", nullptr, diagnostics, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"getPeaks", nullptr, getPeaks, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"disposeEngine", nullptr, disposeEngine, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"captureMidi", nullptr, captureMidi, nullptr, nullptr, nullptr, napi_default, nullptr},
     }};
     napi_define_properties(env, exports, properties.size(), properties.data());
     return exports;

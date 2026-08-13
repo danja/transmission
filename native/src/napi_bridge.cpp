@@ -11,6 +11,7 @@
 #include <node_api.h>
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <limits>

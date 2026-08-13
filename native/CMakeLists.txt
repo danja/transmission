@@ -31,7 +31,11 @@ add_library(transmission_engine STATIC
 target_include_directories(transmission_engine
   PUBLIC include
 )
-target_compile_options(transmission_engine PRIVATE -Wall -Wextra -Wpedantic)
+if(MSVC)
+  target_compile_options(transmission_engine PRIVATE /W4)
+else()
+  target_compile_options(transmission_engine PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 set_target_properties(transmission_engine PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if(TRANSMISSION_WITH_JACK)
@@ -63,6 +67,16 @@ if(TRANSMISSION_WITH_VST3)
   set(SMTG_ENABLE_VST3_HOSTING_EXAMPLES OFF CACHE BOOL "Disable SDK hosting examples" FORCE)
   set(SMTG_ENABLE_VST3_PLUGIN_EXAMPLES OFF CACHE BOOL "Disable SDK plugin examples" FORCE)
   add_subdirectory("${VST3_SDK_ROOT}" "${CMAKE_BINARY_DIR}/vst3sdk" EXCLUDE_FROM_ALL)
+  if(WIN32)
+    set(TRANSMISSION_VST3_MODULE_SRC
+      "${VST3_SDK_ROOT}/public.sdk/source/vst/hosting/module_win32.cpp")
+  elseif(APPLE)
+    set(TRANSMISSION_VST3_MODULE_SRC
+      "${VST3_SDK_ROOT}/public.sdk/source/vst/hosting/module_mac.cpp")
+  else()
+    set(TRANSMISSION_VST3_MODULE_SRC
+      "${VST3_SDK_ROOT}/public.sdk/source/vst/hosting/module_linux.cpp")
+  endif()
   add_library(transmission_vst3_inspector STATIC
     src/Vst3Inspector.cpp
     src/Vst3MidiEventConversion.cpp
@@ -70,10 +84,15 @@ if(TRANSMISSION_WITH_VST3)
     src/Vst3Processor.cpp
     "${VST3_SDK_ROOT}/public.sdk/source/common/memorystream.cpp"
     "${VST3_SDK_ROOT}/public.sdk/source/vst/hosting/plugprovider.cpp"
-    "${VST3_SDK_ROOT}/public.sdk/source/vst/hosting/module_linux.cpp"
+    "${TRANSMISSION_VST3_MODULE_SRC}"
   )
   target_include_directories(transmission_vst3_inspector PUBLIC include "${VST3_SDK_ROOT}")
   target_link_libraries(transmission_vst3_inspector PRIVATE sdk_hosting)
+  if(APPLE)
+    target_link_libraries(transmission_vst3_inspector PRIVATE "-framework CoreFoundation")
+  elseif(UNIX)
+    target_link_libraries(transmission_vst3_inspector PRIVATE dl)
+  endif()
   target_compile_features(transmission_vst3_inspector PRIVATE cxx_std_17)
   set_target_properties(transmission_vst3_inspector sdk_hosting sdk_common base pluginterfaces
                         PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -179,7 +198,11 @@ if(TRANSMISSION_WITH_GTK_UI)
   )
   target_link_libraries(transmission_graph_ui PRIVATE PkgConfig::GTK3 transmission_engine)
   target_include_directories(transmission_graph_ui PRIVATE include)
-  target_compile_options(transmission_graph_ui PRIVATE -Wall -Wextra -Wpedantic)
+  if(MSVC)
+    target_compile_options(transmission_graph_ui PRIVATE /W4)
+  else()
+    target_compile_options(transmission_graph_ui PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
   if(TRANSMISSION_WITH_VST3)
     target_compile_definitions(transmission_graph_ui PRIVATE TRANSMISSION_UI_WITH_VST3=1)
     target_include_directories(transmission_graph_ui PRIVATE "${VST3_SDK_ROOT}")

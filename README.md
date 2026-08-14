@@ -201,6 +201,21 @@ in [`vocabs/actions.ttl`](vocabs/actions.ttl).
 
 ## Configuration
 
+### GTK application settings
+
+The GTK UI stores per-user settings in `~/.config/transmission/config.ttl`
+(created automatically on first save). Currently it holds the VST3 plugin
+search paths — see [Plugin catalogue](#plugin-catalogue) below.
+
+The file format is a simple tab-delimited record per setting:
+
+```
+PLUGIN_PATH	~/
+PLUGIN_PATH	/usr/lib/vst3
+```
+
+### Live server settings
+
 Copy `config.defaults.ttl` to `config.ttl` and edit as needed:
 
 ```turtle
@@ -228,8 +243,13 @@ TRANSMISSION_LIVE_URL=http://localhost:8080 ./transmission
 
 ## Plugin catalogue
 
-Transmission scans VST3 bundles installed in `~/.vst3` and merges discovered
-metadata with curated behavioural profiles. Profiles declare musical roles,
+Transmission scans VST3 bundles recursively under the directories configured in
+**Settings → Plugin Path…** and merges discovered metadata with curated
+behavioural profiles. The default search path is `~/` (the whole home
+directory). Change it via the menu item, which opens an editable list (one
+directory per line); clicking **Rescan** shows the count of bundles found
+without closing the dialog. The setting is saved to
+`~/.config/transmission/config.ttl` and applied on every launch. Profiles declare musical roles,
 signal types, dependencies, genre hints, and chain recommendations in
 [`profiles/downspout.ttl`](profiles/downspout.ttl).
 

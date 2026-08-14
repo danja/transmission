@@ -29,6 +29,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -99,6 +100,7 @@ struct GraphView {
     double pointerX = 0.0;
     double pointerY = 0.0;
     std::vector<std::string> pluginPaths;
+    std::string pluginSearchPath{"~/"};
     std::unordered_map<
         std::string, std::unordered_map<std::uint32_t, double>> parameterValues;
     std::unordered_map<std::string, transmission::ProcessorState> pluginStates;
@@ -1791,6 +1793,133 @@ void reconnectJackActivated(GtkMenuItem*, gpointer data) {
         setStatus(view, error, true);
     else
         setStatus(view, "JACK ports reconnected");
+}
+
+std::filesystem::path configFilePath() {
+    const char* xdgConfig = std::getenv("XDG_CONFIG_HOME");
+    const char* home = std::getenv("HOME");
+    std::filesystem::path base = xdgConfig
+        ? std::filesystem::path(xdgConfig)
+        : std::filesystem::path(home ? home : ".") / ".config";
+    return base / "transmission" / "config.ttl";
+}
+
+std::string expandHome(const std::string& path) {
+    if (path.empty() || path[0] != '~') return path;
+    const char* home = std::getenv("HOME");
+    if (!home) return path;
+    return std::string(home) + path.substr(1);
+}
+
+void loadConfig(GraphView& view) {
+    std::ifstream f(configFilePath());
+    std::string line;
+    std::string paths;
+    while (std::getline(f, line)) {
+        if (line.rfind("PLUGIN_PATH\t", 0) == 0) {
+            if (!paths.empty()) paths += '\n';
+            paths += line.substr(12);
+        }
+    }
+    if (!paths.empty()) view.pluginSearchPath = paths;
+}
+
+void saveConfig(const GraphView& view) {
+    const auto path = configFilePath();
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    std::ofstream f(path);
+    std::istringstream ss(view.pluginSearchPath);
+    std::string line;
+    while (std::getline(ss, line))
+        if (!line.empty()) f << "PLUGIN_PATH\t" << line << '\n';
+}
+
+std::size_t scanPlugins(GraphView& view) {
+    view.pluginPaths.clear();
+    std::istringstream ss(view.pluginSearchPath);
+    std::string searchLine;
+    std::error_code ec;
+    while (std::getline(ss, searchLine)) {
+        if (searchLine.empty()) continue;
+        const auto root = std::filesystem::path(expandHome(searchLine));
+        if (!std::filesystem::is_directory(root)) continue;
+        auto it = std::filesystem::recursive_directory_iterator(
+            root, std::filesystem::directory_options::skip_permission_denied, ec);
+        const decltype(it) end{};
+        while (it != end) {
+            if (it->is_directory(ec) && it->path().extension() == ".vst3") {
+                view.pluginPaths.push_back(it->path().string());
+                it.disable_recursion_pending();
+            }
+            it.increment(ec);
+        }
+    }
+    std::sort(view.pluginPaths.begin(), view.pluginPaths.end());
+    view.pluginPaths.erase(
+        std::unique(view.pluginPaths.begin(), view.pluginPaths.end()),
+        view.pluginPaths.end());
+    return view.pluginPaths.size();
+}
+
+void pluginPathActivated(GtkMenuItem*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    constexpr gint kRescan = 1;
+    auto* dialog = gtk_dialog_new_with_buttons(
+        "Plugin Paths", GTK_WINDOW(view.window),
+        static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
+        "_Cancel", GTK_RESPONSE_CANCEL,
+        "_Rescan", kRescan,
+        "_OK", GTK_RESPONSE_ACCEPT,
+        nullptr);
+    auto* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+    gtk_box_set_spacing(GTK_BOX(content), 8);
+    auto* label = gtk_label_new("Directories to scan for VST3 plugins (one per line):");
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0F);
+    gtk_box_pack_start(GTK_BOX(content), label, FALSE, FALSE, 0);
+    auto* textView = gtk_text_view_new();
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(textView), TRUE);
+    gtk_widget_set_size_request(textView, 480, 120);
+    auto* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(textView));
+    gtk_text_buffer_set_text(buffer, view.pluginSearchPath.c_str(), -1);
+    auto* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled),
+        GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(scrolled), GTK_SHADOW_IN);
+    gtk_container_add(GTK_CONTAINER(scrolled), textView);
+    gtk_box_pack_start(GTK_BOX(content), scrolled, TRUE, TRUE, 0);
+    auto* countLabel = gtk_label_new(
+        (std::to_string(view.pluginPaths.size()) + " plugin(s) found").c_str());
+    gtk_label_set_xalign(GTK_LABEL(countLabel), 0.0F);
+    gtk_box_pack_start(GTK_BOX(content), countLabel, FALSE, FALSE, 0);
+    gtk_widget_show_all(dialog);
+
+    auto getTextPaths = [&]() -> std::string {
+        GtkTextIter start, end;
+        gtk_text_buffer_get_bounds(buffer, &start, &end);
+        gchar* text = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
+        std::string result(text);
+        g_free(text);
+        return result;
+    };
+
+    while (true) {
+        const gint response = gtk_dialog_run(GTK_DIALOG(dialog));
+        if (response == GTK_RESPONSE_ACCEPT || response == kRescan) {
+            view.pluginSearchPath = getTextPaths();
+            const std::size_t found = scanPlugins(view);
+            gtk_label_set_text(GTK_LABEL(countLabel),
+                (std::to_string(found) + " plugin(s) found").c_str());
+            if (response == GTK_RESPONSE_ACCEPT) {
+                saveConfig(view);
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    gtk_widget_destroy(dialog);
 }
 
 void audioSettingsActivated(GtkMenuItem*, gpointer data) {
@@ -3809,15 +3938,8 @@ void activate(GtkApplication* application, gpointer) {
     view->runtime = std::make_unique<transmission::GraphRuntimeController>(
         uiProcessorFactory());
 #endif
-    const char* home = std::getenv("HOME");
-    const auto pluginRoot = std::filesystem::path(home ? home : ".") / ".vst3";
-    if (std::filesystem::is_directory(pluginRoot)) {
-        for (const auto& entry : std::filesystem::directory_iterator(pluginRoot)) {
-            if (entry.is_directory() && entry.path().extension() == ".vst3")
-                view->pluginPaths.push_back(entry.path().string());
-        }
-        std::sort(view->pluginPaths.begin(), view->pluginPaths.end());
-    }
+    loadConfig(*view);
+    scanPlugins(*view);
     GtkWidget* window = gtk_application_window_new(application);
     gtk_window_set_title(GTK_WINDOW(window), "Transmission — Graph");
     gtk_window_set_default_size(GTK_WINDOW(window), 900, 520);
@@ -3857,10 +3979,14 @@ void activate(GtkApplication* application, gpointer) {
         gtk_menu_item_new_with_mnemonic("_Audio…");
     auto* reconnectJackItem =
         gtk_menu_item_new_with_mnemonic("_Reconnect JACK Ports");
+    auto* pluginPathItem =
+        gtk_menu_item_new_with_mnemonic("Plugin _Path…");
     gtk_menu_shell_append(
         GTK_MENU_SHELL(settingsMenu), audioSettingsItem);
     gtk_menu_shell_append(
         GTK_MENU_SHELL(settingsMenu), reconnectJackItem);
+    gtk_menu_shell_append(
+        GTK_MENU_SHELL(settingsMenu), pluginPathItem);
     gtk_menu_item_set_submenu(
         GTK_MENU_ITEM(settingsItem), settingsMenu);
     gtk_menu_shell_append(GTK_MENU_SHELL(menuBar), settingsItem);
@@ -3975,6 +4101,8 @@ void activate(GtkApplication* application, gpointer) {
                      G_CALLBACK(audioSettingsActivated), view);
     g_signal_connect(reconnectJackItem, "activate",
                      G_CALLBACK(reconnectJackActivated), view);
+    g_signal_connect(pluginPathItem, "activate",
+                     G_CALLBACK(pluginPathActivated), view);
     g_signal_connect(showConsoleItem, "activate",
                      G_CALLBACK(showConsoleActivated), view);
     g_signal_connect(autolayoutItem, "activate",

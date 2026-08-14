@@ -44,6 +44,7 @@ When implementing:
 2. Add focused unit tests for valid, invalid, and failure cases.
 3. Keep native and Node responsibilities explicit.
 4. Document breaking changes and migration implications.
+5. Log mistakes in MISTAKES.md (what happened, root cause, prevention).
 
 Before handoff, run the narrowest relevant tests, a Node type check or build, and a native configure/build check when native code changed. Report any environment-dependent tests separately.
 

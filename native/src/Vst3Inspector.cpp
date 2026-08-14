@@ -19,7 +19,7 @@ std::vector<Vst3ClassDescriptor> Vst3Inspector::inspect(const std::string& modul
     auto module = VST3::Hosting::Module::create(modulePath, error);
     if (!module) return descriptors;
     for (const auto& info : module->getFactory().classInfos()) {
-        descriptors.push_back({modulePath, info.ID().toString(), info.name(), info.vendor(), info.category()});
+        descriptors.push_back({modulePath, info.ID().toString(), info.name(), info.vendor(), info.subCategoriesString()});
     }
     return descriptors;
 }

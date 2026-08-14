@@ -52,6 +52,13 @@ enum class NodeKind {
     SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput, Gain
 };
 
+struct PluginCacheEntry {
+    std::string path;
+    std::string name;
+    std::string vendor;
+    std::string category;
+};
+
 struct Node {
     std::string id;
     std::string label;
@@ -99,7 +106,7 @@ struct GraphView {
     PortKind connectingKind = PortKind::Audio;
     double pointerX = 0.0;
     double pointerY = 0.0;
-    std::vector<std::string> pluginPaths;
+    std::vector<PluginCacheEntry> plugins;
     std::string pluginSearchPath{"~/"};
     std::unordered_map<
         std::string, std::unordered_map<std::uint32_t, double>> parameterValues;
@@ -135,6 +142,7 @@ struct GraphView {
     GtkWidget* playButton = nullptr;
     std::string filePath;
     std::string projectHelperPath;
+    std::string inspectBinaryPath;
     std::string lastSavedSnapshot;
     std::vector<std::string> recentFiles;
     GtkWidget* recentMenu = nullptr;
@@ -170,11 +178,14 @@ struct GraphView {
     GtkWidget* scrolledWindow = nullptr;
 };
 
+struct PluginScanJob;
+
 struct PluginDialogContext {
     GraphView* view = nullptr;
     GtkWidget* canvas = nullptr;
     GtkWidget* dialog = nullptr;
-    GtkComboBoxText* selector = nullptr;
+    GtkTreeView* treeView = nullptr;
+    PluginScanJob* job = nullptr;
 };
 
 struct MidiDialogContext {
@@ -553,62 +564,341 @@ void drawNodeLabel(cairo_t* cr, const std::string& label, double x, double y,
     }
 }
 
+struct InspectResult { bool ok = false; std::string name, vendor, category; };
+
+InspectResult safeInspect(const std::string& binaryPath, const std::string& pluginPath) {
+    if (binaryPath.empty()) return {};
+    GSubprocessFlags flags = static_cast<GSubprocessFlags>(
+        G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_SILENCE);
+    GError* err = nullptr;
+    GSubprocess* proc = g_subprocess_new(flags, &err,
+        binaryPath.c_str(), pluginPath.c_str(), nullptr);
+    if (!proc) { g_error_free(err); return {}; }
+    gchar* output = nullptr;
+    gboolean ok = g_subprocess_communicate_utf8(proc, nullptr, nullptr, &output, nullptr, &err);
+    const bool success = ok && g_subprocess_get_exit_status(proc) == 0;
+    g_object_unref(proc);
+    if (err) g_error_free(err);
+    InspectResult result;
+    if (!success || !output) { g_free(output); return result; }
+    std::istringstream ss(output);
+    g_free(output);
+    std::string line;
+    while (std::getline(ss, line)) {
+        if (line.rfind("name=", 0) == 0)     result.name     = line.substr(5);
+        else if (line.rfind("vendor=", 0) == 0)   result.vendor   = line.substr(7);
+        else if (line.rfind("category=", 0) == 0) result.category = line.substr(9);
+    }
+    result.ok = true;
+    return result;
+}
+
+struct PluginScanJob {
+    GraphView* view = nullptr;
+    std::string binaryPath;
+    std::vector<PluginCacheEntry> toScan;
+    GtkListStore* store = nullptr;
+    GtkLabel* statusLabel = nullptr;
+    int total = 0;
+    std::atomic<bool> cancelled{false};
+    std::vector<PluginCacheEntry> good;
+};
+
+struct PluginScanResult {
+    PluginScanJob* job;
+    PluginCacheEntry entry;
+    bool ok;
+    int index;
+};
+
+gboolean pluginScanResultIdle(gpointer data) {
+    auto* result = static_cast<PluginScanResult*>(data);
+    auto* job = result->job;
+    if (!job->cancelled.load()) {
+        if (result->ok) {
+            GtkTreeIter it;
+            gtk_list_store_append(job->store, &it);
+            gtk_list_store_set(job->store, &it,
+                0, result->entry.name.c_str(),
+                1, result->entry.vendor.c_str(),
+                2, result->entry.category.c_str(),
+                3, result->entry.path.c_str(), -1);
+            job->good.push_back(result->entry);
+        }
+        const int done = result->index + 1;
+        std::string msg = "Inspecting " + std::to_string(done) +
+            " / " + std::to_string(job->total) + "…";
+        gtk_label_set_text(job->statusLabel, msg.c_str());
+    }
+    delete result;
+    return G_SOURCE_REMOVE;
+}
+
+gboolean pluginScanCompleteIdle(gpointer data) {
+    auto* job = static_cast<PluginScanJob*>(data);
+    if (!job->cancelled.load()) {
+        const int n = static_cast<int>(job->good.size());
+        gtk_label_set_text(job->statusLabel,
+            (std::to_string(n) + " plugin(s) found").c_str());
+        std::sort(job->good.begin(), job->good.end(), [](const auto& a, const auto& b) {
+            if (a.category != b.category) return a.category < b.category;
+            return a.name < b.name;
+        });
+        job->view->plugins = std::move(job->good);
+    }
+    g_object_unref(job->store);
+    delete job;
+    return G_SOURCE_REMOVE;
+}
+
+void pluginScanThreadFunc(PluginScanJob* job) {
+    for (int i = 0; i < static_cast<int>(job->toScan.size()); ++i) {
+        if (job->cancelled.load()) break;
+        auto& p = job->toScan[static_cast<std::size_t>(i)];
+        auto r = safeInspect(job->binaryPath, p.path);
+        if (r.ok && !r.name.empty()) p.name = r.name;
+        if (r.ok) { p.vendor = r.vendor; p.category = r.category; }
+        auto* result = new PluginScanResult{job, p, r.ok, i};
+        g_idle_add(pluginScanResultIdle, result);
+    }
+    g_idle_add(pluginScanCompleteIdle, job);
+}
+
+struct ConsoleScanJob {
+    GraphView* view;
+    std::string binaryPath;
+    std::vector<PluginCacheEntry> toScan;
+};
+
+struct ConsoleScanLog {
+    GraphView* view;
+    std::string message;
+};
+
+struct ConsoleScanComplete {
+    GraphView* view;
+    std::vector<PluginCacheEntry> good;
+    int nOk = 0;
+    int nFail = 0;
+};
+
+gboolean consoleScanLogIdle(gpointer data) {
+    auto* ev = static_cast<ConsoleScanLog*>(data);
+    logConsole(*ev->view, ev->message);
+    delete ev;
+    return G_SOURCE_REMOVE;
+}
+
+gboolean consoleScanCompleteIdle(gpointer data) {
+    auto* ev = static_cast<ConsoleScanComplete*>(data);
+    std::sort(ev->good.begin(), ev->good.end(), [](const auto& a, const auto& b) {
+        if (a.category != b.category) return a.category < b.category;
+        return a.name < b.name;
+    });
+    ev->view->plugins = std::move(ev->good);
+    logConsole(*ev->view, "Scan complete: " + std::to_string(ev->nOk) + " OK, " +
+        std::to_string(ev->nFail) + " failed (excluded)");
+    delete ev;
+    return G_SOURCE_REMOVE;
+}
+
+void consoleScanThreadFunc(ConsoleScanJob* job) {
+    auto* complete = new ConsoleScanComplete{job->view, {}, 0, 0};
+    for (auto& plugin : job->toScan) {
+        auto r = safeInspect(job->binaryPath, plugin.path);
+        if (r.ok) {
+            if (!r.name.empty()) plugin.name = r.name;
+            plugin.vendor = r.vendor;
+            plugin.category = r.category;
+            std::string msg = "  OK  " + plugin.name +
+                (plugin.vendor.empty() ? "" : "  [" + plugin.vendor + "]") +
+                (plugin.category.empty() ? "" : "  " + plugin.category);
+            g_idle_add(consoleScanLogIdle, new ConsoleScanLog{job->view, std::move(msg)});
+            complete->good.push_back(std::move(plugin));
+            ++complete->nOk;
+        } else {
+            g_idle_add(consoleScanLogIdle, new ConsoleScanLog{job->view, "  FAIL  " + plugin.path});
+            ++complete->nFail;
+        }
+    }
+    g_idle_add(consoleScanCompleteIdle, complete);
+    delete job;
+}
+
+gboolean pluginVisibleFunc(GtkTreeModel* model, GtkTreeIter* iter, gpointer data) {
+    const char* text = gtk_entry_get_text(GTK_ENTRY(data));
+    if (!text || !*text) return TRUE;
+    std::string q(text);
+    for (auto& c : q) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    auto ciContains = [&](const char* s) {
+        if (!s || !*s) return false;
+        std::string lower(s);
+        for (auto& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return lower.find(q) != std::string::npos;
+    };
+    gchar* name = nullptr; gchar* vendor = nullptr; gchar* category = nullptr;
+    gtk_tree_model_get(model, iter, 0, &name, 1, &vendor, 2, &category, -1);
+    const bool visible = ciContains(name) || ciContains(vendor) || ciContains(category);
+    g_free(name); g_free(vendor); g_free(category);
+    return visible ? TRUE : FALSE;
+}
+
+void pluginSearchChanged(GtkEntry*, gpointer data) {
+    gtk_tree_model_filter_refilter(GTK_TREE_MODEL_FILTER(data));
+}
+
+void pluginRowActivated(GtkTreeView*, GtkTreePath*, GtkTreeViewColumn*, gpointer data) {
+    gtk_dialog_response(GTK_DIALOG(data), GTK_RESPONSE_ACCEPT);
+}
+
+void pluginSelectionChanged(GtkTreeSelection* sel, gpointer data) {
+    gtk_widget_set_sensitive(GTK_WIDGET(data),
+        gtk_tree_selection_count_selected_rows(sel) > 0);
+}
+
 void addPluginFromDialog(GtkDialog*, gint response, gpointer data) {
     auto* context = static_cast<PluginDialogContext*>(data);
     if (response == GTK_RESPONSE_ACCEPT) {
-        const auto selected = gtk_combo_box_get_active(GTK_COMBO_BOX(context->selector));
-        if (selected >= 0 && static_cast<std::size_t>(selected) < context->view->pluginPaths.size()) {
-            const auto& path = context->view->pluginPaths[static_cast<std::size_t>(selected)];
-            const auto stem = std::filesystem::path(path).stem().string();
-            const auto id = "plugin-" + std::to_string(context->view->nextPluginId++);
-            transmission::Vst3PluginTopology topology;
-            std::string error;
-            if (!transmission::Vst3Inspector().inspectTopology(path, topology, error)) {
-                setStatus(*context->view, "Unable to inspect " + stem + ": " + error, true);
-                gtk_widget_destroy(context->dialog);
-                delete context;
-                return;
+        GtkTreeModel* model = nullptr;
+        GtkTreeIter iter;
+        if (gtk_tree_selection_get_selected(
+                gtk_tree_view_get_selection(context->treeView), &model, &iter)) {
+            gchar* pathStr = nullptr;
+            gtk_tree_model_get(model, &iter, 3, &pathStr, -1);
+            if (pathStr) {
+                const std::string path(pathStr);
+                g_free(pathStr);
+                const auto stem = std::filesystem::path(path).stem().string();
+                const auto id = "plugin-" + std::to_string(context->view->nextPluginId++);
+                transmission::Vst3PluginTopology topology;
+                std::string error;
+                if (!transmission::Vst3Inspector().inspectTopology(path, topology, error)) {
+                    setStatus(*context->view, "Unable to inspect " + stem + ": " + error, true);
+                    gtk_widget_destroy(context->dialog);
+                    delete context;
+                    return;
+                }
+                std::vector<std::string> inputLabels;
+                std::vector<std::string> outputLabels;
+                for (const auto& port : topology.audioInputs)
+                    inputLabels.push_back(port.name);
+                for (const auto& port : topology.audioOutputs)
+                    outputLabels.push_back(port.name);
+                stopRuntime(*context->view, "Graph changed — press Play to compile and start audio");
+                context->view->nodes.push_back({
+                    id, topology.name.empty() ? stem : topology.name, NodeKind::Plugin,
+                    topology.audioInputs.size(), topology.audioOutputs.size(),
+                    std::max<std::size_t>(1, topology.midiInputs),
+                    topology.midiOutputs, context->view->pointerX,
+                    context->view->pointerY, path, "", std::move(inputLabels),
+                    std::move(outputLabels)});
+                gtk_widget_queue_draw(context->canvas);
             }
-            std::vector<std::string> inputLabels;
-            std::vector<std::string> outputLabels;
-            for (const auto& port : topology.audioInputs)
-                inputLabels.push_back(port.name);
-            for (const auto& port : topology.audioOutputs)
-                outputLabels.push_back(port.name);
-            stopRuntime(*context->view, "Graph changed — press Play to compile and start audio");
-            context->view->nodes.push_back({
-                id, topology.name.empty() ? stem : topology.name, NodeKind::Plugin,
-                topology.audioInputs.size(), topology.audioOutputs.size(),
-                std::max<std::size_t>(1, topology.midiInputs),
-                topology.midiOutputs, context->view->pointerX,
-                context->view->pointerY, path, "", std::move(inputLabels),
-                std::move(outputLabels)});
-            gtk_widget_queue_draw(context->canvas);
         }
+    }
+    if (context->job) {
+        context->job->cancelled = true;
+        context->job = nullptr;
     }
     gtk_widget_destroy(context->dialog);
     delete context;
 }
+
 
 void showPluginDialog(GtkWidget* canvas, GraphView& view) {
     auto* dialog = gtk_dialog_new_with_buttons(
         "Add VST3 Plugin", GTK_WINDOW(gtk_widget_get_toplevel(canvas)),
         static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
         "_Cancel", GTK_RESPONSE_CANCEL, "_Add", GTK_RESPONSE_ACCEPT, nullptr);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 580, 420);
     auto* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
-    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
-    GtkWidget* label = gtk_label_new("Choose a bundle from ~/.vst3:");
-    gtk_widget_set_halign(label, GTK_ALIGN_START);
-    gtk_box_pack_start(GTK_BOX(content), label, FALSE, FALSE, 8);
-    auto* selector = GTK_COMBO_BOX_TEXT(gtk_combo_box_text_new());
-    for (const auto& path : view.pluginPaths)
-        gtk_combo_box_text_append_text(selector, std::filesystem::path(path).stem().c_str());
-    if (!view.pluginPaths.empty()) gtk_combo_box_set_active(GTK_COMBO_BOX(selector), 0);
-    gtk_widget_set_size_request(GTK_WIDGET(selector), 320, -1);
-    gtk_box_pack_start(GTK_BOX(content), GTK_WIDGET(selector), FALSE, FALSE, 0);
-    auto* context = new PluginDialogContext{&view, canvas, dialog, selector};
+    gtk_container_set_border_width(GTK_CONTAINER(content), 12);
+    gtk_box_set_spacing(GTK_BOX(content), 8);
+
+    auto* searchEntry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(searchEntry),
+        "Search by name, vendor, or category…");
+    gtk_box_pack_start(GTK_BOX(content), searchEntry, FALSE, FALSE, 0);
+
+    enum { COL_NAME, COL_VENDOR, COL_CATEGORY, COL_PATH };
+    auto* store = gtk_list_store_new(4,
+        G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
+
+    const bool needsScan = std::any_of(view.plugins.begin(), view.plugins.end(),
+        [](const auto& p) { return p.vendor.empty() && p.category.empty(); });
+
+    if (!needsScan) {
+        for (const auto& plugin : view.plugins) {
+            GtkTreeIter it;
+            gtk_list_store_append(store, &it);
+            gtk_list_store_set(store, &it,
+                COL_NAME, plugin.name.c_str(), COL_VENDOR, plugin.vendor.c_str(),
+                COL_CATEGORY, plugin.category.c_str(), COL_PATH, plugin.path.c_str(), -1);
+        }
+    }
+
+    gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store),
+        COL_CATEGORY, GTK_SORT_ASCENDING);
+
+    auto* filter = gtk_tree_model_filter_new(GTK_TREE_MODEL(store), nullptr);
+    gtk_tree_model_filter_set_visible_func(GTK_TREE_MODEL_FILTER(filter),
+        pluginVisibleFunc, searchEntry, nullptr);
+    g_signal_connect(searchEntry, "changed", G_CALLBACK(pluginSearchChanged), filter);
+
+    auto* treeView = gtk_tree_view_new_with_model(filter);
+    g_object_unref(filter);
+    gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(treeView), TRUE);
+    gtk_tree_view_set_enable_search(GTK_TREE_VIEW(treeView), FALSE);
+
+    struct ColDef { const char* title; int col; int minW; };
+    for (const auto& cd : { ColDef{"Name", COL_NAME, 180},
+                             ColDef{"Vendor", COL_VENDOR, 120},
+                             ColDef{"Category", COL_CATEGORY, 140} }) {
+        auto* renderer = gtk_cell_renderer_text_new();
+        g_object_set(renderer, "ellipsize", PANGO_ELLIPSIZE_END, nullptr);
+        auto* column = gtk_tree_view_column_new_with_attributes(
+            cd.title, renderer, "text", cd.col, nullptr);
+        gtk_tree_view_column_set_resizable(GTK_TREE_VIEW_COLUMN(column), TRUE);
+        gtk_tree_view_column_set_min_width(GTK_TREE_VIEW_COLUMN(column), cd.minW);
+        gtk_tree_view_column_set_sort_column_id(GTK_TREE_VIEW_COLUMN(column), cd.col);
+        gtk_tree_view_append_column(GTK_TREE_VIEW(treeView), column);
+    }
+
+    auto* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled),
+        GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(scrolled), GTK_SHADOW_IN);
+    gtk_container_add(GTK_CONTAINER(scrolled), treeView);
+    gtk_box_pack_start(GTK_BOX(content), scrolled, TRUE, TRUE, 0);
+
+    auto* statusLabel = gtk_label_new(needsScan ? "Inspecting plugins…" : "");
+    gtk_label_set_xalign(GTK_LABEL(statusLabel), 0.0F);
+    gtk_box_pack_start(GTK_BOX(content), statusLabel, FALSE, FALSE, 0);
+
+    auto* addButton = gtk_dialog_get_widget_for_response(
+        GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
+    gtk_widget_set_sensitive(addButton, FALSE);
+    auto* sel = gtk_tree_view_get_selection(GTK_TREE_VIEW(treeView));
+    g_signal_connect(sel, "changed", G_CALLBACK(pluginSelectionChanged), addButton);
+    g_signal_connect(treeView, "row-activated", G_CALLBACK(pluginRowActivated), dialog);
+
+    PluginScanJob* job = nullptr;
+    if (needsScan) {
+        job = new PluginScanJob{};
+        job->view = &view;
+        job->binaryPath = view.inspectBinaryPath;
+        job->toScan = view.plugins;
+        job->store = GTK_LIST_STORE(g_object_ref(store));
+        job->statusLabel = GTK_LABEL(statusLabel);
+        job->total = static_cast<int>(view.plugins.size());
+        std::thread(pluginScanThreadFunc, job).detach();
+    }
+    g_object_unref(store);
+
+    auto* context = new PluginDialogContext{&view, canvas, dialog, GTK_TREE_VIEW(treeView), job};
     g_signal_connect(dialog, "response", G_CALLBACK(addPluginFromDialog), context);
     gtk_widget_show_all(dialog);
+    gtk_widget_grab_focus(searchEntry);
 }
 
 void setPanDialValue(PanDial& dial, double value) {
@@ -1518,6 +1808,8 @@ gboolean connectionWatchTick(gpointer data) {
     return G_SOURCE_CONTINUE;
 }
 
+std::size_t scanPlugins(GraphView&);
+
 void consoleCommandActivated(GtkEntry* entry, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
     const gchar* raw = gtk_entry_get_text(entry);
@@ -1530,7 +1822,7 @@ void consoleCommandActivated(GtkEntry* entry, gpointer data) {
     cmd = cmd.substr(start, end - start + 1);
     logConsole(view, "> " + cmd);
     if (cmd == "help" || cmd == "?") {
-        logConsole(view, "Commands: status  diag  lsp  connections  peaks  watch  unwatch  reconnect  clear  help");
+        logConsole(view, "Commands: status  diag  lsp  connections  peaks  watch  unwatch  reconnect  scan  clear  help");
     } else if (cmd == "clear") {
         if (view.consoleTextView) {
             auto* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view.consoleTextView));
@@ -1629,6 +1921,13 @@ void consoleCommandActivated(GtkEntry* entry, gpointer data) {
             else
                 logConsole(view, "JACK ports reconnected");
         }
+    } else if (cmd == "scan") {
+        logConsole(view, "Scanning plugin paths...");
+        scanPlugins(view);
+        const int total = static_cast<int>(view.plugins.size());
+        logConsole(view, std::to_string(total) + " bundle(s) found. Inspecting in background...");
+        auto* job = new ConsoleScanJob{&view, view.inspectBinaryPath, view.plugins};
+        std::thread(consoleScanThreadFunc, job).detach();
     } else {
         logConsole(view, "Unknown command. Type help for a list.");
     }
@@ -1845,7 +2144,7 @@ void saveConfig(const GraphView& view) {
 }
 
 std::size_t scanPlugins(GraphView& view) {
-    view.pluginPaths.clear();
+    view.plugins.clear();
     std::istringstream ss(view.pluginSearchPath);
     std::string searchLine;
     std::error_code ec;
@@ -1858,18 +2157,22 @@ std::size_t scanPlugins(GraphView& view) {
         const decltype(it) end{};
         while (it != end) {
             if (it->is_directory(ec) && it->path().extension() == ".vst3") {
-                view.pluginPaths.push_back(it->path().string());
+                const auto& p = it->path();
+                view.plugins.push_back({p.string(), p.stem().string(), "", ""});
                 it.disable_recursion_pending();
             }
             it.increment(ec);
         }
     }
-    std::sort(view.pluginPaths.begin(), view.pluginPaths.end());
-    view.pluginPaths.erase(
-        std::unique(view.pluginPaths.begin(), view.pluginPaths.end()),
-        view.pluginPaths.end());
-    return view.pluginPaths.size();
+    std::sort(view.plugins.begin(), view.plugins.end(),
+        [](const auto& a, const auto& b) { return a.path < b.path; });
+    view.plugins.erase(
+        std::unique(view.plugins.begin(), view.plugins.end(),
+            [](const auto& a, const auto& b) { return a.path == b.path; }),
+        view.plugins.end());
+    return view.plugins.size();
 }
+
 
 void pluginPathActivated(GtkMenuItem*, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
@@ -1899,7 +2202,7 @@ void pluginPathActivated(GtkMenuItem*, gpointer data) {
     gtk_container_add(GTK_CONTAINER(scrolled), textView);
     gtk_box_pack_start(GTK_BOX(content), scrolled, TRUE, TRUE, 0);
     auto* countLabel = gtk_label_new(
-        (std::to_string(view.pluginPaths.size()) + " plugin(s) found").c_str());
+        (std::to_string(view.plugins.size()) + " plugin(s) found").c_str());
     gtk_label_set_xalign(GTK_LABEL(countLabel), 0.0F);
     gtk_box_pack_start(GTK_BOX(content), countLabel, FALSE, FALSE, 0);
     gtk_widget_show_all(dialog);
@@ -4082,6 +4385,13 @@ void activate(GtkApplication* application, gpointer) {
     else
         view->projectHelperPath =
             (std::filesystem::current_path() / "scripts/native-ui-project.js").string();
+    {
+        char selfBuf[4096] = {};
+        const ssize_t selfLen = readlink("/proc/self/exe", selfBuf, sizeof(selfBuf) - 1);
+        if (selfLen > 0)
+            view->inspectBinaryPath =
+                (std::filesystem::path(selfBuf).parent_path() / "transmission_vst3_inspect").string();
+    }
 
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
     curl_global_init(CURL_GLOBAL_DEFAULT);

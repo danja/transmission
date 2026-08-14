@@ -1702,8 +1702,13 @@ void showConsoleActivated(GtkMenuItem*, gpointer data) {
     showConsoleWindow(*static_cast<GraphView*>(data));
 }
 
-void autolayoutActivated(GtkMenuItem*, gpointer data) {
-    auto& view = *static_cast<GraphView*>(data);
+bool hasUnpositionedNodes(const GraphView& view) {
+    for (const auto& node : view.nodes)
+        if (node.x == 0.0 && node.y == 0.0) return true;
+    return false;
+}
+
+void runAutolayout(GraphView& view) {
     const auto n = view.nodes.size();
     if (n == 0) return;
 
@@ -1750,7 +1755,7 @@ void autolayoutActivated(GtkMenuItem*, gpointer data) {
     constexpr double rowGap = 60.0;
 
     // Wrap columns into rows so layout fits within the visible canvas width
-    const int canvasW = gtk_widget_get_allocated_width(view.canvas);
+    const int canvasW = std::max(800, gtk_widget_get_allocated_width(view.canvas));
     const int colsPerRow = std::max(1, static_cast<int>((canvasW - xStart) / xStep));
 
     // Compute per-column height so we know the row band height
@@ -1780,6 +1785,10 @@ void autolayoutActivated(GtkMenuItem*, gpointer data) {
     }
 
     gtk_widget_queue_draw(view.canvas);
+}
+
+void autolayoutActivated(GtkMenuItem*, gpointer data) {
+    runAutolayout(*static_cast<GraphView*>(data));
 }
 
 void reconnectJackActivated(GtkMenuItem*, gpointer data) {
@@ -2716,6 +2725,7 @@ static void reloadFromLiveServer(GraphView& view, const std::string& serverFileP
         logConsole(view, "Reload: apply failed — " + error);
         return;
     }
+    if (hasUnpositionedNodes(view)) runAutolayout(view);
     if (!serverFilePath.empty()) view.filePath = serverFilePath;
     view.lastSavedSnapshot = transmission::encodeUiProject(captureProject(view));
     updateWindowTitle(view);
@@ -3121,6 +3131,7 @@ void openRecentFileActivated(GtkMenuItem*, gpointer data) {
             !applyProject(view, project, error)) {
             setStatus(view, "Unable to open project: " + error, true);
         } else {
+            if (hasUnpositionedNodes(view)) runAutolayout(view);
             view.filePath = path;
             view.lastSavedSnapshot = transmission::encodeUiProject(captureProject(view));
             updateWindowTitle(view);
@@ -3247,6 +3258,7 @@ void openProjectActivated(GtkMenuItem*, gpointer data) {
                 !applyProject(view, project, error)) {
                 setStatus(view, "Unable to open project: " + error, true);
             } else {
+                if (hasUnpositionedNodes(view)) runAutolayout(view);
                 view.filePath = path;
                 view.lastSavedSnapshot =
                     transmission::encodeUiProject(captureProject(view));
@@ -4136,6 +4148,7 @@ void activate(GtkApplication* application, gpointer) {
             transmission::UiProject project;
             if (transmission::decodeUiProject(interchange, project, error) &&
                 applyProject(*view, project, error)) {
+                if (hasUnpositionedNodes(*view)) runAutolayout(*view);
                 view->filePath = lastPath;
                 view->lastSavedSnapshot =
                     transmission::encodeUiProject(captureProject(*view));

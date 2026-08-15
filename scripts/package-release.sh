@@ -51,7 +51,7 @@ cp -a \
   "$ROOT_DIR/src" \
   "$ROOT_DIR/scripts" \
   "$ROOT_DIR/profiles" \
-  "$ROOT_DIR/patches" \
+  "$ROOT_DIR/projects" \
   "$PACKAGE_DIR/"
 install -m 0755 "$ROOT_DIR/transmission" "$PACKAGE_DIR/transmission"
 install -m 0644 \

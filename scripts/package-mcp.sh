@@ -48,6 +48,7 @@ cp "$ADDON_FILE" "$PACKAGE_DIR/lib/transmission_native.node"
 cp -r "$ROOT_DIR/src" "$PACKAGE_DIR/src"
 cp -r "$ROOT_DIR/scripts" "$PACKAGE_DIR/scripts"
 cp -r "$ROOT_DIR/profiles" "$PACKAGE_DIR/profiles"
+cp -r "$ROOT_DIR/projects" "$PACKAGE_DIR/projects"
 cp "$ROOT_DIR/package.json" "$ROOT_DIR/package-lock.json" \
    "$ROOT_DIR/LICENSE" "$ROOT_DIR/README.md" "$PACKAGE_DIR/"
 cp "$VST3_LICENSE" "$PACKAGE_DIR/VST3-SDK-LICENSE.txt"

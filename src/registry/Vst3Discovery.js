@@ -28,7 +28,8 @@ export class Vst3Discovery {
           const { stdout } = await executeFile(this.inspectorPath, [bundlePath], {
             timeout: this.timeoutMs,
             maxBuffer: 1024 * 1024,
-            encoding: 'utf8'
+            encoding: 'utf8',
+            shell: process.platform === 'win32'
           })
           plugins.push(...parseInspectorOutput(stdout, bundlePath))
         } catch (error) {

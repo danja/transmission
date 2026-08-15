@@ -94,7 +94,7 @@ if(TRANSMISSION_WITH_VST3)
   if(APPLE)
     set_source_files_properties("${VST3_SDK_ROOT}/public.sdk/source/vst/hosting/module_mac.mm"
       PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-    target_link_libraries(transmission_vst3_inspector PRIVATE "-framework CoreFoundation")
+    target_link_libraries(transmission_vst3_inspector PRIVATE "-framework CoreFoundation" "-framework Foundation")
   elseif(UNIX)
     target_link_libraries(transmission_vst3_inspector PRIVATE dl)
   endif()

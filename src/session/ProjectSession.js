@@ -1,7 +1,7 @@
 // src/session/ProjectSession.js
 
 import { readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import { Graph } from '../model/Graph.js'
 import { Arrangement } from '../model/Arrangement.js'
@@ -90,7 +90,7 @@ export class ProjectSession {
     if (!this.graph) throw new Error('No project is open')
     if (!filePath) throw new Error('A project file path is required')
     await mkdir(dirname(filePath), { recursive: true })
-    const temporaryPath = join(dirname(filePath), `.${filePath.split('/').pop()}.${process.pid}.tmp`)
+    const temporaryPath = join(dirname(filePath), `.${basename(filePath)}.${process.pid}.tmp`)
     const definition = { ...this.graph.toJSON(), transport: this.transport.toJSON(), arrangement: this.arrangement.toJSON() }
     const content = filePath.endsWith('.ttl') ? serializeGraph(this.graph, this.transport.toJSON(), this.arrangement) : `${JSON.stringify(definition, null, 2)}\n`
     await writeFile(temporaryPath, content, 'utf8')

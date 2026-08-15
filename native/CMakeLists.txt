@@ -1,6 +1,9 @@
 # native/CMakeLists.txt
 cmake_minimum_required(VERSION 3.20)
 project(transmission_native LANGUAGES CXX)
+if(APPLE)
+  enable_language(OBJCXX)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -72,7 +75,7 @@ if(TRANSMISSION_WITH_VST3)
       "${VST3_SDK_ROOT}/public.sdk/source/vst/hosting/module_win32.cpp")
   elseif(APPLE)
     set(TRANSMISSION_VST3_MODULE_SRC
-      "${VST3_SDK_ROOT}/public.sdk/source/vst/hosting/module_mac.cpp")
+      "${VST3_SDK_ROOT}/public.sdk/source/vst/hosting/module_mac.mm")
   else()
     set(TRANSMISSION_VST3_MODULE_SRC
       "${VST3_SDK_ROOT}/public.sdk/source/vst/hosting/module_linux.cpp")

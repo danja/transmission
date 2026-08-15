@@ -1,8 +1,9 @@
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { PluginCatalogue } from '../../src/registry/PluginCatalogue.js'
 import { parseTurtle } from '../../src/rdf/TransmissionRdf.js'
 
-const downspoutProfile = new URL('../../profiles/downspout.ttl', import.meta.url).pathname
+const downspoutProfile = fileURLToPath(new URL('../../profiles/downspout.ttl', import.meta.url))
 
 describe('PluginCatalogue', () => {
   it('loads Downspout RDF profiles and merges authoritative semantics with discovered facts', async () => {

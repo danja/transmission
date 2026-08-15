@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
@@ -69,7 +70,7 @@ describe('Transmission MCP server', () => {
 
   it('exposes RDF-backed plugin knowledge without loading it into every response', async () => {
     const catalogue = new PluginCatalogue()
-    await catalogue.loadProfileFile(new URL('../../profiles/downspout.ttl', import.meta.url).pathname)
+    await catalogue.loadProfileFile(fileURLToPath(new URL('../../profiles/downspout.ttl', import.meta.url)))
     const control = new TransmissionControlService({ pluginCatalogue: catalogue })
     server = createTransmissionMcpServer(control)
     client = new Client({ name: 'transmission-catalogue-test', version: '1.0.0' })

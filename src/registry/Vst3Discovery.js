@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { availableParallelism } from 'node:os'
-import { basename } from 'node:path'
+import { basename, join } from 'node:path'
 import { readdir } from 'node:fs/promises'
 import { promisify } from 'node:util'
 
@@ -109,7 +109,7 @@ async function findBundles(root) {
       return
     }
     for (const entry of entries) {
-      const path = `${directory}/${entry.name}`
+      const path = join(directory, entry.name)
       if (entry.name.toLowerCase().endsWith('.vst3')) bundles.push(path)
       else if (entry.isDirectory()) await visit(path)
     }

@@ -4,6 +4,18 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseInspectorOutput, Vst3Discovery } from '../../src/registry/Vst3Discovery.js'
 
+async function writeFakeInspector(directory, output) {
+  if (process.platform === 'win32') {
+    const path = join(directory, 'inspector.cmd')
+    await writeFile(path, `@echo off\r\necho ${output.replace(/\n/g, '\r\necho ')}\r\n`)
+    return path
+  }
+  const path = join(directory, 'inspector')
+  await writeFile(path, `#!/bin/sh\nprintf '${output}'\n`)
+  await chmod(path, 0o755)
+  return path
+}
+
 describe('Vst3Discovery inspector output', () => {
   it('keeps the processor class, topology, and parameter metadata', () => {
     const plugins = parseInspectorOutput(`
@@ -68,10 +80,8 @@ category=Audio Module Class
     try {
       const pluginRoot = join(directory, 'plugins')
       const bundle = join(pluginRoot, 'broken.vst3')
-      const inspector = join(directory, 'inspector')
       await mkdir(bundle, { recursive: true })
-      await writeFile(inspector, '#!/bin/sh\nprintf "id=\\nname=Broken\\n"\n')
-      await chmod(inspector, 0o755)
+      const inspector = await writeFakeInspector(directory, 'id=\nname=Broken\n')
 
       const discovery = new Vst3Discovery({
         inspectorPath: inspector,

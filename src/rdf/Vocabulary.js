@@ -20,6 +20,7 @@ export const vocabulary = Object.freeze({
     clipId: `${TRN}clipId`, targetNode: `${TRN}targetNode`, startBeat: `${TRN}startBeat`, lengthBeats: `${TRN}lengthBeats`, notes: `${TRN}notes`,
     durationBeats: `${TRN}durationBeats`, pitch: `${TRN}pitch`, velocity: `${TRN}velocity`, channel: `${TRN}channel`, controller: `${TRN}controller`, consume: `${TRN}consume`,
     points: `${TRN}points`, valueDb: `${TRN}valueDb`, shape: `${TRN}shape`,
+    audioClipNode: `${TRN}AudioClipNode`, midiClipNode: `${TRN}MidiClipNode`,
     pluginProfile: `${TRN}PluginProfile`, discoveredPlugin: `${TRN}DiscoveredPlugin`,
     bundleName: `${TRN}bundleName`, vstClassId: `${TRN}vstClassId`, vendor: `${TRN}vendor`,
     role: `${TRN}role`, produces: `${TRN}produces`, accepts: `${TRN}accepts`, requires: `${TRN}requires`,

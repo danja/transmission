@@ -1,4 +1,6 @@
+#include "transmission/AudioClipProcessor.h"
 #include "transmission/AudioEngine.h"
+#include "transmission/MidiClipProcessor.h"
 #include "transmission/RoutedAudioGraph.h"
 #ifdef TRANSMISSION_NAPI_WITH_JACK
 #include "transmission/JackAudioDevice.h"
@@ -203,7 +205,21 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
         if (napi_get_named_property(env, node, "settings", &settings) == napi_ok &&
             napi_typeof(env, settings, &settingsType) == napi_ok && settingsType == napi_object)
             getString(env, settings, "pluginPath", pluginPath);
-        if (!pluginPath.empty()) {
+        if (type == std::string("AudioClipNode") ||
+            type == std::string("http://purl.org/stuff/transmissions/AudioClipNode")) {
+            auto clip = std::make_unique<transmission::AudioClipProcessor>();
+            std::string error;
+            if (!pluginPath.empty() && !clip->load(pluginPath, engineSampleRate, error))
+                return fail(env, error.c_str());
+            processor = std::move(clip);
+        } else if (type == std::string("MidiClipNode") ||
+                   type == std::string("http://purl.org/stuff/transmissions/MidiClipNode")) {
+            auto clip = std::make_unique<transmission::MidiClipProcessor>();
+            std::string error;
+            if (!pluginPath.empty() && !clip->load(pluginPath, error))
+                return fail(env, error.c_str());
+            processor = std::move(clip);
+        } else if (!pluginPath.empty()) {
 #ifdef TRANSMISSION_NAPI_WITH_VST3
             auto vst = std::make_unique<transmission::Vst3Processor>();
             std::string error;

@@ -1,8 +1,11 @@
 #include <gtk/gtk.h>
 #include <glib/gstdio.h>
 #include <cairo.h>
+#include "transmission/AudioClipProcessor.h"
 #include "transmission/AudioProcessor.h"
 #include "transmission/GraphRuntimeController.h"
+#include "transmission/MidiClipProcessor.h"
+#include "transmission/SmfReader.h"
 #include "transmission/JackConnectionManager.h"
 #include "transmission/JackPortIdentity.h"
 #include "transmission/JackAudioDevice.h"
@@ -49,7 +52,8 @@ constexpr double portSpacing = 18.0;
 constexpr std::int32_t vst3CanAutomateFlag = 1 << 0;
 
 enum class NodeKind {
-    SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput, Gain
+    SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput, Gain,
+    AudioClip, MidiClip
 };
 
 struct PluginCacheEntry {
@@ -119,6 +123,8 @@ struct GraphView {
     std::size_t nextMidiInputId = 1;
     std::size_t nextMidiOutputId = 1;
     std::size_t nextGainId = 1;
+    std::size_t nextAudioClipId = 1;
+    std::size_t nextMidiClipId = 1;
     std::array<std::string, 2> systemInputConnections{"system:capture_1", "system:capture_2"};
     std::array<std::string, 2> systemOutputConnections{"system:playback_1", "system:playback_2"};
     std::unique_ptr<transmission::JackConnectionManager> jackConnections;
@@ -252,6 +258,10 @@ struct NodeMenuContext {
     std::size_t node = static_cast<std::size_t>(-1);
 };
 
+bool runProjectHelper(const GraphView& view, const char* command,
+                      const std::string& path, const std::string& input,
+                      std::string& output, std::string& error);
+
 void logConsole(GraphView& view, const std::string& message) {
     if (!view.consoleTextView) return;
     auto* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view.consoleTextView));
@@ -297,6 +307,16 @@ transmission::RuntimeProcessorFactory uiProcessorFactory() {
         if (node.kind == transmission::RuntimeNodeKind::MidiInput ||
             node.kind == transmission::RuntimeNodeKind::MidiOutput)
             return std::make_unique<transmission::MidiEndpointProcessor>();
+        if (node.kind == transmission::RuntimeNodeKind::AudioClip) {
+            auto proc = std::make_unique<transmission::AudioClipProcessor>();
+            if (!proc->load(node.pluginPath, config.sampleRate, error)) return nullptr;
+            return proc;
+        }
+        if (node.kind == transmission::RuntimeNodeKind::MidiClip) {
+            auto proc = std::make_unique<transmission::MidiClipProcessor>();
+            if (!proc->load(node.pluginPath, error)) return nullptr;
+            return proc;
+        }
         if (node.kind != transmission::RuntimeNodeKind::Plugin)
             return std::make_unique<transmission::PassThroughProcessor>();
 #if defined(TRANSMISSION_UI_WITH_VST3)
@@ -1391,6 +1411,66 @@ void addMidiOutputActivated(GtkMenuItem*, gpointer data) {
     showMidiDialog(context->canvas, *context->view, false);
 }
 
+void pickClipFile(GtkWidget* canvas, GraphView& view, bool audio) {
+    const char* title = audio ? "Choose Audio File (WAV)" : "Choose MIDI File";
+    auto* dialog = gtk_file_chooser_dialog_new(
+        title, GTK_WINDOW(gtk_widget_get_toplevel(canvas)),
+        GTK_FILE_CHOOSER_ACTION_OPEN,
+        "_Cancel", GTK_RESPONSE_CANCEL,
+        "_Open", GTK_RESPONSE_ACCEPT, nullptr);
+    auto* filter = gtk_file_filter_new();
+    if (audio) {
+        gtk_file_filter_set_name(filter, "WAV files (*.wav)");
+        gtk_file_filter_add_pattern(filter, "*.wav");
+        gtk_file_filter_add_pattern(filter, "*.WAV");
+    } else {
+        gtk_file_filter_set_name(filter, "MIDI files (*.mid)");
+        gtk_file_filter_add_pattern(filter, "*.mid");
+        gtk_file_filter_add_pattern(filter, "*.midi");
+        gtk_file_filter_add_pattern(filter, "*.MID");
+    }
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), filter);
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        gchar* selected = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+        if (selected) {
+            const std::string filePath(selected);
+            g_free(selected);
+            const auto stem = std::filesystem::path(filePath).stem().string();
+            stopRuntime(view, "Graph changed — press Play to compile and start audio");
+            if (audio) {
+                const auto id = "audio-clip-" + std::to_string(view.nextAudioClipId++);
+                view.nodes.push_back({
+                    id, stem.empty() ? "Audio Clip" : stem,
+                    NodeKind::AudioClip, 0, 2, 0, 0,
+                    view.pointerX, view.pointerY, filePath, "", {}, {}});
+            } else {
+                // Parse MIDI file to count tracks
+                std::string smfError;
+                auto smf = transmission::loadSmf(filePath);
+                const std::size_t trackCount = smf.error.empty() && smf.trackCount > 0
+                    ? smf.trackCount : 1;
+                const auto id = "midi-clip-" + std::to_string(view.nextMidiClipId++);
+                view.nodes.push_back({
+                    id, stem.empty() ? "MIDI Clip" : stem,
+                    NodeKind::MidiClip, 0, 0, 0, static_cast<std::size_t>(trackCount),
+                    view.pointerX, view.pointerY, filePath, "", {}, {}});
+            }
+            gtk_widget_queue_draw(canvas);
+        }
+    }
+    gtk_widget_destroy(dialog);
+}
+
+void addAudioClipActivated(GtkMenuItem*, gpointer data) {
+    auto* context = static_cast<AddNodeMenuContext*>(data);
+    pickClipFile(context->canvas, *context->view, true);
+}
+
+void addMidiClipActivated(GtkMenuItem*, gpointer data) {
+    auto* context = static_cast<AddNodeMenuContext*>(data);
+    pickClipFile(context->canvas, *context->view, false);
+}
+
 void showAddNodeMenu(GtkWidget* canvas, GraphView& view,
                      GdkEventButton* event) {
     auto* menu = gtk_menu_new();
@@ -1398,15 +1478,21 @@ void showAddNodeMenu(GtkWidget* canvas, GraphView& view,
     auto* gain = gtk_menu_item_new_with_label("Add Gain / Pan");
     auto* midiInput = gtk_menu_item_new_with_label("Add MIDI Input…");
     auto* midiOutput = gtk_menu_item_new_with_label("Add MIDI Output…");
+    auto* audioClip = gtk_menu_item_new_with_label("Add Audio Clip…");
+    auto* midiClip = gtk_menu_item_new_with_label("Add MIDI Clip…");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), plugin);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), gain);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), midiInput);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), midiOutput);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), audioClip);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), midiClip);
     auto* context = new AddNodeMenuContext{&view, canvas};
     g_signal_connect(plugin, "activate", G_CALLBACK(addPluginActivated), context);
     g_signal_connect(gain, "activate", G_CALLBACK(addGainActivated), context);
     g_signal_connect(midiInput, "activate", G_CALLBACK(addMidiInputActivated), context);
     g_signal_connect(midiOutput, "activate", G_CALLBACK(addMidiOutputActivated), context);
+    g_signal_connect(audioClip, "activate", G_CALLBACK(addAudioClipActivated), context);
+    g_signal_connect(midiClip, "activate", G_CALLBACK(addMidiClipActivated), context);
     g_signal_connect_data(
         menu, "destroy",
         G_CALLBACK(+[](GtkWidget*, gpointer data) {
@@ -1822,7 +1908,7 @@ void consoleCommandActivated(GtkEntry* entry, gpointer data) {
     cmd = cmd.substr(start, end - start + 1);
     logConsole(view, "> " + cmd);
     if (cmd == "help" || cmd == "?") {
-        logConsole(view, "Commands: status  diag  lsp  connections  peaks  watch  unwatch  reconnect  scan  clear  help");
+        logConsole(view, "Commands: status  diag  lsp  connections  peaks  watch  unwatch  reconnect  scan  parse [path]  clear  help");
     } else if (cmd == "clear") {
         if (view.consoleTextView) {
             auto* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view.consoleTextView));
@@ -1928,6 +2014,24 @@ void consoleCommandActivated(GtkEntry* entry, gpointer data) {
         logConsole(view, std::to_string(total) + " bundle(s) found. Inspecting in background...");
         auto* job = new ConsoleScanJob{&view, view.inspectBinaryPath, view.plugins};
         std::thread(consoleScanThreadFunc, job).detach();
+    } else if (cmd.starts_with("parse")) {
+        const std::string arg = cmd.size() > 5 ? cmd.substr(6) : "";
+        const std::string parseTarget = arg.empty() ? view.filePath : arg;
+        if (parseTarget.empty()) {
+            logConsole(view, "No project loaded. Usage: parse [path.ttl]");
+        } else if (view.projectHelperPath.empty()) {
+            logConsole(view, "Project helper not available");
+        } else {
+            logConsole(view, "Checking " + parseTarget + " ...");
+            std::string output, error;
+            if (runProjectHelper(view, "check", parseTarget, "", output, error)) {
+                while (!output.empty() && (output.back() == '\n' || output.back() == '\r'))
+                    output.pop_back();
+                logConsole(view, output.empty() ? "OK" : output);
+            } else {
+                logConsole(view, "[error] " + error);
+            }
+        }
     } else {
         logConsole(view, "Unknown command. Type help for a list.");
     }
@@ -1991,7 +2095,7 @@ void showConsoleWindow(GraphView& view) {
         }), nullptr);
 
         gtk_widget_show_all(win);
-        logConsole(view, "Console ready. Commands: status  lsp  reconnect  clear  help");
+        logConsole(view, "Console ready. Commands: status  lsp  reconnect  parse [path]  clear  help");
     } else {
         gtk_window_present(GTK_WINDOW(view.consoleWindow));
     }
@@ -2493,6 +2597,46 @@ void editNodeFromMenu(GtkMenuItem*, gpointer data) {
                        node.kind == NodeKind::MidiInput, context->node);
     } else if (node.kind == NodeKind::Gain) {
         showGainDialog(context->canvas, *context->view, context->node);
+    } else if (node.kind == NodeKind::AudioClip || node.kind == NodeKind::MidiClip) {
+        const bool isAudio = node.kind == NodeKind::AudioClip;
+        const char* title = isAudio ? "Replace Audio File (WAV)" : "Replace MIDI File";
+        auto* dialog = gtk_file_chooser_dialog_new(
+            title, GTK_WINDOW(gtk_widget_get_toplevel(context->canvas)),
+            GTK_FILE_CHOOSER_ACTION_OPEN,
+            "_Cancel", GTK_RESPONSE_CANCEL, "_Open", GTK_RESPONSE_ACCEPT, nullptr);
+        auto* filter = gtk_file_filter_new();
+        if (isAudio) {
+            gtk_file_filter_set_name(filter, "WAV files (*.wav)");
+            gtk_file_filter_add_pattern(filter, "*.wav");
+            gtk_file_filter_add_pattern(filter, "*.WAV");
+        } else {
+            gtk_file_filter_set_name(filter, "MIDI files (*.mid)");
+            gtk_file_filter_add_pattern(filter, "*.mid");
+            gtk_file_filter_add_pattern(filter, "*.midi");
+            gtk_file_filter_add_pattern(filter, "*.MID");
+        }
+        gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), filter);
+        if (!node.pluginPath.empty())
+            gtk_file_chooser_set_filename(GTK_FILE_CHOOSER(dialog), node.pluginPath.c_str());
+        if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+            gchar* selected = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+            if (selected) {
+                const std::string filePath(selected);
+                g_free(selected);
+                const auto stem = std::filesystem::path(filePath).stem().string();
+                stopRuntime(*context->view,
+                            "Graph changed — press Play to compile and start audio");
+                node.pluginPath = filePath;
+                node.label = stem.empty() ? node.label : stem;
+                if (!isAudio) {
+                    auto smf = transmission::loadSmf(filePath);
+                    if (smf.error.empty() && smf.trackCount > 0)
+                        node.midiOutputs = smf.trackCount;
+                }
+                gtk_widget_queue_draw(context->canvas);
+            }
+        }
+        gtk_widget_destroy(dialog);
     } else if (!node.pluginPath.empty() && context->view->editorHost) {
         openPluginEditor(*context->view, node);
     }
@@ -2980,8 +3124,6 @@ static void syncToLiveServer(GraphView& view, const std::string& path) {
     updateWindowTitle(view);
 }
 
-static bool runProjectHelper(const GraphView&, const char*, const std::string&,
-                             const std::string&, std::string&, std::string&);
 bool applyProject(GraphView&, const transmission::UiProject&, std::string&);
 transmission::UiProject captureProject(const GraphView&);
 
@@ -3291,6 +3433,8 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
     view.nextMidiInputId = 1;
     view.nextMidiOutputId = 1;
     view.nextGainId = 1;
+    view.nextAudioClipId = 1;
+    view.nextMidiClipId = 1;
     std::unordered_set<std::string> identifiers;
     for (const auto& node : view.nodes) identifiers.insert(node.id);
     while (identifiers.contains("plugin-" + std::to_string(view.nextPluginId)))
@@ -3301,6 +3445,10 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
         ++view.nextMidiOutputId;
     while (identifiers.contains("gain-" + std::to_string(view.nextGainId)))
         ++view.nextGainId;
+    while (identifiers.contains("audio-clip-" + std::to_string(view.nextAudioClipId)))
+        ++view.nextAudioClipId;
+    while (identifiers.contains("midi-clip-" + std::to_string(view.nextMidiClipId)))
+        ++view.nextMidiClipId;
     gtk_spin_button_set_value(view.tempo, normalized.tempo);
     gtk_spin_button_set_value(view.loopBars, normalized.loopBars);
     gtk_toggle_button_set_active(view.loop, normalized.loopEnabled);

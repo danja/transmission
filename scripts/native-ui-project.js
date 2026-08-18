@@ -8,14 +8,20 @@ import { ProjectSession } from '../src/session/ProjectSession.js'
 const BASE = 'http://purl.org/stuff/transmissions/'
 const [command, filePath, interchangePath] = process.argv.slice(2)
 
-if (!['load', 'save'].includes(command) || !filePath ||
+if (!['load', 'save', 'check'].includes(command) || !filePath ||
     (command === 'save' && !interchangePath)) {
-  process.stderr.write('Usage: native-ui-project.js <load|save> <project.ttl> [interchange-file]\n')
+  process.stderr.write('Usage: native-ui-project.js <load|save|check> <project.ttl> [interchange-file]\n')
   process.exit(2)
 }
 
 try {
-  if (command === 'save') {
+  if (command === 'check') {
+    const session = await ProjectSession.load(filePath)
+    const graph = session.graph
+    const nodeCount = graph.nodes.size
+    const connectionCount = [...graph.connections].length
+    writeAll(1, `OK: ${nodeCount} node(s), ${connectionCount} connection(s)\n`)
+  } else if (command === 'save') {
     const interchange = await readFile(interchangePath, 'utf8')
     const project = decodeProject(interchange)
     const session = new ProjectSession()
@@ -81,7 +87,7 @@ function decodeProject(text) {
     const invalid = () => { throw new Error(`Invalid native UI project interchange at line ${index + 1}`) }
     if (!header) {
       if (fields.length !== 2 || fields[0] !== 'TRANSMISSION_UI' ||
-          !['1', '2', '3', '4', '5', '6'].includes(fields[1])) invalid()
+          !['1', '2', '3', '4', '5', '6', '7'].includes(fields[1])) invalid()
       header = true
       continue
     }
@@ -111,9 +117,10 @@ function decodeProject(text) {
     } else if (fields[0] === 'NODE' && fields.length === 11) {
       const kind = integer(fields[3])
       const id = hexDecode(fields[1])
-      if (kind < 0 || kind > 6 || !id) invalid()
+      if (kind < 0 || kind > 8 || !id) invalid()
       const resource = hexDecode(fields[10])
-      const type = ['AudioInput', 'AudioOutput', 'PassThrough', 'VST3Plugin', 'MidiInput', 'MidiOutput', 'Gain'][kind]
+      const type = ['AudioInput', 'AudioOutput', 'PassThrough', 'VST3Plugin', 'MidiInput', 'MidiOutput', 'Gain', 'AudioClipNode', 'MidiClipNode'][kind]
+      const settingsKey = (kind === 4 || kind === 5) ? 'externalPort' : 'pluginPath'
       project.nodes.push({
         id: fullId(id),
         label: hexDecode(fields[2]),
@@ -124,9 +131,7 @@ function decodeProject(text) {
           midiInputs: integer(fields[6]),
           midiOutputs: integer(fields[7])
         },
-        settings: resource
-          ? { [kind >= 4 ? 'externalPort' : 'pluginPath']: resource }
-          : {},
+        settings: resource ? { [settingsKey]: resource } : {},
         parameters: [],
         state: { component: '', controller: '' },
         metadata: { x: finiteNumber(fields[8]), y: finiteNumber(fields[9]) }
@@ -219,7 +224,7 @@ function encodeProject(session) {
   const graph = session.graph
   const transport = session.transport.toJSON()
   const lines = [
-    'TRANSMISSION_UI\t6',
+    'TRANSMISSION_UI\t7',
     `PROJECT\t${hexEncode(shortId(graph.id))}\t${hexEncode(graph.label)}`,
     `TRANSPORT\t${transport.tempoMap[0]?.bpm ?? 120}\t${(transport.loop?.endBeat ?? 16) / 4}\t${transport.loop?.enabled ? 1 : 0}`
   ]
@@ -233,10 +238,12 @@ function encodeProject(session) {
     const type = shortId(node.type)
     const kind = {
       AudioInput: 0, AudioOutput: 1, PassThrough: 2,
-      VST3Plugin: 3, MidiInput: 4, MidiOutput: 5, Gain: 6
+      VST3Plugin: 3, MidiInput: 4, MidiOutput: 5, Gain: 6,
+      AudioClipNode: 7, MidiClipNode: 8
     }[type]
     if (kind === undefined) throw new Error(`Unsupported native UI node type: ${node.type}`)
-    const resource = firstSetting(node.settings, kind >= 4 ? 'externalPort' : 'pluginPath')
+    const settingsKey = (kind === 4 || kind === 5) ? 'externalPort' : 'pluginPath'
+    const resource = firstSetting(node.settings, settingsKey)
     lines.push([
       'NODE', hexEncode(shortId(node.id)), hexEncode(node.label), kind,
       node.ports.audioInputs, node.ports.audioOutputs,

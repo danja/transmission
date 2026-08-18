@@ -77,7 +77,7 @@ bool number(std::string_view text, double& result) {
 
 std::string encodeUiProject(const UiProject& project) {
     std::ostringstream output;
-    output << "TRANSMISSION_UI\t6\n";
+    output << "TRANSMISSION_UI\t7\n";
     output << "PROJECT\t" << hexEncode(project.id) << '\t'
            << hexEncode(project.label) << '\n';
     output << "TRANSPORT\t" << project.tempo << '\t' << project.loopBars
@@ -173,7 +173,8 @@ bool decodeUiProject(const std::string& text, UiProject& project,
             if (values.size() != 2 || values[0] != "TRANSMISSION_UI" ||
                 (values[1] != "1" && values[1] != "2" &&
                  values[1] != "3" && values[1] != "4" &&
-                 values[1] != "5" && values[1] != "6")) return fail();
+                 values[1] != "5" && values[1] != "6" &&
+                 values[1] != "7")) return fail();
             header = true;
             continue;
         }
@@ -208,7 +209,7 @@ bool decodeUiProject(const std::string& text, UiProject& project,
             std::string resource;
             if (values.size() != 11 || !hexDecode(values[1], node.id) ||
                 !hexDecode(values[2], node.label) || !integer(values[3], kind) ||
-                kind < 0 || kind > static_cast<int>(UiProjectNodeKind::Gain) ||
+                kind < 0 || kind > static_cast<int>(UiProjectNodeKind::MidiClip) ||
                 !integer(values[4], node.audioInputs) ||
                 !integer(values[5], node.audioOutputs) ||
                 !integer(values[6], node.midiInputs) ||

@@ -17,6 +17,7 @@ option(TRANSMISSION_WITH_GTK_UI "Build the native GTK graph editor" OFF)
 set(VST3_SDK_ROOT "$ENV{HOME}/VST_SDK/vst3sdk" CACHE PATH "Path to the Steinberg VST3 SDK")
 
 add_library(transmission_engine STATIC
+  src/AudioClipProcessor.cpp
   src/AudioEngine.cpp
   src/AudioGraph.cpp
   src/AudioProcessor.cpp
@@ -24,6 +25,7 @@ add_library(transmission_engine STATIC
   src/GraphRuntimeCompiler.cpp
   src/GraphRuntimeController.cpp
   src/JackPortIdentity.cpp
+  src/MidiClipProcessor.cpp
   src/OfflineAudioRenderer.cpp
   src/PluginScanner.cpp
   src/RoutedAudioGraph.cpp

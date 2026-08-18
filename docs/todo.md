@@ -43,6 +43,28 @@ UI additions:
 - System Input/Output dialogs now show resolved JACK port names (after suffix
   substitution) below the selectors when JACK is available
 
+## Console: `parse` command — implemented (2026-08-18)
+
+- `parse [path.ttl]` in GTK console checks the given TTL (or the loaded project) for Turtle syntax errors
+- Delegates to `native-ui-project.js check` via `runProjectHelper`; reports node/connection counts on success or the parse error message on failure
+- Updated help text in console
+
+## Built-in node: Audio Clip — implemented (2026-08-18)
+
+- `NodeKind::AudioClip` (kind 7) added to all enum layers (UI, codec, runtime)
+- `AudioClipProcessor` loads WAV (PCM 16/24/32-bit and 32-bit float, mono or stereo) via `WavReader.h`; loops stereo output when transport plays; resets on stop
+- File picker opens on "Add Audio Clip…" context-menu item or "Edit" on an existing node; filename stem used as block label
+- Codec bumped to v7; `pluginPath` field carries the WAV file path; `audioOutputs = 2`
+- JS interchange updated: kind 7 → `AudioClipNode` type URI
+
+## Built-in node: MIDI Clip — implemented (2026-08-18)
+
+- `NodeKind::MidiClip` (kind 8) added to all enum layers
+- `MidiClipProcessor` parses SMF (format 0/1, any ticks-per-beat, tempo events) via `SmfReader.h`; loops events beat-accurate from transport position; `midiOutputs` = SMF track count
+- File picker opens on "Add MIDI Clip…" or "Edit"; filename stem used as block label
+- MIDI events from all tracks emitted on single output port (original channel bytes preserved); loop wrap-around handled per block
+- Known limitation: per-track output port routing requires extending RoutedAudioGraph MIDI port API (future work)
+
 ## Engine features
 
 - Suspend schedule-only instrument processors outside their authored activity

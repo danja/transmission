@@ -11,7 +11,8 @@
 namespace transmission {
 
 enum class UiProjectNodeKind {
-    SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput, Gain
+    SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput, Gain,
+    AudioClip, MidiClip
 };
 enum class UiProjectConnectionKind { Audio, Midi };
 

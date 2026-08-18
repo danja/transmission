@@ -13,7 +13,8 @@
 namespace transmission {
 
 enum class RuntimeNodeKind {
-    SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput, Gain
+    SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput, Gain,
+    AudioClip, MidiClip
 };
 enum class RuntimeConnectionKind { Audio, Midi };
 

@@ -109,17 +109,28 @@ dsp:drumgen a trn:PluginProfile ;
     trn:requires trn:HostTransport ;
     trn:genre "Breakbeat", "Amen", "Jungle", "Hip Hop", "Jazz", "Rock", "Dub" ;
     trn:conductorChannelParam "conductor_ch" ;
-    trn:recommendedBefore dsp:drumkit ;
+    trn:recommendedBefore dsp:drumkit, dsp:campione, dsp:gater ;
     trn:caution "The stereo audio output is intentionally silent compatibility output; connect its MIDI output to an instrument." .
 
 dsp:drumkit a trn:PluginProfile ;
     rdfs:label "DrumKit" ;
-    rdfs:comment "Stereo synthesised drum instrument and natural sound source for DrumGen and Xoxolo." ;
+    rdfs:comment "Stereo synthesised drum instrument and natural sound source for DrumGen, Xoxolo, and Polymeter. Can run in parallel with a Campione sample layer for hybrid real-plus-synth drum buses." ;
     trn:bundleName "drumkit.vst3" ;
     trn:vendor "danja" ;
     trn:role trn:Instrument, trn:DrumInstrument ;
     trn:accepts trn:Midi, trn:DrumMidi ;
-    trn:produces trn:Audio .
+    trn:produces trn:Audio ;
+    trn:recommendedAfter dsp:drumgen .
+
+dsp:campione a trn:PluginProfile ;
+    rdfs:label "Campione" ;
+    rdfs:comment "Zone-based sample instrument. Each zone maps a WAV file to a MIDI note range with an optional root-note pitch shift and loop points. Zones and parameters are stored as Turtle RDF patch files and can be configured at runtime via MCP." ;
+    trn:bundleName "campione.vst3" ;
+    trn:vendor "danja" ;
+    trn:role trn:Instrument, trn:Sampler ;
+    trn:accepts trn:Midi, trn:Audio ;
+    trn:produces trn:Audio ;
+    trn:caution "Zone state is not embedded in the VST3 chunk; load the patch file explicitly after adding a Campione node. Multiple Campione instances in one session share the MCP server on port 7220 — save and reload patches per instance to keep configurations distinct." .
 
 dsp:cadence a trn:PluginProfile ;
     rdfs:label "Cadence" ;

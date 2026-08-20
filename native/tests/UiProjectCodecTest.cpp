@@ -38,7 +38,7 @@ int main() {
     project.midiMappings = {{"master-gain", 0, -1, 19, true},
                             {"drumgen", 42, 0, 23, false}};
     const auto encoded = transmission::encodeUiProject(project);
-    assert(encoded.starts_with("TRANSMISSION_UI\t6\n"));
+    assert(encoded.starts_with("TRANSMISSION_UI\t7\n"));
     transmission::UiProject decoded;
     std::string error;
     assert(transmission::decodeUiProject(encoded, decoded, error));

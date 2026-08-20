@@ -97,9 +97,16 @@ std::unique_ptr<RoutedAudioGraph> GraphRuntimeCompiler::compile(
         if ((!node.state.component.empty() ||
              !node.state.controller.empty()) &&
             !graph->restoreProcessorState(node.id, node.state, error)) {
-            if (error.empty())
-                error = "unable to restore processor state: " + node.id;
-            return nullptr;
+            // Plugin rejected its saved state — log and continue with default.
+            // restoreState re-activates the processor so it remains ready().
+            if (!graph->processorReady(node.id)) {
+                if (error.empty())
+                    error = "unable to restore processor state: " + node.id;
+                return nullptr;
+            }
+            fprintf(stderr, "Warning: discarding saved state for %s: %s\n",
+                    node.id.c_str(), error.c_str());
+            error.clear();
         }
         for (const auto& parameter : node.parameters) {
             if (!graph->setParameter(node.id, parameter.id,

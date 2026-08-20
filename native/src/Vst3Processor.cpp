@@ -341,6 +341,24 @@ bool Vst3Processor::restoreState(const ProcessorState& state,
         impl_->component->setActive(false);
         impl_->active = false;
     }
+    // Re-activate the plugin in its current (default) state and return false
+    // so the caller can decide to continue without the saved state.
+    auto reactivateDefault = [this, &error]() -> bool {
+        if (impl_->component->setActive(true) != Steinberg::kResultTrue) {
+            error += " — component reactivation also failed";
+            return false;
+        }
+        impl_->active = true;
+        const auto r = impl_->processor->setProcessing(true);
+        if (r != Steinberg::kResultOk && r != Steinberg::kNotImplemented &&
+            r != Steinberg::kInvalidArgument) {
+            error += " — processor reactivation also failed";
+            return false;
+        }
+        impl_->processing = true;
+        return false; // saved state was not applied
+    };
+
     if (!state.component.empty()) {
         Steinberg::MemoryStream stream(
             const_cast<std::uint8_t*>(state.component.data()),
@@ -348,7 +366,7 @@ bool Vst3Processor::restoreState(const ProcessorState& state,
         if (impl_->component->setState(&stream) !=
             Steinberg::kResultTrue) {
             error = "VST3 component rejected saved state";
-            return false;
+            return reactivateDefault();
         }
         if (impl_->controller) {
             stream.seek(0, Steinberg::IBStream::kIBSeekSet, nullptr);
@@ -356,7 +374,7 @@ bool Vst3Processor::restoreState(const ProcessorState& state,
                     Steinberg::kResultTrue &&
                 !state.controller.empty()) {
                 error = "VST3 controller rejected component state";
-                return false;
+                return reactivateDefault();
             }
         }
     }
@@ -367,7 +385,7 @@ bool Vst3Processor::restoreState(const ProcessorState& state,
         if (impl_->controller->setState(&stream) !=
             Steinberg::kResultTrue) {
             error = "VST3 controller rejected saved state";
-            return false;
+            return reactivateDefault();
         }
     }
     if (impl_->component->setActive(true) != Steinberg::kResultTrue) {

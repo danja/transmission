@@ -1,9 +1,15 @@
 #!/usr/bin/env node
 
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { writeSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { parsePluginProfiles } from '../src/rdf/PluginProfileRdf.js'
 import { Graph } from '../src/model/Graph.js'
 import { ProjectSession } from '../src/session/ProjectSession.js'
+
+const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 
 const BASE = 'http://purl.org/stuff/transmissions/'
 const [command, filePath, interchangePath] = process.argv.slice(2)
@@ -38,7 +44,7 @@ try {
   } else {
     await readFile(filePath, 'utf8')
     const session = await ProjectSession.load(filePath)
-    writeAll(1, encodeProject(session))
+    writeAll(1, encodeProject(session, await loadProfilePaths()))
   }
 } catch (error) {
   writeSync(2, `${error instanceof Error ? error.message : String(error)}\n`)
@@ -220,7 +226,7 @@ function decodeProject(text) {
   return project
 }
 
-function encodeProject(session) {
+function encodeProject(session, profilePaths = new Map()) {
   const graph = session.graph
   const transport = session.transport.toJSON()
   const lines = [
@@ -236,14 +242,14 @@ function encodeProject(session) {
   }
   for (const node of graph.nodes.values()) {
     const type = shortId(node.type)
-    const kind = {
+    let kind = {
       AudioInput: 0, AudioOutput: 1, PassThrough: 2,
       VST3Plugin: 3, MidiInput: 4, MidiOutput: 5, Gain: 6,
       AudioClipNode: 7, MidiClipNode: 8
     }[type]
-    if (kind === undefined) throw new Error(`Unsupported native UI node type: ${node.type}`)
+    if (kind === undefined) kind = 3
     const settingsKey = (kind === 4 || kind === 5) ? 'externalPort' : 'pluginPath'
-    const resource = firstSetting(node.settings, settingsKey)
+    const resource = firstSetting(node.settings, settingsKey) || (kind === 3 ? (profilePaths.get(node.type) ?? '') : '')
     lines.push([
       'NODE', hexEncode(shortId(node.id)), hexEncode(node.label), kind,
       node.ports.audioInputs, node.ports.audioOutputs,
@@ -296,6 +302,22 @@ function encodeProject(session) {
   }
   lines.push('END')
   return `${lines.join('\n')}\n`
+}
+
+async function loadProfilePaths() {
+  const map = new Map()
+  const profileDir = join(REPO_ROOT, 'profiles')
+  try {
+    const files = (await readdir(profileDir)).filter(f => f.endsWith('.ttl'))
+    for (const file of files) {
+      const profiles = await parsePluginProfiles(await readFile(join(profileDir, file), 'utf8'))
+      for (const profile of profiles) {
+        if (profile.id && profile.bundleName)
+          map.set(profile.id, join(homedir(), '.vst3', profile.bundleName))
+      }
+    }
+  } catch { /* profiles dir unavailable — skip resolution */ }
+  return map
 }
 
 function firstSetting(settings, name) {

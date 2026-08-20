@@ -61,7 +61,7 @@ describe('native UI Turtle project helper', () => {
     expect(turtle).toContain(':controller 19')
 
     const restored = await runHelper('load', filePath)
-    expect(restored).toContain('TRANSMISSION_UI\t6')
+    expect(restored).toContain('TRANSMISSION_UI\t7')
     expect(restored).toContain('TRANSPORT\t132\t8\t1')
     expect(restored).toContain(`NODE\t${hex('drumgen')}`)
     expect(restored).toContain(`EDGE\t${hex('drumgen')}\t${hex('drumkit')}\t1\t0\t0`)
@@ -75,6 +75,43 @@ describe('native UI Turtle project helper', () => {
     expect(restored).toContain(`MIDI_MAP\t${hex('drumgen')}\t42\t0\t23\t0`)
     expect(restored).toContain(`NOTE\t${hex('intro')}\t0.5\t0.25\t36\t100\t9`)
     expect(restored).toContain(`GAIN_POINT\t${hex('master-gain')}\t16\t-120\t1`)
+  }, 15_000)
+
+  it('encodes plugin-profile-URI and urn:vst3: typed nodes as VST3Plugin (kind 3)', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'transmission-native-ui-'))
+    temporaryDirectories.push(directory)
+    const filePath = join(directory, 'campione.ttl')
+    await writeFile(filePath, [
+      '@prefix : <http://purl.org/stuff/transmissions/> .',
+      '@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .',
+      ':main a :Transmission ;',
+      '    <http://www.w3.org/2000/01/rdf-schema#label> "Test" ;',
+      '    :tempoMap ( [ :atBeat 0 ; :bpm 120 ] ) ;',
+      '    :loopStart 0 ; :loopEnd 16 ; :loopEnabled false ;',
+      '    :systemInputConnections ( "system:capture_1" "system:capture_2" ) ;',
+      '    :systemOutputConnections ( "system:playback_1" "system:playback_2" ) ;',
+      '    :pipe ( :system-input :system-output :campione :drumgen ) ;',
+      '    :connections ( [ :from :campione ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] ) .',
+      ':system-input a :AudioInput ;',
+      '    <http://www.w3.org/2000/01/rdf-schema#label> "System Input" ;',
+      '    :audioOutputs 2 ; :midiOutputs 1 ; :editorX 20 ; :editorY 70 .',
+      ':system-output a :AudioOutput ;',
+      '    <http://www.w3.org/2000/01/rdf-schema#label> "System Output" ;',
+      '    :audioInputs 2 ; :midiInputs 1 ; :editorX 600 ; :editorY 181 .',
+      ':campione a <urn:vst3:ABCDEF0123456789ABCDEF0123456789> ;',
+      '    <http://www.w3.org/2000/01/rdf-schema#label> "Campione" ;',
+      '    :audioOutputs 2 ; :midiInputs 1 ; :editorX 300 ; :editorY 190 ;',
+      '    :settings [ :pluginPath "/fake/campione.vst3" ] .',
+      ':drumgen a <http://purl.org/stuff/transmissions/plugins/downspout/drumgen> ;',
+      '    <http://www.w3.org/2000/01/rdf-schema#label> "DrumGen" ;',
+      '    :midiOutputs 1 ; :editorX 100 ; :editorY 190 .',
+      ''
+    ].join('\n'))
+
+    const output = await runHelper('load', filePath)
+    expect(output).toContain(`NODE\t${hex('campione')}\t${hex('Campione')}\t3\t`)
+    expect(output).toContain(hex('/fake/campione.vst3'))
+    expect(output).toContain(`NODE\t${hex('drumgen')}\t${hex('DrumGen')}\t3\t`)
   }, 15_000)
 
   it('rejects a Turtle file without a Transmission project', async () => {

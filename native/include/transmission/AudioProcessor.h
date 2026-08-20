@@ -71,6 +71,8 @@ public:
     }
     /** Called on the control thread when the device block size changes post-activation. */
     virtual bool reconfigure(std::size_t /*frames*/, std::string& /*error*/) { return true; }
+    /** Returns true when the processor is fully initialised and ready to process audio. */
+    virtual bool ready() const noexcept { return true; }
 };
 
 class PassThroughProcessor final : public AudioProcessor {

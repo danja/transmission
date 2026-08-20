@@ -662,6 +662,13 @@ bool RoutedAudioGraph::restoreProcessorState(
     return node->processor->restoreState(state, error);
 }
 
+bool RoutedAudioGraph::processorReady(const std::string& nodeId) const noexcept {
+    const auto node = std::find_if(
+        nodes_.begin(), nodes_.end(),
+        [&nodeId](const auto& candidate) { return candidate.id == nodeId; });
+    return node != nodes_.end() && node->processor->ready();
+}
+
 void RoutedAudioGraph::setProcessContext(const AudioProcessContext& context) noexcept {
     processContext_ = context;
     for (auto& node : nodes_) node.processor->setProcessContext(context);

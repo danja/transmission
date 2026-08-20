@@ -28,7 +28,7 @@ public:
     bool initialize(const std::string& modulePath, std::size_t inputChannels,
                     std::size_t outputChannels, std::size_t frames,
                     double sampleRate, std::string& error);
-    bool ready() const noexcept;
+    bool ready() const noexcept override;
     const std::string& pluginName() const noexcept;
 
     /** Queue a normalized parameter value for the next process block. */

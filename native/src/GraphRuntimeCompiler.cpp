@@ -97,9 +97,12 @@ std::unique_ptr<RoutedAudioGraph> GraphRuntimeCompiler::compile(
         if ((!node.state.component.empty() ||
              !node.state.controller.empty()) &&
             !graph->restoreProcessorState(node.id, node.state, error)) {
-            // Plugin rejected its saved state — log and continue with default.
-            // restoreState re-activates the processor so it remains ready().
-            if (!graph->processorReady(node.id)) {
+            // Vst3Processor re-activates to default and returns false when the
+            // plugin rejects stale state (e.g. after a plugin update). Treat
+            // that as a soft warning. Any other failure (wrong node type, hard
+            // activation error) is fatal.
+            if (!graph->processorReady(node.id) ||
+                error.find("rejected") == std::string::npos) {
                 if (error.empty())
                     error = "unable to restore processor state: " + node.id;
                 return nullptr;

@@ -102,6 +102,7 @@ public:
     bool restoreProcessorState(const std::string& nodeId,
                                const ProcessorState& state,
                                std::string& error);
+    bool processorReady(const std::string& nodeId) const noexcept;
     bool configureProcessingThreads(std::size_t requestedThreads);
 
     std::size_t nodeCount() const noexcept { return nodes_.size(); }

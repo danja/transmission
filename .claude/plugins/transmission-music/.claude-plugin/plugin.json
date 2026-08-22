@@ -1,0 +1,7 @@
+{
+  "name": "transmission-music",
+  "description": "Patch authoring skills for Transmission + downspout plugins — plugin selection, signal routing, CC bus wiring, and safe chain ordering",
+  "author": {
+    "name": "Danny Ayers"
+  }
+}

@@ -1,0 +1,25 @@
+title: Transmission
+description: Generative audio workstation for Linux — VST3 host with MCP control
+remote_theme: just-the-docs/just-the-docs
+color_scheme: light
+search_enabled: true
+
+plugins:
+  - jekyll-remote-theme
+  - jekyll-seo-tag
+
+exclude:
+  - todo.md
+  - plan.md
+  - temp.md
+  - gen-omega.md
+  - gen-omega-progress.md
+  - my-setup
+  - mcp-live.md
+  - starter.md
+  - release-bundle.md
+  - releasing.md
+
+footer_content: "Transmission — <a href=\"https://github.com/danja/transmission/blob/main/LICENSE\">MIT License</a>"
+back_to_top: true
+back_to_top_text: "Back to top"

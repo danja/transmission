@@ -1,3 +1,9 @@
+---
+layout: default
+title: Architecture
+nav_order: 5
+---
+
 # Transmission architecture
 
 Transmission is a Generative Audio Workstation for Linux, implemented as a

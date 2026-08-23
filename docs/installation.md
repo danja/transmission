@@ -1,3 +1,9 @@
+---
+layout: default
+title: Installation
+nav_order: 2
+---
+
 # Installing and building Transmission
 
 Transmission is currently distributed as source and targets Linux desktops

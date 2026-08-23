@@ -1,3 +1,9 @@
+---
+layout: default
+title: Plugin System
+nav_order: 6
+---
+
 # RDF plugin catalogue
 
 Transmission keeps two complementary kinds of plugin knowledge:

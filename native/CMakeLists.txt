@@ -61,21 +61,16 @@ if(TRANSMISSION_WITH_NAPI)
   # Windows layout: node.exe and include/ are siblings in the install root.
   # Unix layout:    node is in bin/; include/ is one level above bin/.
   if(NOT NODE_API_INCLUDE_DIR)
-    execute_process(
-      COMMAND "${_transmission_node_exe}" -e
-        "const p=require('path'),d=p.dirname(process.execPath);process.stdout.write(p.join(d,'include','node'))"
-      OUTPUT_VARIABLE _node_inc_win OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET
+    get_filename_component(_node_bin_dir "${_transmission_node_exe}" DIRECTORY)
+    foreach(_candidate IN ITEMS
+        "${_node_bin_dir}/include/node"
+        "${_node_bin_dir}/../include/node"
     )
-    execute_process(
-      COMMAND "${_transmission_node_exe}" -e
-        "const p=require('path'),d=p.dirname(process.execPath);process.stdout.write(p.join(d,'..','include','node'))"
-      OUTPUT_VARIABLE _node_inc_unix OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET
-    )
-    if(EXISTS "${_node_inc_win}/node_api.h")
-      set(NODE_API_INCLUDE_DIR "${_node_inc_win}" CACHE PATH "Directory containing node_api.h")
-    elseif(EXISTS "${_node_inc_unix}/node_api.h")
-      set(NODE_API_INCLUDE_DIR "${_node_inc_unix}" CACHE PATH "Directory containing node_api.h")
-    endif()
+      if(EXISTS "${_candidate}/node_api.h")
+        set(NODE_API_INCLUDE_DIR "${_candidate}" CACHE PATH "Directory containing node_api.h")
+        break()
+      endif()
+    endforeach()
   endif()
   find_path(NODE_API_INCLUDE_DIR node_api.h PATHS /usr/include/node REQUIRED)
   add_library(transmission_native MODULE src/napi_bridge.cpp)

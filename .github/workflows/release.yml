@@ -204,14 +204,11 @@ jobs:
       - name: Configure the native release
         shell: bash
         run: |
-          node_include="$(node -p \
-            "require('path').join(require('path').dirname(process.execPath),'include','node')")"
           cmake -S native -B native/build-release \
             -DCMAKE_BUILD_TYPE=Release \
             -DTRANSMISSION_BUILD_TESTS=ON \
             -DTRANSMISSION_WITH_NAPI=ON \
             -DTRANSMISSION_WITH_VST3=ON \
-            -DNODE_API_INCLUDE_DIR="$node_include" \
             -DVST3_SDK_ROOT="$RUNNER_TEMP/vst3sdk"
 
       - name: Build and test the native release

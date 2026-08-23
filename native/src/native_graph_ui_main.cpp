@@ -4548,7 +4548,7 @@ void activate(GtkApplication* application, gpointer) {
     if (pingLiveServer(*view)) {
         logConsole(*view, "Connected to live server at " + view->liveServerUrl);
         updateWindowTitle(*view);
-    } else {
+    } else if (!std::getenv("TRANSMISSION_NO_LIVE_SERVER")) {
         launchLiveServer(*view);
     }
     view->liveServerPollTimer = g_timeout_add(500, liveServerPollTick, view);

@@ -15,4 +15,6 @@ fi
 
 export GDK_BACKEND=x11
 export TRANSMISSION_ROOT="$ROOT_DIR"
+# Suppress the auto-spawned live server; run transmission-live.js separately if needed.
+export TRANSMISSION_NO_LIVE_SERVER=1
 exec "$APP" "$@"

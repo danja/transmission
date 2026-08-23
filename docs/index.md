@@ -14,7 +14,7 @@ Transmission hosts VST3 plugins in a directed graph, routes typed MIDI and audio
 
 ![Transmission graph editor](transmission.jpeg)
 
-The patch above was generated from a prompt using Claude Code, for a description of the procedure used see [Crocotta](https://danja.github.io/transmission/crocotta.html)
+The patch above was generated from a prompt using Claude Code, for a description of the procedure used see [Crocotta](https://danja.github.io/transmission/crocotta.html). You can listen to the result on [YouTube](https://youtube.com/shorts/4fgfn_XeoXo).
 
 ## Features
 

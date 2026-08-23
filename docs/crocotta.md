@@ -1,5 +1,7 @@
 # Crocotta
 
+[Transmission test : Crocotta](https://youtube.com/shorts/4fgfn_XeoXo) on YouTube
+
 ## Initial Prompt
 
 The task is to create a piece of generative music representing the crocotta, a mythical beast. This will be achieved by first reading about the characteristics of this creature, comparing them with all the plugins available in Downspout and selecting those which might be considered a potential match on a very abstract level. There will also need to be a Conductor plugin and as many of the midi generating plugins as necessary, together with instruments and effects. The piece should have a beginning, middle and end. Include in the plugins at least one instance of Campione. 

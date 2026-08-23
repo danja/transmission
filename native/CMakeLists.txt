@@ -56,6 +56,23 @@ if(TRANSMISSION_WITH_JACK)
 endif()
 
 if(TRANSMISSION_WITH_NAPI)
+  find_program(_transmission_node_exe node REQUIRED)
+  # Auto-detect node_api.h from the node executable.
+  # Windows layout: include/ is a sibling of node.exe (0 levels above dirname).
+  # Unix layout:    node is in bin/; include/ is one level above bin/ (1 level up).
+  foreach(_rel IN ITEMS "" "..")
+    execute_process(
+      COMMAND "${_transmission_node_exe}" -e
+        "const p=require('path'),d=p.dirname(process.execPath);process.stdout.write(p.join(d,'${_rel}','include','node'))"
+      OUTPUT_VARIABLE _transmission_node_inc
+      OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET
+    )
+    if(EXISTS "${_transmission_node_inc}/node_api.h")
+      set(NODE_API_INCLUDE_DIR "${_transmission_node_inc}"
+          CACHE PATH "Directory containing node_api.h")
+      break()
+    endif()
+  endforeach()
   find_path(NODE_API_INCLUDE_DIR node_api.h PATHS /usr/include/node REQUIRED)
   add_library(transmission_native MODULE src/napi_bridge.cpp)
   target_include_directories(transmission_native PRIVATE "${NODE_API_INCLUDE_DIR}" include)

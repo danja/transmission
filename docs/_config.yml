@@ -1,8 +1,13 @@
 title: Transmission
 description: Generative audio workstation for Linux — VST3 host with MCP control
 remote_theme: just-the-docs/just-the-docs
-color_scheme: light
+color_scheme: dark
 search_enabled: true
+
+aux_links:
+  "GitHub ↗":
+    - "https://github.com/danja/transmission"
+aux_links_new_tab: true
 
 plugins:
   - jekyll-remote-theme

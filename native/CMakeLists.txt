@@ -106,6 +106,12 @@ if(TRANSMISSION_WITH_VST3)
     target_link_libraries(transmission_vst3_inspector PRIVATE dl)
   endif()
   target_compile_features(transmission_vst3_inspector PRIVATE cxx_std_17)
+  if(MSVC)
+    # module_win32.cpp uses path.u8string() expecting std::string (C++17 behaviour).
+    # In C++20 MSVC, u8string() returns std::u8string (char8_t), breaking the call.
+    # /Zc:char8_t- restores the C++17 semantics for this target only.
+    target_compile_options(transmission_vst3_inspector PRIVATE /Zc:char8_t-)
+  endif()
   set_target_properties(transmission_vst3_inspector sdk_hosting sdk_common base pluginterfaces
                         PROPERTIES POSITION_INDEPENDENT_CODE ON)
   add_executable(transmission_vst3_inspect src/vst3_inspect_main.cpp)

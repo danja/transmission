@@ -201,6 +201,14 @@ jobs:
           test "$(git -C "$RUNNER_TEMP/vst3sdk" rev-parse HEAD)" = \
             "$VST3_SDK_COMMIT"
 
+      - name: Download Node.js development headers
+        shell: bash
+        run: |
+          ver="$(node --version | tr -d 'v\r\n')"
+          curl -fsSL "https://nodejs.org/dist/v${ver}/node-v${ver}-headers.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP"
+          echo "NODE_API_INCLUDE_DIR=$RUNNER_TEMP/node-v${ver}/include/node" >> "$GITHUB_ENV"
+
       - name: Configure the native release
         shell: bash
         run: |
@@ -209,6 +217,7 @@ jobs:
             -DTRANSMISSION_BUILD_TESTS=ON \
             -DTRANSMISSION_WITH_NAPI=ON \
             -DTRANSMISSION_WITH_VST3=ON \
+            -DNODE_API_INCLUDE_DIR="$NODE_API_INCLUDE_DIR" \
             -DVST3_SDK_ROOT="$RUNNER_TEMP/vst3sdk"
 
       - name: Build and test the native release

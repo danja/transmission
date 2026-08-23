@@ -61,18 +61,28 @@ if(TRANSMISSION_WITH_NAPI)
   # Windows layout: node.exe and include/ are siblings in the install root.
   # Unix layout:    node is in bin/; include/ is one level above bin/.
   if(NOT NODE_API_INCLUDE_DIR)
-    get_filename_component(_node_bin_dir "${_transmission_node_exe}" DIRECTORY)
-    foreach(_candidate IN ITEMS
-        "${_node_bin_dir}/include/node"
-        "${_node_bin_dir}/../include/node"
+    # Ask node where its own headers are; fs.existsSync validates the path exists.
+    execute_process(
+      COMMAND "${_transmission_node_exe}" -e
+        "var fs=require('fs'),p=require('path'),d=p.dirname(process.execPath);\
+[p.join(d,'include','node'),p.join(d,'..','include','node'),\
+'/usr/include/node','/usr/local/include/node'].some(function(c){\
+if(fs.existsSync(p.join(c,'node_api.h'))){process.stdout.write(c);return true;}});"
+      OUTPUT_VARIABLE NODE_API_INCLUDE_DIR
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET
     )
-      if(EXISTS "${_candidate}/node_api.h")
-        set(NODE_API_INCLUDE_DIR "${_candidate}" CACHE PATH "Directory containing node_api.h")
-        break()
-      endif()
-    endforeach()
+    if(NODE_API_INCLUDE_DIR)
+      set(NODE_API_INCLUDE_DIR "${NODE_API_INCLUDE_DIR}"
+          CACHE PATH "Directory containing node_api.h")
+    endif()
   endif()
-  find_path(NODE_API_INCLUDE_DIR node_api.h PATHS /usr/include/node REQUIRED)
+  if(NOT NODE_API_INCLUDE_DIR)
+    message(FATAL_ERROR
+      "Cannot find node_api.h. On Windows, download the Node.js headers tarball "
+      "from nodejs.org/dist and pass -DNODE_API_INCLUDE_DIR=<dir/include/node>. "
+      "node executable: ${_transmission_node_exe}")
+  endif()
   add_library(transmission_native MODULE src/napi_bridge.cpp)
   target_include_directories(transmission_native PRIVATE "${NODE_API_INCLUDE_DIR}" include)
   target_link_libraries(transmission_native PRIVATE transmission_engine)

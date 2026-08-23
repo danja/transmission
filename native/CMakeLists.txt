@@ -57,22 +57,26 @@ endif()
 
 if(TRANSMISSION_WITH_NAPI)
   find_program(_transmission_node_exe node REQUIRED)
-  # Auto-detect node_api.h from the node executable.
-  # Windows layout: include/ is a sibling of node.exe (0 levels above dirname).
-  # Unix layout:    node is in bin/; include/ is one level above bin/ (1 level up).
-  foreach(_rel IN ITEMS "" "..")
+  # Auto-detect node_api.h from the node executable if not already provided.
+  # Windows layout: node.exe and include/ are siblings in the install root.
+  # Unix layout:    node is in bin/; include/ is one level above bin/.
+  if(NOT NODE_API_INCLUDE_DIR)
     execute_process(
       COMMAND "${_transmission_node_exe}" -e
-        "const p=require('path'),d=p.dirname(process.execPath);process.stdout.write(p.join(d,'${_rel}','include','node'))"
-      OUTPUT_VARIABLE _transmission_node_inc
-      OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET
+        "const p=require('path'),d=p.dirname(process.execPath);process.stdout.write(p.join(d,'include','node'))"
+      OUTPUT_VARIABLE _node_inc_win OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET
     )
-    if(EXISTS "${_transmission_node_inc}/node_api.h")
-      set(NODE_API_INCLUDE_DIR "${_transmission_node_inc}"
-          CACHE PATH "Directory containing node_api.h")
-      break()
+    execute_process(
+      COMMAND "${_transmission_node_exe}" -e
+        "const p=require('path'),d=p.dirname(process.execPath);process.stdout.write(p.join(d,'..','include','node'))"
+      OUTPUT_VARIABLE _node_inc_unix OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET
+    )
+    if(EXISTS "${_node_inc_win}/node_api.h")
+      set(NODE_API_INCLUDE_DIR "${_node_inc_win}" CACHE PATH "Directory containing node_api.h")
+    elseif(EXISTS "${_node_inc_unix}/node_api.h")
+      set(NODE_API_INCLUDE_DIR "${_node_inc_unix}" CACHE PATH "Directory containing node_api.h")
     endif()
-  endforeach()
+  endif()
   find_path(NODE_API_INCLUDE_DIR node_api.h PATHS /usr/include/node REQUIRED)
   add_library(transmission_native MODULE src/napi_bridge.cpp)
   target_include_directories(transmission_native PRIVATE "${NODE_API_INCLUDE_DIR}" include)

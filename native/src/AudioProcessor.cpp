@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 namespace transmission {
 
@@ -150,8 +151,8 @@ void GainProcessor::process(const float* const* inputs, float* const* outputs,
     if (!inputs || !outputs) return;
     const auto gainDb = gainDb_.load(std::memory_order_acquire);
     const auto pan = pan_.load(std::memory_order_acquire);
-    const auto leftBalance = pan <= 0.0 ? 1.0 : std::cos(pan * M_PI_2);
-    const auto rightBalance = pan >= 0.0 ? 1.0 : std::cos(-pan * M_PI_2);
+    const auto leftBalance = pan <= 0.0 ? 1.0 : std::cos(pan * std::numbers::pi / 2.0);
+    const auto rightBalance = pan >= 0.0 ? 1.0 : std::cos(-pan * std::numbers::pi / 2.0);
     const auto beatsPerSample = context_.playing && sampleRate_ > 0.0
         ? context_.tempo / (60.0 * sampleRate_) : 0.0;
     for (std::size_t frame = 0; frame < frames; ++frame) {

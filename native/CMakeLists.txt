@@ -61,6 +61,11 @@ if(TRANSMISSION_WITH_NAPI)
   target_include_directories(transmission_native PRIVATE "${NODE_API_INCLUDE_DIR}" include)
   target_link_libraries(transmission_native PRIVATE transmission_engine)
   set_target_properties(transmission_native PROPERTIES PREFIX "" SUFFIX ".node")
+  if(APPLE)
+    # napi_* symbols are provided by the Node.js binary at load time; macOS ld
+    # requires explicit permission to leave them unresolved at link time.
+    target_link_options(transmission_native PRIVATE -undefined dynamic_lookup)
+  endif()
 endif()
 
 if(TRANSMISSION_WITH_VST3)

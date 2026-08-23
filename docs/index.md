@@ -2,7 +2,7 @@
 layout: default
 title: Home
 nav_order: 1
-description: Transmission — Generative Audio Workstation for Linux
+description: Transmission — Generative Audio Workstation
 permalink: /
 ---
 

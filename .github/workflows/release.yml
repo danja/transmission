@@ -205,9 +205,10 @@ jobs:
         shell: bash
         run: |
           ver="$(node --version | tr -d 'v\r\n')"
+          runner_temp="${RUNNER_TEMP//\\//}"
           curl -fsSL "https://nodejs.org/dist/v${ver}/node-v${ver}-headers.tar.gz" \
-            | tar -xz -C "$RUNNER_TEMP"
-          echo "NODE_API_INCLUDE_DIR=$RUNNER_TEMP/node-v${ver}/include/node" >> "$GITHUB_ENV"
+            | tar -xz -C "$runner_temp"
+          echo "NODE_API_INCLUDE_DIR=$runner_temp/node-v${ver}/include/node" >> "$GITHUB_ENV"
 
       - name: Configure the native release
         shell: bash

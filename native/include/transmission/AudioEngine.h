@@ -143,8 +143,8 @@ private:
     std::array<MidiEvent, maxMidiEventsPerBlock> midiControlQueue_{};
     std::atomic<std::size_t> midiQueueRead_{0};
     std::atomic<std::size_t> midiQueueWrite_{0};
-    std::array<RenderInputBlock, renderQueueCapacity> renderInputQueue_;
-    std::array<RenderOutputBlock, renderQueueCapacity> renderOutputQueue_;
+    std::vector<RenderInputBlock> renderInputQueue_{renderQueueCapacity};
+    std::vector<RenderOutputBlock> renderOutputQueue_{renderQueueCapacity};
     std::atomic<std::size_t> renderInputRead_{0};
     std::atomic<std::size_t> renderInputWrite_{0};
     std::atomic<std::size_t> renderOutputRead_{0};

@@ -91,6 +91,22 @@ if(fs.existsSync(p.join(c,'node_api.h'))){process.stdout.write(c);return true;}}
     # napi_* symbols are provided by the Node.js binary at load time; macOS ld
     # requires explicit permission to leave them unresolved at link time.
     target_link_options(transmission_native PRIVATE -undefined dynamic_lookup)
+  elseif(WIN32)
+    # On Windows, napi_* symbols are resolved through node.lib (the node.exe import library).
+    # Pass -DNODE_API_LIB=<path/to/node.lib> or place node.lib beside node.exe.
+    set(NODE_API_LIB "" CACHE FILEPATH "Path to node.lib (Windows N-API import library)")
+    if(NODE_API_LIB)
+      target_link_libraries(transmission_native PRIVATE "${NODE_API_LIB}")
+    else()
+      get_filename_component(_node_bin_dir "${_transmission_node_exe}" DIRECTORY)
+      if(EXISTS "${_node_bin_dir}/node.lib")
+        target_link_libraries(transmission_native PRIVATE "${_node_bin_dir}/node.lib")
+      else()
+        message(FATAL_ERROR
+          "Cannot find node.lib. Download it from nodejs.org/dist/v<ver>/win-x64/node.lib "
+          "and pass -DNODE_API_LIB=<path>.")
+      endif()
+    endif()
   endif()
 endif()
 

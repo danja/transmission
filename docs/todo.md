@@ -65,17 +65,6 @@ UI additions:
 - MIDI events from all tracks emitted on single output port (original channel bytes preserved); loop wrap-around handled per block
 - Known limitation: per-track output port routing requires extending RoutedAudioGraph MIDI port API (future work)
 
-## VST3 nodes without a profile — implemented (2026-08-20)
-
-- Nodes typed with a raw `urn:vst3:` class ID URI (no curated profile) now encode as
-  kind 3 (VST3Plugin) in the native UI interchange instead of throwing
-  "Unsupported native UI node type".
-- Fix: one-line guard in `encodeProject` (`scripts/native-ui-project.js`): if kind lookup
-  returns undefined and `node.type` starts with `urn:vst3:`, fall back to kind 3.
-- The C++ UI already renders kind-3 nodes generically using the plugin path for topology
-  inspection (name, I/O counts), so no native changes were needed.
-- Test added to `tests/rdf/NativeUiProject.test.js` (also fixed stale `TRANSMISSION_UI\t6`
-  assertion — codec is now v7).
 
 ## Engine features
 

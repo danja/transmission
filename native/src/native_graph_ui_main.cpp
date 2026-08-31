@@ -41,6 +41,7 @@
 #include <vector>
 #include <signal.h>
 #include <unistd.h>
+#include <optional>
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
 #include <curl/curl.h>
 #endif
@@ -154,6 +155,7 @@ struct GraphView {
     GtkWidget* recentMenu = nullptr;
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
     std::string liveServerUrl{"http://127.0.0.1:7878"};
+    bool mcpServerEnabled = true;
     bool liveServerAvailable = false;
     int liveServerRevision = -1;
     std::string liveServerFilePath;
@@ -2227,13 +2229,30 @@ void loadConfig(GraphView& view) {
     std::ifstream f(configFilePath());
     std::string line;
     std::string paths;
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    std::optional<bool> mcpServerEnabled;
+#endif
     while (std::getline(f, line)) {
         if (line.rfind("PLUGIN_PATH\t", 0) == 0) {
             if (!paths.empty()) paths += '\n';
             paths += line.substr(12);
+            continue;
         }
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+        if (line == "MCP_SERVER\ton") {
+            mcpServerEnabled = true;
+            continue;
+        }
+        if (line == "MCP_SERVER\toff") {
+            mcpServerEnabled = false;
+            continue;
+        }
+#endif
     }
     if (!paths.empty()) view.pluginSearchPath = paths;
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    if (mcpServerEnabled.has_value()) view.mcpServerEnabled = *mcpServerEnabled;
+#endif
 }
 
 void saveConfig(const GraphView& view) {
@@ -2245,6 +2264,9 @@ void saveConfig(const GraphView& view) {
     std::string line;
     while (std::getline(ss, line))
         if (!line.empty()) f << "PLUGIN_PATH\t" << line << '\n';
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    f << "MCP_SERVER\t" << (view.mcpServerEnabled ? "on" : "off") << '\n';
+#endif
 }
 
 std::size_t scanPlugins(GraphView& view) {
@@ -2337,6 +2359,68 @@ void pluginPathActivated(GtkMenuItem*, gpointer data) {
     }
     gtk_widget_destroy(dialog);
 }
+
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+static bool pingLiveServer(GraphView& view);
+static void launchLiveServer(GraphView& view);
+void updateWindowTitle(GraphView& view);
+
+void mcpServerSettingsActivated(GtkMenuItem*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    auto* dialog = gtk_dialog_new_with_buttons(
+        "MCP Server", GTK_WINDOW(view.window),
+        static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL |
+                                   GTK_DIALOG_DESTROY_WITH_PARENT),
+        "_Cancel", GTK_RESPONSE_CANCEL, "_Apply", GTK_RESPONSE_ACCEPT,
+        nullptr);
+    auto* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+    gtk_box_set_spacing(GTK_BOX(content), 10);
+
+    auto* enabled = GTK_TOGGLE_BUTTON(
+        gtk_check_button_new_with_label("Enable live MCP server"));
+    gtk_toggle_button_set_active(enabled, view.mcpServerEnabled);
+    gtk_box_pack_start(GTK_BOX(content), GTK_WIDGET(enabled), FALSE, FALSE, 0);
+
+    auto* explanation = gtk_label_new(
+        "When enabled, Transmission connects to the live HTTP server used by the "
+        "MCP bridge and launches it automatically if needed. Disable this to keep "
+        "the GTK editor offline.");
+    gtk_label_set_xalign(GTK_LABEL(explanation), 0.0F);
+    gtk_label_set_line_wrap(GTK_LABEL(explanation), TRUE);
+    gtk_widget_set_size_request(explanation, 460, -1);
+    gtk_box_pack_start(GTK_BOX(content), explanation, FALSE, FALSE, 0);
+
+    gtk_widget_show_all(dialog);
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        const bool nextEnabled = gtk_toggle_button_get_active(enabled);
+        if (nextEnabled != view.mcpServerEnabled) {
+            view.mcpServerEnabled = nextEnabled;
+            saveConfig(view);
+            if (!view.mcpServerEnabled) {
+                view.liveServerAvailable = false;
+                view.liveServerRevision = -1;
+                view.liveServerFilePath.clear();
+                if (view.liveServerProcess) {
+                    g_subprocess_send_signal(view.liveServerProcess, SIGTERM);
+                    g_object_unref(view.liveServerProcess);
+                    view.liveServerProcess = nullptr;
+                }
+                updateWindowTitle(view);
+                logConsole(view, "Live MCP server disabled");
+            } else {
+                if (pingLiveServer(view)) {
+                    logConsole(view, "Connected to live server at " + view.liveServerUrl);
+                    updateWindowTitle(view);
+                } else {
+                    launchLiveServer(view);
+                }
+            }
+        }
+    }
+    gtk_widget_destroy(dialog);
+}
+#endif
 
 void audioSettingsActivated(GtkMenuItem*, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
@@ -3126,6 +3210,7 @@ static void syncToLiveServer(GraphView& view, const std::string& path) {
 
 bool applyProject(GraphView&, const transmission::UiProject&, std::string&);
 transmission::UiProject captureProject(const GraphView&);
+void updateWindowTitle(GraphView& view);
 
 static void launchLiveServer(GraphView& view) {
     if (view.projectHelperPath.empty()) return;
@@ -3179,6 +3264,13 @@ static void reloadFromLiveServer(GraphView& view, const std::string& serverFileP
 
 static gboolean liveServerPollTick(gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
+    if (!view.mcpServerEnabled) {
+        if (view.liveServerAvailable) {
+            view.liveServerAvailable = false;
+            updateWindowTitle(view);
+        }
+        return G_SOURCE_CONTINUE;
+    }
     const auto status = httpGet(view.liveServerUrl + "/status");
     if (status.empty()) {
         if (view.liveServerAvailable) {
@@ -4440,12 +4532,20 @@ void activate(GtkApplication* application, gpointer) {
     auto* settingsMenu = gtk_menu_new();
     auto* audioSettingsItem =
         gtk_menu_item_new_with_mnemonic("_Audio…");
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    auto* mcpServerItem =
+        gtk_menu_item_new_with_mnemonic("_MCP Server…");
+#endif
     auto* reconnectJackItem =
         gtk_menu_item_new_with_mnemonic("_Reconnect JACK Ports");
     auto* pluginPathItem =
         gtk_menu_item_new_with_mnemonic("Plugin _Path…");
     gtk_menu_shell_append(
         GTK_MENU_SHELL(settingsMenu), audioSettingsItem);
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    gtk_menu_shell_append(
+        GTK_MENU_SHELL(settingsMenu), mcpServerItem);
+#endif
     gtk_menu_shell_append(
         GTK_MENU_SHELL(settingsMenu), reconnectJackItem);
     gtk_menu_shell_append(
@@ -4545,11 +4645,13 @@ void activate(GtkApplication* application, gpointer) {
     curl_global_init(CURL_GLOBAL_DEFAULT);
     if (const char* liveUrl = std::getenv("TRANSMISSION_LIVE_URL"))
         view->liveServerUrl = liveUrl;
-    if (pingLiveServer(*view)) {
-        logConsole(*view, "Connected to live server at " + view->liveServerUrl);
-        updateWindowTitle(*view);
-    } else if (!std::getenv("TRANSMISSION_NO_LIVE_SERVER")) {
-        launchLiveServer(*view);
+    if (view->mcpServerEnabled && !std::getenv("TRANSMISSION_NO_LIVE_SERVER")) {
+        if (pingLiveServer(*view)) {
+            logConsole(*view, "Connected to live server at " + view->liveServerUrl);
+            updateWindowTitle(*view);
+        } else {
+            launchLiveServer(*view);
+        }
     }
     view->liveServerPollTimer = g_timeout_add(500, liveServerPollTick, view);
 #endif
@@ -4569,6 +4671,10 @@ void activate(GtkApplication* application, gpointer) {
     g_signal_connect(renderMidiItem, "activate", G_CALLBACK(renderMidiActivated), view);
     g_signal_connect(audioSettingsItem, "activate",
                      G_CALLBACK(audioSettingsActivated), view);
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    g_signal_connect(mcpServerItem, "activate",
+                     G_CALLBACK(mcpServerSettingsActivated), view);
+#endif
     g_signal_connect(reconnectJackItem, "activate",
                      G_CALLBACK(reconnectJackActivated), view);
     g_signal_connect(pluginPathItem, "activate",

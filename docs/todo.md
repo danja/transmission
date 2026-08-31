@@ -94,3 +94,4 @@ Still open (Phase 3):
   same number as the previously cached revision: UI sees no change and skips reload. Fix: C++
   should treat `project_new` (filePath change to null) as a forced reload trigger, or the server
   should use a monotonically-increasing generation counter that never resets.
+- [x] Add a Settings menu option to enable or disable the live MCP server in the GTK UI.

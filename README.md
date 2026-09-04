@@ -269,7 +269,7 @@ Example MCP queries:
 - [Installation, building, MCP setup, and troubleshooting](docs/installation.md)
 - [Architecture](docs/architecture.md)
 - [RDF plugin profiles](docs/plugin-profiles.md)
-- [Open work](docs/todo.md)
+- [Open work](TODO.md)
 
 Transmission is under active development. Project files are intended to remain
 portable and inspectable, but interfaces may still evolve.

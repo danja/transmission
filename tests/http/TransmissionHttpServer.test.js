@@ -7,12 +7,15 @@ const TRN = 'http://purl.org/stuff/transmissions/'
 // ── Minimal mock control service ──────────────────────────────────────────────
 
 function mockControl(overrides = {}) {
+  const listeners = new Set()
   return {
     status: () => ({
-      revision: 1, dirty: false, projectOpen: true, engineAvailable: false,
+      revision: 1, generation: 1, dirty: false, projectOpen: true, engineAvailable: false,
       engineState: 'stopped', projectId: `${TRN}test`, filePath: null,
       transport: { running: false, tempoMap: [{ beat: 0, bpm: 120 }], positionBeats: 0 }
     }),
+    onStatusChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn) },
+    _emit: (status) => { for (const fn of listeners) fn(status) },
     projectTurtle: () => `@prefix : <${TRN}> .\n:test a :Transmission .\n`,
     diagnostics: () => ({ native: null }),
     plugins: () => ({ entries: [] }),
@@ -21,8 +24,8 @@ function mockControl(overrides = {}) {
     discoveredPluginsTurtle: () => `@prefix trn: <${TRN}> .\n`,
     describePlugin: id => { throw new Error(`Unknown plugin: ${id}`) },
     applyGraphChanges: input => ({ dryRun: input.dryRun, revision: 2, graph: {}, executionOrder: [] }),
-    startTransport: () => ({ revision: 1, projectOpen: true, dirty: false, engineAvailable: false, engineState: 'running', transport: { running: true, tempoMap: [], positionBeats: 0 } }),
-    stopTransport: () => ({ revision: 1, projectOpen: true, dirty: false, engineAvailable: false, engineState: 'stopped', transport: { running: false, tempoMap: [], positionBeats: 0 } }),
+    startTransport: () => ({ revision: 1, generation: 1, projectOpen: true, dirty: false, engineAvailable: false, engineState: 'running', transport: { running: true, tempoMap: [], positionBeats: 0 } }),
+    stopTransport: () => ({ revision: 1, generation: 1, projectOpen: true, dirty: false, engineAvailable: false, engineState: 'stopped', transport: { running: false, tempoMap: [], positionBeats: 0 } }),
     configureTransport: () => ({ revision: 2, transport: { running: false, tempoMap: [{ beat: 0, bpm: 140 }], positionBeats: 0 } }),
     setParameter: input => ({ revision: 1, nodeId: input.nodeId, parameterId: input.parameterId, value: input.value, appliedToRuntime: false }),
     newProject: def => ({ revision: 0, graph: def }),
@@ -157,5 +160,46 @@ describe('TransmissionHttpServer', () => {
   it('GET /nonexistent returns 404', async () => {
     const res = await fetch_(`${base}/nonexistent`)
     expect(res.status).toBe(404)
+  })
+
+  it('GET /events returns SSE stream with correct headers', async () => {
+    const control = mockControl()
+    const sseServer = new TransmissionHttpServer(control, { port: 0, bindAddress: '127.0.0.1' })
+    await sseServer.listen()
+    const sseBase = `http://127.0.0.1:${sseServer._server.address().port}`
+    try {
+      const events = await new Promise((resolve, reject) => {
+        const collected = []
+        const parsed = new URL(`${sseBase}/events`)
+        const req = httpRequest({ hostname: parsed.hostname, port: parsed.port, path: parsed.pathname }, res => {
+          expect(res.statusCode).toBe(200)
+          expect(res.headers['content-type']).toContain('text/event-stream')
+          res.on('data', chunk => {
+            const text = chunk.toString()
+            for (const line of text.split('\n')) {
+              if (line.startsWith('data: ')) {
+                collected.push(JSON.parse(line.slice(6)))
+              }
+            }
+            if (collected.length >= 2) {
+              req.destroy()
+              resolve(collected)
+            }
+          })
+          res.on('error', reject)
+          setTimeout(() => {
+            control._emit({ revision: 5, generation: 2, filePath: '/tmp/a.ttl' })
+            control._emit({ revision: 6, generation: 2, filePath: '/tmp/a.ttl' })
+          }, 20)
+        })
+        req.on('error', err => { if (err.code !== 'ECONNRESET') reject(err) })
+        req.end()
+      })
+      expect(events).toHaveLength(2)
+      expect(events[0]).toMatchObject({ revision: 5, generation: 2, filePath: '/tmp/a.ttl' })
+      expect(events[1]).toMatchObject({ revision: 6, generation: 2, filePath: '/tmp/a.ttl' })
+    } finally {
+      await sseServer.close()
+    }
   })
 })

@@ -158,6 +158,7 @@ struct GraphView {
     bool mcpServerEnabled = true;
     bool liveServerAvailable = false;
     int liveServerRevision = -1;
+    int liveServerGeneration = -1;
     std::string liveServerFilePath;
     guint liveServerPollTimer = 0;
     GSubprocess* liveServerProcess = nullptr;
@@ -2400,6 +2401,7 @@ void mcpServerSettingsActivated(GtkMenuItem*, gpointer data) {
             if (!view.mcpServerEnabled) {
                 view.liveServerAvailable = false;
                 view.liveServerRevision = -1;
+                view.liveServerGeneration = -1;
                 view.liveServerFilePath.clear();
                 if (view.liveServerProcess) {
                     g_subprocess_send_signal(view.liveServerProcess, SIGTERM);
@@ -3166,6 +3168,13 @@ static int parseRevisionFromTurtle(const std::string& turtle) {
     try { return std::stoi(turtle.substr(pos + marker.size())); } catch (...) { return -1; }
 }
 
+static int parseGenerationFromTurtle(const std::string& turtle) {
+    const std::string marker = "trn:generation ";
+    const auto pos = turtle.find(marker);
+    if (pos == std::string::npos) return -1;
+    try { return std::stoi(turtle.substr(pos + marker.size())); } catch (...) { return -1; }
+}
+
 static std::string parseFilePathFromTurtle(const std::string& turtle) {
     const std::string key = "trn:filePath \"";
     const auto pos = turtle.find(key);
@@ -3286,16 +3295,21 @@ static gboolean liveServerPollTick(gpointer data) {
         logConsole(view, "Live server reconnected at " + view.liveServerUrl);
     }
     const int serverRevision = parseRevisionFromTurtle(status);
+    const int serverGeneration = parseGenerationFromTurtle(status);
     const std::string serverFilePath = parseFilePathFromTurtle(status);
+    const bool generationChanged = serverGeneration >= 0 && serverGeneration != view.liveServerGeneration;
     const bool revisionChanged = serverRevision >= 0 && serverRevision != view.liveServerRevision;
     const bool projectChanged = !serverFilePath.empty() && serverFilePath != view.liveServerFilePath;
-    if (revisionChanged || projectChanged) {
-        if (view.liveServerRevision >= 0 && revisionChanged)
-            logConsole(view, "External edit detected (revision " +
+    if (generationChanged || revisionChanged || projectChanged) {
+        if (view.liveServerRevision >= 0 && (generationChanged || revisionChanged))
+            logConsole(view, "External edit detected (generation " +
+                       std::to_string(view.liveServerGeneration) + " → " +
+                       std::to_string(serverGeneration) + ", revision " +
                        std::to_string(view.liveServerRevision) + " → " +
                        std::to_string(serverRevision) + ")");
         reloadFromLiveServer(view, serverFilePath);
         view.liveServerRevision = serverRevision;
+        view.liveServerGeneration = serverGeneration;
         view.liveServerFilePath = serverFilePath;
         updateWindowTitle(view);
     }

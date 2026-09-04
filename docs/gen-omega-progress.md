@@ -100,5 +100,5 @@ former three-Ambo graph exhausted its render queue and sounded as though it had
 cut out; per-node measurements showed no material DC offset.
 
 General scheduled VST3 automation and deterministic MIDI generator capture/freeze
-remain listed in `docs/todo.md`; neither is required for the accepted authored-MIDI
+remain listed in `TODO.md`; neither is required for the accepted authored-MIDI
 Gen Omega arrangement.

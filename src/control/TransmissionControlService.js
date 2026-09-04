@@ -13,6 +13,8 @@ export class ProjectRevisionError extends Error {
 }
 
 export class TransmissionControlService {
+  #changeListeners = new Set()
+
   constructor({
     project = new ProjectSession(),
     engine = null,
@@ -30,12 +32,24 @@ export class TransmissionControlService {
     if (!this.allowedRoots.length) throw new TypeError('At least one allowed project root is required')
   }
 
+  onStatusChange(listener) {
+    this.#changeListeners.add(listener)
+    return () => this.#changeListeners.delete(listener)
+  }
+
+  #emitStatusChange() {
+    if (this.#changeListeners.size === 0) return
+    const status = this.status()
+    for (const listener of this.#changeListeners) listener(status)
+  }
+
   status() {
     return {
       projectOpen: Boolean(this.project.graph),
       projectId: this.project.graph?.id ?? null,
       filePath: this.project.filePath,
       revision: this.project.revision,
+      generation: this.project.generation,
       dirty: Boolean(this.project.graph) &&
         (!this.project.filePath || this.project.savedRevision !== this.project.revision),
       engineAvailable: Boolean(this.engine),
@@ -76,6 +90,7 @@ export class TransmissionControlService {
     }
     if (this.engine) this.engine.open(normalized)
     else this.project.open(normalized)
+    this.#emitStatusChange()
     return this.describeProject()
   }
 
@@ -90,6 +105,7 @@ export class TransmissionControlService {
     }
     if (this.engine) this.engine.open(definition, resolvedPath)
     else this.project.open(definition, resolvedPath)
+    this.#emitStatusChange()
     return this.describeProject()
   }
 
@@ -99,6 +115,7 @@ export class TransmissionControlService {
     if (!target) throw new Error('A project file path is required')
     if (!this.#isAllowed(target)) throw new Error(`Project path is outside the allowed roots: ${target}`)
     await this.project.save(target)
+    this.#emitStatusChange()
     return { filePath: target, revision: this.project.revision }
   }
 
@@ -112,6 +129,7 @@ export class TransmissionControlService {
     if (!dryRun) {
       if (this.engine) this.engine.update(() => nextDefinition)
       else this.project.update(() => nextDefinition)
+      this.#emitStatusChange()
     }
     return {
       dryRun,
@@ -132,6 +150,7 @@ export class TransmissionControlService {
     if (positionBeats !== undefined) transport.seek(positionBeats)
     if (this.engine) this.engine.synchronizeTransport()
     this.project.markChanged()
+    this.#emitStatusChange()
     return { revision: this.project.revision, transport: transport.toJSON() }
   }
 
@@ -139,12 +158,14 @@ export class TransmissionControlService {
     this.#requireProject()
     if (!this.engine) throw new Error('Native audio is unavailable; start the MCP server with --native-addon')
     this.engine.start()
+    this.#emitStatusChange()
     return this.status()
   }
 
   stopTransport() {
     if (this.engine) this.engine.stop()
     else this.project.transport.stop()
+    this.#emitStatusChange()
     return this.status()
   }
 

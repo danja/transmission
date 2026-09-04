@@ -29,7 +29,7 @@ When asked to generate music and patches read /home/danny/github/downspout/READM
 
 ## Change workflow
 
-Add newly identified work items to `docs/todo.md`. Remove each item when its
+Add newly identified work items to `TODO.md`. Remove each item when its
 implementation and verification are complete.
 
 Before editing:

@@ -194,6 +194,7 @@ export function serializeStatus(status) {
     '',
     '<urn:transmission:status> a trn:Status ;'
   ]
+  lines.push(`    trn:generation ${status.generation ?? 0} ;`)
   lines.push(`    trn:revision ${status.revision} ;`)
   lines.push(`    trn:dirty ${status.dirty} ;`)
   lines.push(`    trn:projectOpen ${status.projectOpen} ;`)

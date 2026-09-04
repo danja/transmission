@@ -1,11 +1,9 @@
 # TODO
 
-## URGENT: External interface / audio output broken
+## General
 
-- No audio output from Transmission UI.
-- Launching the GTK UI via Claude crashes with "Illegal Operation", killing the Claude process.
-- Investigate external interface settings (JACK port connections, device selection) as likely root cause.
-- Must reproduce and diagnose outside Claude session (run UI in a separate terminal).
+Move ./docs/todo.md to ./TODO.md and update references.
+
 
 ## hardcore-techno-160 patch — remaining gaps
 
@@ -95,3 +93,11 @@ Still open (Phase 3):
   should treat `project_new` (filePath change to null) as a forced reload trigger, or the server
   should use a monotonically-increasing generation counter that never resets.
 - [x] Add a Settings menu option to enable or disable the live MCP server in the GTK UI.
+
+## Recurring - check periodically
+
+* remove tasks that have been done from this file
+* check MISTAKES.md for any systematic problems, promote info on these to CLAUDE.md
+* if an issue in MISTAKES.md has been fully resolved, remove it from the file
+* for new material, check test coverage
+* ensure README.md and docs are up-to-date

@@ -170,6 +170,8 @@ struct GraphView {
     std::atomic<float> outputPeakL{0.f};
     std::atomic<float> outputPeakR{0.f};
     guint peakMeterTimer = 0;
+    bool startJackOnStartup = false;
+    std::string jackStartCommand = "jackd -d alsa -r 48000 -p 1024";
     std::size_t requestedBufferSize = 0;
     std::size_t renderAheadMilliseconds = 200;
     std::size_t processingThreads = 0;
@@ -2253,6 +2255,18 @@ void loadConfig(GraphView& view) {
             continue;
         }
 #endif
+        if (line == "JACK_AUTOSTART\ton") {
+            view.startJackOnStartup = true;
+            continue;
+        }
+        if (line == "JACK_AUTOSTART\toff") {
+            view.startJackOnStartup = false;
+            continue;
+        }
+        if (line.rfind("JACK_START_CMD\t", 0) == 0) {
+            view.jackStartCommand = line.substr(15);
+            continue;
+        }
     }
     if (!paths.empty()) view.pluginSearchPath = paths;
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
@@ -2272,6 +2286,8 @@ void saveConfig(const GraphView& view) {
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
     f << "MCP_SERVER\t" << (view.mcpServerEnabled ? "on" : "off") << '\n';
 #endif
+    f << "JACK_AUTOSTART\t" << (view.startJackOnStartup ? "on" : "off") << '\n';
+    f << "JACK_START_CMD\t" << view.jackStartCommand << '\n';
 }
 
 std::size_t scanPlugins(GraphView& view) {
@@ -2427,6 +2443,49 @@ void mcpServerSettingsActivated(GtkMenuItem*, gpointer data) {
     gtk_widget_destroy(dialog);
 }
 #endif
+
+void jackStartupSettingsActivated(GtkMenuItem*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    auto* dialog = gtk_dialog_new_with_buttons(
+        "JACK Startup", GTK_WINDOW(view.window),
+        static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL |
+                                   GTK_DIALOG_DESTROY_WITH_PARENT),
+        "_Cancel", GTK_RESPONSE_CANCEL, "_Apply", GTK_RESPONSE_ACCEPT,
+        nullptr);
+    auto* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+    gtk_box_set_spacing(GTK_BOX(content), 10);
+
+    auto* enableCheck = GTK_TOGGLE_BUTTON(
+        gtk_check_button_new_with_label("Start JACK automatically on startup"));
+    gtk_toggle_button_set_active(enableCheck, view.startJackOnStartup);
+    gtk_box_pack_start(GTK_BOX(content), GTK_WIDGET(enableCheck), FALSE, FALSE, 0);
+
+    auto* cmdRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    auto* cmdLabel = gtk_label_new("Command:");
+    auto* cmdEntry = GTK_ENTRY(gtk_entry_new());
+    gtk_entry_set_text(cmdEntry, view.jackStartCommand.c_str());
+    gtk_widget_set_size_request(GTK_WIDGET(cmdEntry), 320, -1);
+    gtk_box_pack_start(GTK_BOX(cmdRow), cmdLabel, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(cmdRow), GTK_WIDGET(cmdEntry), TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(content), cmdRow, FALSE, FALSE, 0);
+
+    auto* note = gtk_label_new(
+        "The command is run in the background at startup when JACK is not already\n"
+        "running. Transmission waits 2 seconds for the server to become available.");
+    gtk_label_set_xalign(GTK_LABEL(note), 0.0F);
+    gtk_box_pack_start(GTK_BOX(content), note, FALSE, FALSE, 0);
+
+    gtk_widget_show_all(dialog);
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        view.startJackOnStartup =
+            gtk_toggle_button_get_active(enableCheck);
+        const gchar* cmd = gtk_entry_get_text(cmdEntry);
+        if (cmd && *cmd) view.jackStartCommand = cmd;
+        saveConfig(view);
+    }
+    gtk_widget_destroy(dialog);
+}
 
 void audioSettingsActivated(GtkMenuItem*, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
@@ -3246,9 +3305,21 @@ static void launchLiveServer(GraphView& view) {
         return;
     }
     GError* err = nullptr;
-    view.liveServerProcess = g_subprocess_new(
-        G_SUBPROCESS_FLAGS_NONE, &err,
-        "node", scriptPath.c_str(), "--jack", "--auto-connect", nullptr);
+    // scripts/ is one level below the repo root; addon lives in native/build-napi-jack-vst3/
+    const auto repoRoot = std::filesystem::path(scriptPath).parent_path().parent_path();
+    const auto addonPath = (repoRoot / "native/build-napi-jack-vst3/transmission_native.node").string();
+    const bool addonExists = std::filesystem::exists(addonPath);
+    if (addonExists) {
+        view.liveServerProcess = g_subprocess_new(
+            G_SUBPROCESS_FLAGS_NONE, &err,
+            "node", scriptPath.c_str(),
+            "--native-addon", addonPath.c_str(),
+            "--jack", "--auto-connect", nullptr);
+    } else {
+        view.liveServerProcess = g_subprocess_new(
+            G_SUBPROCESS_FLAGS_NONE, &err,
+            "node", scriptPath.c_str(), "--jack", "--auto-connect", nullptr);
+    }
     if (!view.liveServerProcess) {
         logConsole(view, std::string("Could not launch live server: ") +
                    (err ? err->message : "unknown error"));
@@ -4524,6 +4595,15 @@ void activate(GtkApplication* application, gpointer) {
         uiProcessorFactory());
 #endif
     loadConfig(*view);
+    if (view->startJackOnStartup && !view->jackConnections->available()) {
+        const std::string cmd = view->jackStartCommand + " >/dev/null 2>&1 &";
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-result"
+        std::system(cmd.c_str());
+#pragma GCC diagnostic pop
+        sleep(2);
+        view->jackConnections = std::make_unique<transmission::JackConnectionManager>();
+    }
     scanPlugins(*view);
     GtkWidget* window = gtk_application_window_new(application);
     gtk_window_set_title(GTK_WINDOW(window), "Transmission — Graph");
@@ -4568,6 +4648,8 @@ void activate(GtkApplication* application, gpointer) {
 #endif
     auto* reconnectJackItem =
         gtk_menu_item_new_with_mnemonic("_Reconnect JACK Ports");
+    auto* jackStartupItem =
+        gtk_menu_item_new_with_mnemonic("_JACK Startup…");
     auto* pluginPathItem =
         gtk_menu_item_new_with_mnemonic("Plugin _Path…");
     gtk_menu_shell_append(
@@ -4578,6 +4660,8 @@ void activate(GtkApplication* application, gpointer) {
 #endif
     gtk_menu_shell_append(
         GTK_MENU_SHELL(settingsMenu), reconnectJackItem);
+    gtk_menu_shell_append(
+        GTK_MENU_SHELL(settingsMenu), jackStartupItem);
     gtk_menu_shell_append(
         GTK_MENU_SHELL(settingsMenu), pluginPathItem);
     gtk_menu_item_set_submenu(
@@ -4707,6 +4791,8 @@ void activate(GtkApplication* application, gpointer) {
 #endif
     g_signal_connect(reconnectJackItem, "activate",
                      G_CALLBACK(reconnectJackActivated), view);
+    g_signal_connect(jackStartupItem, "activate",
+                     G_CALLBACK(jackStartupSettingsActivated), view);
     g_signal_connect(pluginPathItem, "activate",
                      G_CALLBACK(pluginPathActivated), view);
     g_signal_connect(showConsoleItem, "activate",

@@ -4,7 +4,8 @@
 
 A near-term goal is to have Claude act as a DJ, using /home/danny/github/transmission as a DAW, loading and running generative plugins from /home/danny/github/downspout together with effects from /home/danny/github/valis Both transmission and valis will need to have suitable mcp tool cover.
 
-In the process we can also work out a way of expressing the DJ set list in Turtle/RDF, so potentially a runner could fire the MCP commands over HTTP without the language model having to be present at run time. (This material should be saved in the Transmission repo).
+In the process we can also work out a way of expressing the DJ set list in Turtle/RDF, so potentially a runner could fire the MCP commands over HTTP without the language model having to be present at runtime. The vocabulary should have quite general-purpose foundations so it could potentially be used by a real DJ spinning disks.
+(This material should be saved in the Transmission repo).
 
 ## hardcore-techno-160 patch — remaining gaps
 

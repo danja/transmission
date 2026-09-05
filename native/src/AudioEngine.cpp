@@ -99,6 +99,17 @@ bool AudioEngine::setParameter(const std::string& nodeId, std::uint32_t paramete
     return routedAudioGraph_->setParameter(nodeId, parameterId, normalizedValue, error);
 }
 
+bool AudioEngine::restoreProcessorState(const std::string& nodeId,
+                                        const ProcessorState& state,
+                                        std::string& error) {
+    std::scoped_lock lock(controlMutex_);
+    if (!routedAudioGraph_) {
+        error = "no routed graph is loaded";
+        return false;
+    }
+    return routedAudioGraph_->restoreProcessorState(nodeId, state, error);
+}
+
 bool AudioEngine::start() {
     std::scoped_lock lock(controlMutex_);
     if (serializedGraph_.empty() || diagnostics_.running) return false;

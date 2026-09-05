@@ -90,6 +90,19 @@ struct Vst3EditorHost::Impl {
     bool closing = false;
     ParameterEditCallback parameterEdit;
     StateCallback stateChanged;
+    Vst3EditorHost::LiveStateCallback liveStateChanged;
+
+    void forwardLiveState() {
+        if (!liveStateChanged || !component) return;
+        ProcessorState state;
+        Steinberg::MemoryStream stream;
+        if (component->getState(&stream) == Steinberg::kResultTrue) {
+            const auto size = static_cast<std::size_t>(stream.getSize());
+            const auto* data = reinterpret_cast<const std::uint8_t*>(stream.getData());
+            if (data && size) state.component.assign(data, data + size);
+        }
+        liveStateChanged(state);
+    }
 
     void forwardParameter(Steinberg::Vst::ParamID id,
                           Steinberg::Vst::ParamValue value) {
@@ -148,6 +161,7 @@ Steinberg::tresult PLUGIN_API ComponentHandler::restartComponent(
     if (!owner_) return Steinberg::kResultFalse;
     if ((flags & Steinberg::Vst::kParamValuesChanged) != 0)
         owner_->forwardAllParameters();
+    owner_->forwardLiveState();
     return Steinberg::kResultTrue;
 }
 
@@ -263,7 +277,8 @@ bool Vst3EditorHost::open(const std::string& modulePath,
                           StateCallback stateChanged,
                           const ProcessorState& initialState,
                           const std::vector<std::pair<std::uint32_t, double>>&
-                              initialParameters) {
+                              initialParameters,
+                          LiveStateCallback liveStateChanged) {
     close();
     const auto fail = [&](const char* message) {
         std::cerr << "VST3 editor: " << message << " (" << modulePath << ")\n";
@@ -296,6 +311,7 @@ bool Vst3EditorHost::open(const std::string& modulePath,
     if (!impl_->controller) return fail("plugin has no edit controller");
     impl_->parameterEdit = std::move(parameterEdit);
     impl_->stateChanged = std::move(stateChanged);
+    impl_->liveStateChanged = std::move(liveStateChanged);
     if (impl_->component && !initialState.component.empty()) {
         Steinberg::MemoryStream stream(
             const_cast<std::uint8_t*>(initialState.component.data()),

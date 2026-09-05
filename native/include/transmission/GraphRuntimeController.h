@@ -25,6 +25,8 @@ public:
     void stop() noexcept;
     bool setParameter(const std::string& nodeId, std::uint32_t parameterId,
                       double normalizedValue, std::string& error);
+    bool setPluginState(const std::string& nodeId,
+                        const ProcessorState& state, std::string& error);
     bool setRenderAheadBlocks(std::size_t blocks);
     bool setProcessingThreadCount(std::size_t threads);
     bool running() const;

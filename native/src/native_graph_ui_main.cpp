@@ -2672,7 +2672,19 @@ void openPluginEditor(GraphView& view, const Node& node) {
             if (!updatedState.controller.empty())
                 target.controller = std::move(updatedState.controller);
         },
-        state, parameters);
+        state, parameters,
+        [&view, nodeId](const transmission::ProcessorState& liveState) {
+            if (!liveState.component.empty())
+                view.pluginStates[nodeId].component = liveState.component;
+#if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
+            if (runtimeRunning(view) && view.runtime) {
+                std::string error;
+                if (!view.runtime->setPluginState(nodeId, liveState, error))
+                    std::cerr << "VST3 live state forwarding failed for "
+                              << nodeId << ": " << error << "\n";
+            }
+#endif
+        });
 }
 
 void editNodeFromMenu(GtkMenuItem*, gpointer data) {

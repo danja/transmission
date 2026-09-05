@@ -158,10 +158,6 @@ export class TransmissionControlService {
     this.#requireProject()
     if (!this.engine) throw new Error('Native audio is unavailable; start the MCP server with --native-addon')
     this.engine.start()
-    setTimeout(() => {
-      const diag = this.engine?.diagnostics()
-      if (diag) process.stderr.write(`[engine] running=${diag.running} graphLoaded=${diag.graphLoaded} processedBlocks=${diag.processedBlocks} positionBeats=${diag.positionBeats?.toFixed(3)} underruns=${diag.underruns} peakL=${this.peaks().peakL?.toFixed(4)} peakR=${this.peaks().peakR?.toFixed(4)}\n`)
-    }, 500)
     this.#emitStatusChange()
     return this.status()
   }

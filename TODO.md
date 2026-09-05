@@ -1,9 +1,5 @@
 # TODO
 
-## Status indicator
-
-On the right-hand side of the bar containing the Play button it would be useful to have status indicators/buttons for Jack and MCP server
-
 ## Live generative DJ via MCP
 
 A near-term goal is to have Claude act as a DJ, using /home/danny/github/transmission as a DAW, loading and running generative plugins from /home/danny/github/downspout together with effects from /home/danny/github/valis Both transmission and valis will need to have suitable mcp tool cover.

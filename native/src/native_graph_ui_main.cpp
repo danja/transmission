@@ -157,6 +157,8 @@ struct GraphView {
     std::string lastSavedSnapshot;
     std::vector<std::string> recentFiles;
     GtkWidget* recentMenu = nullptr;
+    GtkWidget* jackIndicator = nullptr;
+    GtkWidget* mcpIndicator = nullptr;
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
     std::string liveServerUrl{"http://127.0.0.1:7878"};
     bool mcpServerEnabled = true;
@@ -3297,11 +3299,35 @@ transmission::UiProject captureProject(const GraphView&);
 void updateWindowTitle(GraphView& view);
 
 static void launchLiveServer(GraphView& view) {
-    if (view.projectHelperPath.empty()) return;
-    const auto scriptPath = (std::filesystem::path(view.projectHelperPath).parent_path()
-                             / "transmission-live.js").string();
-    if (!std::filesystem::exists(scriptPath)) {
-        logConsole(view, "Live server script not found: " + scriptPath);
+    // Resolve script path: prefer projectHelperPath, fall back to binary-relative location.
+    std::string scriptPath;
+    if (!view.projectHelperPath.empty()) {
+        const auto candidate = (std::filesystem::path(view.projectHelperPath).parent_path()
+                               / "transmission-live.js").string();
+        if (std::filesystem::exists(candidate))
+            scriptPath = candidate;
+    }
+    if (scriptPath.empty()) {
+        char selfBuf[4096] = {};
+        const ssize_t selfLen = readlink("/proc/self/exe", selfBuf, sizeof(selfBuf) - 1);
+        if (selfLen > 0) {
+            // binary is at <repo>/native/<build-dir>/transmission_graph_ui
+            const auto candidate = (std::filesystem::path(selfBuf)
+                                    .parent_path().parent_path().parent_path()
+                                    / "scripts/transmission-live.js").string();
+            if (std::filesystem::exists(candidate))
+                scriptPath = candidate;
+        }
+    }
+    if (scriptPath.empty()) {
+        logConsole(view, "Live server script not found — set TRANSMISSION_ROOT or run from repo root");
+        return;
+    }
+    // Resolve 'node' via PATH so nvm-managed installs are found even when PATH
+    // is not fully inherited by the subprocess.
+    gchar* nodeBin = g_find_program_in_path("node");
+    if (!nodeBin) {
+        logConsole(view, "Cannot find 'node' in PATH — live server unavailable");
         return;
     }
     GError* err = nullptr;
@@ -3312,14 +3338,15 @@ static void launchLiveServer(GraphView& view) {
     if (addonExists) {
         view.liveServerProcess = g_subprocess_new(
             G_SUBPROCESS_FLAGS_NONE, &err,
-            "node", scriptPath.c_str(),
+            nodeBin, scriptPath.c_str(),
             "--native-addon", addonPath.c_str(),
             "--jack", "--auto-connect", nullptr);
     } else {
         view.liveServerProcess = g_subprocess_new(
             G_SUBPROCESS_FLAGS_NONE, &err,
-            "node", scriptPath.c_str(), "--jack", "--auto-connect", nullptr);
+            nodeBin, scriptPath.c_str(), "--jack", "--auto-connect", nullptr);
     }
+    g_free(nodeBin);
     if (!view.liveServerProcess) {
         logConsole(view, std::string("Could not launch live server: ") +
                    (err ? err->message : "unknown error"));
@@ -3358,6 +3385,26 @@ static void reloadFromLiveServer(GraphView& view, const std::string& serverFileP
     logConsole(view, "Graph reloaded from live server");
 }
 
+static void updateJackIndicator(GraphView& view) {
+    if (!view.jackIndicator) return;
+    const bool ok = view.jackConnections && view.jackConnections->available();
+    gtk_label_set_markup(GTK_LABEL(view.jackIndicator),
+        ok ? "<span color=\"#44cc44\">● JACK</span>"
+           : "<span color=\"#cc4444\">● JACK</span>");
+}
+
+static void updateMcpIndicator(GraphView& view) {
+    if (!view.mcpIndicator) return;
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    const bool ok = view.liveServerAvailable;
+#else
+    const bool ok = false;
+#endif
+    gtk_label_set_markup(GTK_LABEL(view.mcpIndicator),
+        ok ? "<span color=\"#44cc44\">● MCP</span>"
+           : "<span color=\"#cc4444\">● MCP</span>");
+}
+
 static gboolean liveServerPollTick(gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
     if (!view.mcpServerEnabled) {
@@ -3372,13 +3419,25 @@ static gboolean liveServerPollTick(gpointer data) {
         if (view.liveServerAvailable) {
             view.liveServerAvailable = false;
             updateWindowTitle(view);
+            updateMcpIndicator(view);
             logConsole(view, "Live server disconnected");
+        }
+        // Auto-restart if the subprocess we own has exited (or was never spawned).
+        const bool processGone = !view.liveServerProcess ||
+            g_subprocess_get_if_exited(view.liveServerProcess);
+        if (processGone) {
+            if (view.liveServerProcess) {
+                g_object_unref(view.liveServerProcess);
+                view.liveServerProcess = nullptr;
+            }
+            launchLiveServer(view);
         }
         return G_SOURCE_CONTINUE;
     }
     if (!view.liveServerAvailable) {
         view.liveServerAvailable = true;
         updateWindowTitle(view);
+        updateMcpIndicator(view);
         logConsole(view, "Live server reconnected at " + view.liveServerUrl);
     }
     const int serverRevision = parseRevisionFromTurtle(status);
@@ -4582,6 +4641,7 @@ static gboolean peakMeterTick(gpointer data) {
         view.outputPeakR.store(newR, std::memory_order_relaxed);
         gtk_widget_queue_draw(view.canvas);
     }
+    updateJackIndicator(view);
     return G_SOURCE_CONTINUE;
 }
 
@@ -4729,11 +4789,23 @@ void activate(GtkApplication* application, gpointer) {
     gtk_spin_button_set_value(loopBars, 4.0);
     gtk_spin_button_set_numeric(loopBars, TRUE);
     gtk_box_pack_start(GTK_BOX(transportBar), GTK_WIDGET(loopBars), FALSE, FALSE, 4);
+
+    // Right-side status indicators — expand filler pushes them to the end
+    auto* indicatorFiller = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_box_pack_start(GTK_BOX(transportBar), indicatorFiller, TRUE, TRUE, 0);
+    auto* jackIndicator = gtk_label_new(nullptr);
+    auto* mcpIndicator = gtk_label_new(nullptr);
+    gtk_widget_set_margin_end(mcpIndicator, 8);
+    gtk_box_pack_end(GTK_BOX(transportBar), mcpIndicator, FALSE, FALSE, 4);
+    gtk_box_pack_end(GTK_BOX(transportBar), jackIndicator, FALSE, FALSE, 4);
+
     view->tempo = tempo;
     view->loopBars = loopBars;
     view->loop = GTK_TOGGLE_BUTTON(loop);
     view->window = window;
     view->playButton = playButton;
+    view->jackIndicator = jackIndicator;
+    view->mcpIndicator = mcpIndicator;
 
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled),
@@ -4771,6 +4843,8 @@ void activate(GtkApplication* application, gpointer) {
 #endif
     view->peakMeterTimer = g_timeout_add(80, peakMeterTick, view);
 
+    updateJackIndicator(*view);
+    updateMcpIndicator(*view);
     loopChanged(nullptr, view);
     g_signal_connect(playButton, "clicked", G_CALLBACK(playStopClicked), view);
     g_signal_connect(resetButton, "clicked", G_CALLBACK(resetTransportClicked), view);

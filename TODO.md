@@ -1,14 +1,10 @@
 # TODO
 
-## Architecture — GUI engine vs live server engine
+## Feature : scopes
 
-The GUI (`transmission_graph_ui`) creates its own JACK audio engine (`GraphRuntimeController`) independently of the live server. When the live server also has a native addon, there are two separate engines: the GUI's (which the user hears) and the live server's (which MCP controls). MCP `transport_play`, `parameter_set`, etc. target the live server's engine, not the GUI's. The right fix is to make the GUI delegate play/stop/parameter changes to the live server when it is available, or to make the live server the sole audio engine and reduce the GUI to a graph editor. This is the prerequisite for full MCP DJ control.
-
-
+Add built-in modules Oscilloscope & Spectrum analyzer, loaded like the Output built-ins as required. They should display while running in the main window, like the level meters in the output built-in.
 
 ## Bugs
-
-- Live server / GUI project sync is one-shot on open/save. If the GUI has a project loaded when the live server starts (or the live server restarts), the server shows "No project is open" until the user does File > Save. Fix: on `liveServerPollTick` reconnect, if `view.filePath` is non-empty, call `syncToLiveServer` automatically to push the current project without requiring a manual save.
 
 - `projectDefinitionToTurtle` in `src/http/TransmissionHttpClient.js` only serializes node IDs into the `:pipe` list — it drops node types, settings, ports, and connections. The server's `parseNewProject` then fails with "Graph node X type is required". Fix: replace the minimal hand-rolled Turtle with the existing `TransmissionRdf.js` serializer (the function is async, so the caller can await it).
 

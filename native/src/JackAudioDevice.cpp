@@ -127,6 +127,17 @@ bool JackAudioDevice::connectPhysicalPorts() {
            connectDirection(outputPorts_, JackPortIsInput, false);
 }
 
+void JackAudioDevice::setNamedConnections(std::vector<std::string> inputs,
+                                           std::vector<std::string> outputs) {
+    namedInputs_ = std::move(inputs);
+    namedOutputs_ = std::move(outputs);
+}
+
+static bool jackConnect(_jack_client* client, const char* from, const char* to) {
+    const int result = jack_connect(client, from, to);
+    return result == 0 || result == EEXIST;
+}
+
 bool JackAudioDevice::start(AudioCallback& /*callback*/) {
     if (!configured_ || running_.load(std::memory_order_acquire) || !client_) return false;
     running_.store(true, std::memory_order_release);
@@ -137,6 +148,19 @@ bool JackAudioDevice::start(AudioCallback& /*callback*/) {
     }
     // PipeWire may assign a different quantum after activation.
     config_.blockSize = static_cast<std::size_t>(jack_get_buffer_size(client_));
+    // Reconnect after every activation — jack_deactivate removes all connections.
+    if (!namedOutputs_.empty() || !namedInputs_.empty()) {
+        for (std::size_t i = 0; i < namedInputs_.size() && i < inputPorts_.size(); ++i) {
+            if (!namedInputs_[i].empty() && namedInputs_[i] != "No connection")
+                jackConnect(client_, namedInputs_[i].c_str(), jack_port_name(inputPorts_[i]));
+        }
+        for (std::size_t i = 0; i < namedOutputs_.size() && i < outputPorts_.size(); ++i) {
+            if (!namedOutputs_[i].empty() && namedOutputs_[i] != "No connection")
+                jackConnect(client_, jack_port_name(outputPorts_[i]), namedOutputs_[i].c_str());
+        }
+    } else if (config_.autoConnect) {
+        connectPhysicalPorts();
+    }
     return true;
 }
 

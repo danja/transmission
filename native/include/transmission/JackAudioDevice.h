@@ -32,6 +32,7 @@ public:
 
     const std::string& lastError() const noexcept { return lastError_; }
     bool connectPhysicalPorts();
+    void setNamedConnections(std::vector<std::string> inputs, std::vector<std::string> outputs);
 
 private:
     static int processThunk(unsigned frames, void* opaque) noexcept;
@@ -53,6 +54,8 @@ private:
     std::atomic<bool> running_{false};
     std::string lastError_;
     bool configured_ = false;
+    std::vector<std::string> namedInputs_;
+    std::vector<std::string> namedOutputs_;
 };
 
 } // namespace transmission

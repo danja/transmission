@@ -1,5 +1,6 @@
 #include <gtk/gtk.h>
 #include <glib/gstdio.h>
+#include <gio/gunixinputstream.h>
 #include <cairo.h>
 
 // Forward-declare only — including <X11/Xlib.h> pollutes the translation unit
@@ -164,11 +165,14 @@ struct GraphView {
     bool mcpServerEnabled = true;
     bool liveServerAvailable = false;
     bool liveServerEngineRunning = false;
+    bool liveServerProjectOpen = false;
     int liveServerRevision = -1;
     int liveServerGeneration = -1;
     std::string liveServerFilePath;
     guint liveServerPollTimer = 0;
     GSubprocess* liveServerProcess = nullptr;
+    GIOChannel* liveServerStderr = nullptr;
+    guint liveServerStderrWatch = 0;
 #endif
     std::atomic<float> outputPeakL{0.f};
     std::atomic<float> outputPeakR{0.f};
@@ -1815,6 +1819,13 @@ void startTransportTimer(GraphView& view) {
         view.transportTimer = g_timeout_add(30, transportTick, &view);
 }
 
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+static bool liveTransportPlay(GraphView&);
+static bool liveTransportStop(GraphView&);
+static void liveSetParameter(GraphView&, const std::string&, std::uint32_t, double);
+static void syncToLiveServer(GraphView&, const std::string&);
+#endif
+
 void playStopClicked(GtkButton*, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
@@ -2440,6 +2451,14 @@ void mcpServerSettingsActivated(GtkMenuItem*, gpointer data) {
                 view.liveServerRevision = -1;
                 view.liveServerGeneration = -1;
                 view.liveServerFilePath.clear();
+                if (view.liveServerStderrWatch) {
+                    g_source_remove(view.liveServerStderrWatch);
+                    view.liveServerStderrWatch = 0;
+                }
+                if (view.liveServerStderr) {
+                    g_io_channel_unref(view.liveServerStderr);
+                    view.liveServerStderr = nullptr;
+                }
                 if (view.liveServerProcess) {
                     g_subprocess_send_signal(view.liveServerProcess, SIGTERM);
                     g_object_unref(view.liveServerProcess);
@@ -3283,9 +3302,29 @@ static std::string expandNodeId(const std::string& id) {
 }
 
 static bool liveTransportPlay(GraphView& view) {
+    if (!view.liveServerProjectOpen) {
+        if (view.filePath.empty()) {
+            setStatus(view, "Save the project first to use the live server", true);
+            return false;
+        }
+        syncToLiveServer(view, view.filePath);
+        if (!view.liveServerProjectOpen) {
+            setStatus(view, "Live server failed to load project", true);
+            return false;
+        }
+    }
     std::string response;
     if (!httpPost(view.liveServerUrl + "/transport/play", "", "text/turtle", response)) {
         setStatus(view, "Live server transport play failed", true);
+        return false;
+    }
+    if (response.find("trn:Error") != std::string::npos ||
+        response.find("trn:NoProject") != std::string::npos) {
+        const auto msgPos = response.find("trn:message \"");
+        const std::string msg = msgPos != std::string::npos
+            ? response.substr(msgPos + 13, response.find('"', msgPos + 13) - msgPos - 13)
+            : "Live server rejected play";
+        setStatus(view, msg, true);
         return false;
     }
     view.liveServerEngineRunning = true;
@@ -3337,6 +3376,13 @@ static bool parseEngineRunningFromTurtle(const std::string& turtle) {
     return turtle.substr(pos + marker.size(), 9) == "\"running\"";
 }
 
+static bool parseProjectOpenFromTurtle(const std::string& turtle) {
+    const std::string marker = "trn:projectOpen ";
+    const auto pos = turtle.find(marker);
+    if (pos == std::string::npos) return false;
+    return turtle.substr(pos + marker.size(), 4) == "true";
+}
+
 static std::string parseFilePathFromTurtle(const std::string& turtle) {
     const std::string key = "trn:filePath \"";
     const auto pos = turtle.find(key);
@@ -3367,11 +3413,15 @@ static void syncToLiveServer(GraphView& view, const std::string& path) {
         "@prefix trn: <http://purl.org/stuff/transmissions/> .\n"
         "[] a trn:OpenProject ; trn:filePath \"" + path + "\" .\n";
     std::string response;
-    if (httpPost(view.liveServerUrl + "/projects/open", body, "text/turtle", response)) {
+    if (httpPost(view.liveServerUrl + "/projects/open", body, "text/turtle", response) &&
+        response.find("trn:Error") == std::string::npos) {
         const int rev = parseRevisionFromJson(response);
         if (rev >= 0) view.liveServerRevision = rev;
         view.liveServerFilePath = path;
+        view.liveServerProjectOpen = true;
         logConsole(view, "Live server synced: " + path);
+    } else if (response.find("trn:Error") != std::string::npos) {
+        logConsole(view, "Warning: live server rejected project open — " + response.substr(0, 120));
     } else {
         logConsole(view, "Warning: live server sync failed — server may have stopped");
         view.liveServerAvailable = false;
@@ -3382,6 +3432,33 @@ static void syncToLiveServer(GraphView& view, const std::string& path) {
 bool applyProject(GraphView&, const transmission::UiProject&, std::string&);
 transmission::UiProject captureProject(const GraphView&);
 void updateWindowTitle(GraphView& view);
+
+struct LiveServerStderrCtx { GraphView* view; };
+
+static gboolean onLiveServerStderr(GIOChannel* ch, GIOCondition, gpointer data) {
+    auto* ctx = static_cast<LiveServerStderrCtx*>(data);
+    gchar* line = nullptr;
+    gsize len = 0;
+    GError* err = nullptr;
+    GIOStatus status = g_io_channel_read_line(ch, &line, &len, nullptr, &err);
+    if (err) g_error_free(err);
+    if (status == G_IO_STATUS_NORMAL && line) {
+        std::string msg(line, len);
+        while (!msg.empty() && (msg.back() == '\n' || msg.back() == '\r'))
+            msg.pop_back();
+        if (!msg.empty())
+            logConsole(*ctx->view, "[live] " + msg);
+        g_free(line);
+        return TRUE;
+    }
+    g_free(line);
+    if (status == G_IO_STATUS_EOF || status == G_IO_STATUS_ERROR) {
+        ctx->view->liveServerStderrWatch = 0;
+        delete ctx;
+        return FALSE;
+    }
+    return TRUE;
+}
 
 static void launchLiveServer(GraphView& view) {
     // Resolve script path: prefer projectHelperPath, fall back to binary-relative location.
@@ -3420,15 +3497,16 @@ static void launchLiveServer(GraphView& view) {
     const auto repoRoot = std::filesystem::path(scriptPath).parent_path().parent_path();
     const auto addonPath = (repoRoot / "native/build-napi-jack-vst3/transmission_native.node").string();
     const bool addonExists = std::filesystem::exists(addonPath);
+    const auto stderrFlag = static_cast<GSubprocessFlags>(G_SUBPROCESS_FLAGS_STDERR_PIPE);
     if (addonExists) {
         view.liveServerProcess = g_subprocess_new(
-            G_SUBPROCESS_FLAGS_NONE, &err,
+            stderrFlag, &err,
             nodeBin, scriptPath.c_str(),
             "--native-addon", addonPath.c_str(),
             "--jack", "--auto-connect", nullptr);
     } else {
         view.liveServerProcess = g_subprocess_new(
-            G_SUBPROCESS_FLAGS_NONE, &err,
+            stderrFlag, &err,
             nodeBin, scriptPath.c_str(), "--jack", "--auto-connect", nullptr);
     }
     g_free(nodeBin);
@@ -3436,8 +3514,19 @@ static void launchLiveServer(GraphView& view) {
         logConsole(view, std::string("Could not launch live server: ") +
                    (err ? err->message : "unknown error"));
         g_clear_error(&err);
-    } else {
-        logConsole(view, "Live server launched (" + scriptPath + ")");
+        return;
+    }
+    logConsole(view, "Live server launched (" + scriptPath + ")");
+    GInputStream* stderrStream = g_subprocess_get_stderr_pipe(view.liveServerProcess);
+    if (stderrStream) {
+        view.liveServerStderr = g_io_channel_unix_new(
+            g_unix_input_stream_get_fd(G_UNIX_INPUT_STREAM(stderrStream)));
+        g_io_channel_set_flags(view.liveServerStderr, G_IO_FLAG_NONBLOCK, nullptr);
+        g_io_channel_set_encoding(view.liveServerStderr, nullptr, nullptr);
+        auto* ctx = new LiveServerStderrCtx{&view};
+        view.liveServerStderrWatch = g_io_add_watch(
+            view.liveServerStderr, static_cast<GIOCondition>(G_IO_IN | G_IO_HUP),
+            onLiveServerStderr, ctx);
     }
 }
 
@@ -3524,6 +3613,8 @@ static gboolean liveServerPollTick(gpointer data) {
         updateWindowTitle(view);
         updateMcpIndicator(view);
         logConsole(view, "Live server reconnected at " + view.liveServerUrl);
+        if (!view.filePath.empty())
+            syncToLiveServer(view, view.filePath);
     }
     const int serverRevision = parseRevisionFromTurtle(status);
     const int serverGeneration = parseGenerationFromTurtle(status);
@@ -3533,6 +3624,7 @@ static gboolean liveServerPollTick(gpointer data) {
         view.liveServerEngineRunning = serverEngineRunning;
         updateTransportDisplay(view);
     }
+    view.liveServerProjectOpen = parseProjectOpenFromTurtle(status);
     const bool generationChanged = serverGeneration >= 0 && serverGeneration != view.liveServerGeneration;
     const bool revisionChanged = serverRevision >= 0 && serverRevision != view.liveServerRevision;
     const bool projectChanged = !serverFilePath.empty() && serverFilePath != view.liveServerFilePath;

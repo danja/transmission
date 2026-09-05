@@ -3318,6 +3318,17 @@ static bool liveTransportPlay(GraphView& view) {
         setStatus(view, "Live server transport play failed", true);
         return false;
     }
+    // If the engine lost its project (e.g. server restarted), re-sync and retry once.
+    if (response.find("compiled project") != std::string::npos &&
+        !view.filePath.empty()) {
+        view.liveServerProjectOpen = false;
+        syncToLiveServer(view, view.filePath);
+        if (!view.liveServerProjectOpen ||
+            !httpPost(view.liveServerUrl + "/transport/play", "", "text/turtle", response)) {
+            setStatus(view, "Live server failed to reload project for playback", true);
+            return false;
+        }
+    }
     if (response.find("trn:Error") != std::string::npos ||
         response.find("trn:NoProject") != std::string::npos) {
         const auto msgPos = response.find("trn:message \"");

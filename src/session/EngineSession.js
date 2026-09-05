@@ -15,8 +15,13 @@ export class EngineSession {
   open(definition, filePath = null) {
     if (this.state === 'running') throw new Error('Stop audio before opening a project')
     const compiled = this.project.open(definition, filePath)
-    this.#ensureEngine()
-    this.bridge.loadProject(compiled)
+    try {
+      this.#ensureEngine()
+      this.bridge.loadProject(compiled)
+    } catch (err) {
+      this.project.close()
+      throw err
+    }
     this.#configureTransport()
     this.state = 'loaded'
     return compiled
@@ -33,6 +38,7 @@ export class EngineSession {
   }
 
   start() {
+    if (this.state === 'running') return
     if (this.state !== 'loaded') throw new Error('A compiled project must be loaded before starting audio')
     this.bridge.startAudio()
     this.project.transport.start()

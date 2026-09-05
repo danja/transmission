@@ -91,35 +91,44 @@ async function parseSetList(ttlPath) {
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 
-async function api(server, method, path, body) {
+const TRN = 'http://purl.org/stuff/transmissions/'
+
+async function postTurtle(server, path, turtle) {
   const url = server + path
   const res = await fetch(url, {
-    method,
-    headers: body ? { 'Content-Type': 'application/json' } : {},
-    body: body ? JSON.stringify(body) : undefined
+    method: 'POST',
+    headers: { 'Content-Type': 'text/turtle' },
+    body: turtle ?? ''
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    throw new Error(`${method} ${path} → ${res.status}: ${text}`)
+    throw new Error(`POST ${path} → ${res.status}: ${text}`)
   }
   const ct = res.headers.get('content-type') ?? ''
   return ct.includes('json') ? res.json() : res.text()
 }
 
-async function getStatus(server) {
-  return api(server, 'GET', '/status')
+async function getDiagnostics(server) {
+  const res = await fetch(server + '/diagnostics')
+  if (!res.ok) throw new Error(`GET /diagnostics → ${res.status}`)
+  return res.json()
+}
+
+function turtleString(s) {
+  return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
 
 async function openPatch(server, filePath) {
-  return api(server, 'POST', '/projects/open', { filePath })
+  const turtle = `@prefix trn: <${TRN}> .\n[] a trn:OpenProject ; trn:filePath ${turtleString(filePath)} .\n`
+  return postTurtle(server, '/projects/open', turtle)
 }
 
 async function play(server) {
-  return api(server, 'POST', '/transport/play')
+  return postTurtle(server, '/transport/play', '')
 }
 
 async function stop(server) {
-  return api(server, 'POST', '/transport/stop')
+  return postTurtle(server, '/transport/stop', '')
 }
 
 // ── Sleep ─────────────────────────────────────────────────────────────────────
@@ -139,7 +148,7 @@ async function main() {
 
   // Check server reachable
   try {
-    await getStatus(args.server)
+    await getDiagnostics(args.server)
   } catch (e) {
     console.error('Cannot reach live server:', e.message)
     process.exit(1)
@@ -157,9 +166,9 @@ async function main() {
 
     await openPatch(args.server, patchPath)
 
-    const status = await getStatus(args.server)
+    const diag = await getDiagnostics(args.server)
     const bpm = cue.tempoOverride
-      ?? status?.transport?.tempoMap?.[0]?.bpm
+      ?? diag?.transport?.tempoMap?.[0]?.bpm
       ?? 120
 
     console.log(`  BPM: ${bpm}`)

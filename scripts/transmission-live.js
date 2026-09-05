@@ -37,6 +37,9 @@ const port = options.port ?? serverConfig.port
 const bindAddress = options.bindAddress ?? serverConfig.bindAddress
 const allowedRoots = options.projectRoots.length ? options.projectRoots : serverConfig.allowedRoots
 const defaultOutputConnections = serverConfig.defaultOutputConnections ?? null
+if (serverConfig.blockSize && !options.engineOptions.blockSize) {
+  options.engineOptions.blockSize = serverConfig.blockSize
+}
 
 // ── Plugin discovery ──────────────────────────────────────────────────────────
 

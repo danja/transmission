@@ -24,6 +24,12 @@ export class ProjectSession {
     this.arrangement = new Arrangement()
   }
 
+  close() {
+    this.graph = null
+    this.compiledGraph = null
+    this.filePath = null
+  }
+
   open(definition, filePath = null) {
     this.graph = definition instanceof Graph ? definition : new Graph(definition)
     this.transport = new Transport()

@@ -1,8 +1,14 @@
 # TODO
 
+A systematic problem is that some patches require more resources than available in real time with the current buffering setup. Explore how this aspect could be improved. Note that streaming patches to wav works nicely.
+
 ## Feature : scopes
 
 Add built-in modules Oscilloscope & Spectrum analyzer, loaded like the Output built-ins as required. They should display while running in the main window, like the level meters in the output built-in.
+
+## Parameter control
+
+Right now we can load the generative plugins from Downspout into transmission but they all carry the default parameters. In the agent-as-DJ scenario, the agent should be able to modify the parameters over MCP. It would be inconveient to add a MCP server to every plugin, but maybe a common midi interface that is loaded as a plugin or built-in might allow this kind of control?
 
 ## Bugs
 

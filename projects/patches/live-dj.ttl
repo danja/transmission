@@ -1,0 +1,62 @@
+@prefix : <http://purl.org/stuff/transmissions/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+:main a :Transmission ;
+    rdfs:label "Live Generative DJ" ;
+    :tempoMap ( [ :atBeat 0 ; :bpm 130 ] ) ;
+    :loopStart 0 ;
+    :loopEnd 32 ;
+    :loopEnabled true ;
+    :systemOutputConnections ( "UMC404HD 192k-92:playback_FL" "UMC404HD 192k-92:playback_FR" ) ;
+    :pipe ( :system-output :drumgen :drumkit :melgen :valis ) ;
+    :connections (
+        [ :from :drumgen ; :to :drumkit ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :drumkit ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :drumkit ; :to :system-output ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+        [ :from :melgen  ; :to :valis        ; :kind "midi"  ; :fromPort 0 ; :toPort 0 ]
+        [ :from :valis   ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :valis   ; :to :system-output ; :kind "audio" ; :fromPort 1 ; :toPort 1 ]
+    ) .
+
+:system-output a :AudioOutput ;
+    rdfs:label "System Output" ;
+    :audioInputs 4 ;
+    :midiInputs 0 ;
+    :editorX 900 ;
+    :editorY 200 .
+
+:drumgen a :VST3Plugin ;
+    rdfs:label "DrumGen" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 100 ;
+    :editorY 100 ;
+    :settings [ :pluginPath "/home/danny/.vst3/drumgen.vst3" ] .
+
+:drumkit a :VST3Plugin ;
+    rdfs:label "DrumKit" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 350 ;
+    :editorY 100 ;
+    :settings [ :pluginPath "/home/danny/.vst3/drumkit.vst3" ] .
+
+:melgen a :VST3Plugin ;
+    rdfs:label "MelGen" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 100 ;
+    :editorY 300 ;
+    :settings [ :pluginPath "/home/danny/.vst3/melgen.vst3" ] .
+
+:valis a :VST3Plugin ;
+    rdfs:label "Valis" ;
+    :audioInputs 2 ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 350 ;
+    :editorY 300 ;
+    :settings [ :pluginPath "/home/danny/.vst3/Valis.vst3" ] .

@@ -163,6 +163,7 @@ struct GraphView {
     std::string liveServerUrl{"http://127.0.0.1:7878"};
     bool mcpServerEnabled = true;
     bool liveServerAvailable = false;
+    bool liveServerEngineRunning = false;
     int liveServerRevision = -1;
     int liveServerGeneration = -1;
     std::string liveServerFilePath;
@@ -302,6 +303,10 @@ void setStatus(GraphView& view, const std::string& message, bool error = false) 
 }
 
 bool runtimeRunning(const GraphView& view) {
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    if (view.liveServerAvailable)
+        return view.liveServerEngineRunning;
+#endif
 #if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
     return view.runtime && view.runtime->running();
 #else
@@ -1812,6 +1817,16 @@ void startTransportTimer(GraphView& view) {
 
 void playStopClicked(GtkButton*, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    if (view.liveServerAvailable) {
+        if (view.liveServerEngineRunning)
+            liveTransportStop(view);
+        else
+            liveTransportPlay(view);
+        updateTransportDisplay(view);
+        return;
+    }
+#endif
     if (runtimeRunning(view)) {
         stopRuntime(view, "Audio stopped");
         updateTransportDisplay(view);
@@ -2716,13 +2731,24 @@ void openPluginEditor(GraphView& view, const Node& node) {
         node.pluginPath, node.label,
         [&view, nodeId](std::uint32_t parameterId, double normalizedValue) {
             view.parameterValues[nodeId][parameterId] = normalizedValue;
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+            if (view.liveServerAvailable)
+                liveSetParameter(view, nodeId, parameterId, normalizedValue);
+#endif
 #if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
-            if (runtimeRunning(view) && view.runtime) {
-                std::string error;
-                if (!view.runtime->setParameter(
-                        nodeId, parameterId, normalizedValue, error))
-                    std::cerr << "VST3 editor parameter forwarding failed for "
-                              << nodeId << ": " << error << "\n";
+            {
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+                const bool delegated = view.liveServerAvailable;
+#else
+                const bool delegated = false;
+#endif
+                if (!delegated && runtimeRunning(view) && view.runtime) {
+                    std::string error;
+                    if (!view.runtime->setParameter(
+                            nodeId, parameterId, normalizedValue, error))
+                        std::cerr << "VST3 editor parameter forwarding failed for "
+                                  << nodeId << ": " << error << "\n";
+                }
             }
 #endif
         },
@@ -3238,6 +3264,58 @@ static bool httpPost(const std::string& url, const std::string& body,
     return result == CURLE_OK;
 }
 
+static std::string urlEncodeComponent(const std::string& s) {
+    static constexpr char hex[] = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(s.size() * 3);
+    for (const unsigned char c : s) {
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~')
+            out += static_cast<char>(c);
+        else { out += '%'; out += hex[c >> 4]; out += hex[c & 0x0f]; }
+    }
+    return out;
+}
+
+static std::string expandNodeId(const std::string& id) {
+    if (id.starts_with("http://") || id.starts_with("https://")) return id;
+    return "http://purl.org/stuff/transmissions/" + id;
+}
+
+static bool liveTransportPlay(GraphView& view) {
+    std::string response;
+    if (!httpPost(view.liveServerUrl + "/transport/play", "", "text/turtle", response)) {
+        setStatus(view, "Live server transport play failed", true);
+        return false;
+    }
+    view.liveServerEngineRunning = true;
+    return true;
+}
+
+static bool liveTransportStop(GraphView& view) {
+    std::string response;
+    if (!httpPost(view.liveServerUrl + "/transport/stop", "", "text/turtle", response)) {
+        setStatus(view, "Live server transport stop failed", true);
+        return false;
+    }
+    view.liveServerEngineRunning = false;
+    return true;
+}
+
+static void liveSetParameter(GraphView& view, const std::string& nodeId,
+                              std::uint32_t parameterId, double value) {
+    const auto url = view.liveServerUrl + "/parameters/" +
+                     urlEncodeComponent(expandNodeId(nodeId)) + "/" +
+                     std::to_string(parameterId);
+    const auto body =
+        std::string("@prefix trn: <http://purl.org/stuff/transmissions/> .\n"
+                    "[] a trn:SetParameter ;\n"
+                    "    trn:expectedRevision ") + std::to_string(view.liveServerRevision) +
+        " ;\n    trn:normalizedValue " + std::to_string(value) + " .\n";
+    std::string response;
+    httpPost(url, body, "text/turtle", response);
+}
+
 static int parseRevisionFromTurtle(const std::string& turtle) {
     const std::string marker = "trn:revision ";
     const auto pos = turtle.find(marker);
@@ -3250,6 +3328,13 @@ static int parseGenerationFromTurtle(const std::string& turtle) {
     const auto pos = turtle.find(marker);
     if (pos == std::string::npos) return -1;
     try { return std::stoi(turtle.substr(pos + marker.size())); } catch (...) { return -1; }
+}
+
+static bool parseEngineRunningFromTurtle(const std::string& turtle) {
+    const std::string marker = "trn:engineState ";
+    const auto pos = turtle.find(marker);
+    if (pos == std::string::npos) return false;
+    return turtle.substr(pos + marker.size(), 9) == "\"running\"";
 }
 
 static std::string parseFilePathFromTurtle(const std::string& turtle) {
@@ -3443,6 +3528,11 @@ static gboolean liveServerPollTick(gpointer data) {
     const int serverRevision = parseRevisionFromTurtle(status);
     const int serverGeneration = parseGenerationFromTurtle(status);
     const std::string serverFilePath = parseFilePathFromTurtle(status);
+    const bool serverEngineRunning = parseEngineRunningFromTurtle(status);
+    if (serverEngineRunning != view.liveServerEngineRunning) {
+        view.liveServerEngineRunning = serverEngineRunning;
+        updateTransportDisplay(view);
+    }
     const bool generationChanged = serverGeneration >= 0 && serverGeneration != view.liveServerGeneration;
     const bool revisionChanged = serverRevision >= 0 && serverRevision != view.liveServerRevision;
     const bool projectChanged = !serverFilePath.empty() && serverFilePath != view.liveServerFilePath;

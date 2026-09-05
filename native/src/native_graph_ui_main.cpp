@@ -1,6 +1,10 @@
 #include <gtk/gtk.h>
 #include <glib/gstdio.h>
 #include <cairo.h>
+
+// Forward-declare only — including <X11/Xlib.h> pollutes the translation unit
+// with macros (None, Bool, Status, Window) that break GTK/GLib code.
+extern "C" { int XInitThreads(); }
 #include "transmission/AudioClipProcessor.h"
 #include "transmission/AudioProcessor.h"
 #include "transmission/GraphRuntimeController.h"
@@ -4740,6 +4744,7 @@ void activate(GtkApplication* application, gpointer) {
 } // namespace
 
 int main(int argc, char** argv) {
+    XInitThreads();  // Required before any X11 calls; plugins call X11 from their own threads.
     auto* application = gtk_application_new("org.transmission.Graph", G_APPLICATION_DEFAULT_FLAGS);
     g_signal_connect(application, "activate", G_CALLBACK(activate), nullptr);
     const int status = g_application_run(G_APPLICATION(application), argc, argv);

@@ -33,20 +33,21 @@ public:
     Steinberg::uint32 PLUGIN_API release() override { return 1; }
     Steinberg::tresult PLUGIN_API resizeView(Steinberg::IPlugView* view,
                                              Steinberg::ViewRect* newSize) override;
-    Steinberg::tresult PLUGIN_API registerEventHandler(Steinberg::Linux::IEventHandler*,
-                                                       Steinberg::Linux::FileDescriptor) override {
-        return Steinberg::kNotImplemented;
-    }
-    Steinberg::tresult PLUGIN_API unregisterEventHandler(Steinberg::Linux::IEventHandler*) override {
-        return Steinberg::kNotImplemented;
-    }
+    Steinberg::tresult PLUGIN_API registerEventHandler(Steinberg::Linux::IEventHandler* handler,
+                                                       Steinberg::Linux::FileDescriptor fd) override;
+    Steinberg::tresult PLUGIN_API unregisterEventHandler(Steinberg::Linux::IEventHandler* handler) override;
     Steinberg::tresult PLUGIN_API registerTimer(Steinberg::Linux::ITimerHandler* handler,
                                                 Steinberg::Linux::TimerInterval milliseconds) override;
     Steinberg::tresult PLUGIN_API unregisterTimer(Steinberg::Linux::ITimerHandler* handler) override;
 
 private:
+    struct FdSource { guint id; Steinberg::Linux::FileDescriptor fd; };
+
     Vst3EditorHost::Impl* owner_;
+    // Keyed by fd so multiple fds registered for the same handler are all watched.
+    struct FdEntry { guint sourceId; Steinberg::Linux::IEventHandler* handler; };
     std::unordered_map<Steinberg::Linux::ITimerHandler*, guint> timers_;
+    std::unordered_map<Steinberg::Linux::FileDescriptor, FdEntry> fdSources_;
 };
 
 class ComponentHandler final : public Steinberg::Vst::IComponentHandler {
@@ -85,7 +86,7 @@ struct Vst3EditorHost::Impl {
     Steinberg::IPtr<Steinberg::IPlugView> view;
     std::unique_ptr<EditorFrame> frame;
     GtkWidget* window = nullptr;
-    GtkWidget* socket = nullptr;
+    Window    xembedWindow = 0;  // bare X11 window; no GDK event selection
     bool closing = false;
     ParameterEditCallback parameterEdit;
     StateCallback stateChanged;
@@ -110,9 +111,11 @@ struct Vst3EditorHost::Impl {
     void destroyWindow() noexcept {
         if (window && !closing) {
             closing = true;
+            // GTK destroying the top-level window also destroys all X11 children,
+            // including xembedWindow, so do not call XDestroyWindow separately.
             gtk_widget_destroy(window);
             window = nullptr;
-            socket = nullptr;
+            xembedWindow = 0;
             closing = false;
         }
     }
@@ -171,6 +174,46 @@ EditorFrame::~EditorFrame() {
         (void)handler;
         g_source_remove(source);
     }
+    for (const auto& [fd, entry] : fdSources_) {
+        (void)fd;
+        g_source_remove(entry.sourceId);
+    }
+}
+
+Steinberg::tresult PLUGIN_API EditorFrame::registerEventHandler(
+    Steinberg::Linux::IEventHandler* handler, Steinberg::Linux::FileDescriptor fd) {
+    if (!handler || fdSources_.count(fd))
+        return Steinberg::kInvalidArgument;
+    struct Ctx { Steinberg::Linux::IEventHandler* h; Steinberg::Linux::FileDescriptor fd; };
+    auto* ctx = new Ctx{handler, fd};
+    GIOChannel* ch = g_io_channel_unix_new(fd);
+    const guint id = g_io_add_watch_full(
+        ch, G_PRIORITY_DEFAULT, G_IO_IN,
+        [](GIOChannel*, GIOCondition, gpointer data) -> gboolean {
+            auto* c = static_cast<Ctx*>(data);
+            c->h->onFDIsSet(c->fd);
+            return G_SOURCE_CONTINUE;
+        },
+        ctx, [](gpointer data) { delete static_cast<Ctx*>(data); });
+    g_io_channel_unref(ch);
+    if (!id) { delete ctx; return Steinberg::kResultFalse; }
+    fdSources_[fd] = { id, handler };
+    return Steinberg::kResultTrue;
+}
+
+Steinberg::tresult PLUGIN_API EditorFrame::unregisterEventHandler(
+    Steinberg::Linux::IEventHandler* handler) {
+    bool found = false;
+    for (auto it = fdSources_.begin(); it != fdSources_.end(); ) {
+        if (it->second.handler == handler) {
+            g_source_remove(it->second.sourceId);
+            it = fdSources_.erase(it);
+            found = true;
+        } else {
+            ++it;
+        }
+    }
+    return found ? Steinberg::kResultTrue : Steinberg::kInvalidArgument;
 }
 
 static gboolean timerCallback(gpointer data) {
@@ -200,8 +243,14 @@ Steinberg::tresult PLUGIN_API EditorFrame::unregisterTimer(
 Steinberg::tresult PLUGIN_API EditorFrame::resizeView(Steinberg::IPlugView*,
                                                       Steinberg::ViewRect* newSize) {
     if (!owner_ || !owner_->window || !newSize) return Steinberg::kInvalidArgument;
-    gtk_window_resize(GTK_WINDOW(owner_->window), newSize->right - newSize->left,
-                      newSize->bottom - newSize->top);
+    const int w = newSize->right - newSize->left;
+    const int h = newSize->bottom - newSize->top;
+    if (owner_->xembedWindow) {
+        Display* dpy = gdk_x11_display_get_xdisplay(gdk_display_get_default());
+        XResizeWindow(dpy, owner_->xembedWindow, static_cast<unsigned>(w), static_cast<unsigned>(h));
+        XFlush(dpy);
+    }
+    gtk_window_resize(GTK_WINDOW(owner_->window), w, h);
     return Steinberg::kResultTrue;
 }
 
@@ -282,15 +331,31 @@ bool Vst3EditorHost::open(const std::string& modulePath,
     impl_->frame = std::make_unique<EditorFrame>(impl_.get());
     impl_->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(impl_->window), title.c_str());
-    gtk_window_set_default_size(GTK_WINDOW(impl_->window), size.right - size.left,
-                                size.bottom - size.top);
-    impl_->socket = gtk_socket_new();
-    gtk_container_add(GTK_CONTAINER(impl_->window), impl_->socket);
+    const int plugW = size.right - size.left;
+    const int plugH = size.bottom - size.top;
+    gtk_window_set_default_size(GTK_WINDOW(impl_->window), plugW, plugH);
     gtk_widget_show_all(impl_->window);
+
+    // Create a bare X11 window with no GDK event selection as the embedding
+    // parent. GtkSocket (XEMBED) and GtkDrawingArea (GDK-managed) both
+    // interfere with XI2 event delivery to JUCE's child window. A plain
+    // XCreateSimpleWindow on GDK's display has no event masks and lets JUCE
+    // receive XI2 pointer events directly.
+    GdkWindow* gdkWin = gtk_widget_get_window(impl_->window);
+    const Window gtkXWin = gdkWin ? gdk_x11_window_get_xid(gdkWin) : 0;
+    Display* x11Dpy = gdk_x11_display_get_xdisplay(gdk_display_get_default());
+    if (!gtkXWin || !x11Dpy) return fail("could not get GTK X11 window");
+
+    impl_->xembedWindow = XCreateSimpleWindow(x11Dpy, gtkXWin,
+                                              0, 0, static_cast<unsigned>(plugW), static_cast<unsigned>(plugH),
+                                              0, 0, 0);
+    XMapWindow(x11Dpy, impl_->xembedWindow);
+    XFlush(x11Dpy);
+
     impl_->view->setFrame(impl_->frame.get());
-    const auto socketId = gtk_socket_get_id(GTK_SOCKET(impl_->socket));
-    if (!socketId || impl_->view->attached(reinterpret_cast<void*>(
-            static_cast<std::uintptr_t>(socketId)), Steinberg::kPlatformTypeX11EmbedWindowID) != Steinberg::kResultTrue) {
+    if (!impl_->xembedWindow || impl_->view->attached(
+            reinterpret_cast<void*>(static_cast<std::uintptr_t>(impl_->xembedWindow)),
+            Steinberg::kPlatformTypeX11EmbedWindowID) != Steinberg::kResultTrue) {
         return fail("editor attachment failed");
     }
     return true;

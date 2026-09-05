@@ -9,7 +9,7 @@
     :loopEnd 96 ;
     :loopEnabled true ;
     :systemInputConnections ( "No connection" "No connection" ) ;
-    :systemOutputConnections ( "UMC404HD 192k-86:playback_AUX0" "UMC404HD 192k-86:playback_AUX1" ) ;
+    :systemOutputConnections ( "UMC404HD 192k:playback_FL" "UMC404HD 192k:playback_FR" ) ;
     :pipe (
         :system-input
         :automata

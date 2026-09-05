@@ -12,10 +12,22 @@ Add built-in modules Oscilloscope & Spectrum analyzer, loaded like the Output bu
 
 ## Live generative DJ via MCP
 
-A near-term goal is to have Claude act as a DJ, using /home/danny/github/transmission as a DAW, loading and running generative plugins from /home/danny/github/downspout together with effects from /home/danny/github/valis Both transmission and valis will need to have suitable mcp tool cover.
+Claude acts as a DJ via MCP, loading and playing generative patches from
+`projects/patches/` and effects from Valis. The set list vocabulary and a
+runner are now in place; next steps are live parameter control and Valis
+integration.
 
-In the process we can also work out a way of expressing the DJ set list in Turtle/RDF, so potentially a runner could fire the MCP commands over HTTP without the language model having to be present at runtime. The vocabulary should have quite general-purpose foundations so it could potentially be used by a real DJ spinning disks.
-(This material should be saved in the Transmission repo).
+Done:
+- `vocabs/djset.ttl` — vocabulary for DJ set lists (DJSet, Cue, Transition, ParameterChange)
+- `projects/setlists/rise-to-techno.ttl` — sample set list, 54→160 BPM arc
+- `scripts/dj-runner.js` — autonomous set list runner over the live HTTP API
+- MCP live session confirmed working: dub-reggae-birdsong loaded and playing
+
+Remaining:
+- Live parameter control: describe plugin parameters, apply changes during playback
+- Valis effects integration: load a Valis patch as an effect insert in a DJ chain
+- Crossfade transition implementation in dj-runner.js (requires mixer gain params)
+- xoxolo pattern programming for hardcore-techno-160
 
 ### Live MCP setup prerequisites
 

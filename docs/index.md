@@ -49,3 +49,4 @@ See [Installation](installation) for full requirements and build instructions.
 | [MCP Reference](mcp-reference) | MCP tools, resources, and HTTP API endpoints |
 | [Architecture](architecture) | System design and component boundaries |
 | [Plugin System](plugin-profiles) | VST3 discovery, curated profiles, RDF vocabulary |
+| [DJ Set Lists](dj-setlists) | Composing and running autonomous DJ set lists in Turtle |

@@ -8,7 +8,7 @@
     :loopStart 0 ;
     :loopEnd 32 ;
     :loopEnabled true ;
-    :systemOutputConnections ( "UMC404HD 192k-92:playback_FL" "UMC404HD 192k-92:playback_FR" ) ;
+    :systemOutputConnections ( "UMC404HD 192k:playback_FL" "UMC404HD 192k:playback_FR" ) ;
     :pipe ( :system-output :drumgen :drumkit :melgen :valis ) ;
     :connections (
         [ :from :drumgen ; :to :drumkit ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]

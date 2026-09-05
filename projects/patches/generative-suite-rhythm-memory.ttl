@@ -8,7 +8,7 @@
     :loopEnd 64 ;
     :loopEnabled true ;
     :systemInputConnections ( "No connection" "No connection" ) ;
-    :systemOutputConnections ( "system:playback_1" "system:playback_2" ) ;
+    :systemOutputConnections ( "UMC404HD 192k:playback_FL" "UMC404HD 192k:playback_FR" ) ;
     :pipe ( :system-input :polymeter :mnemosyne :drumkit :canticle :t-mix :guardian :system-output ) ;
     :connections (
         [ :from :polymeter ; :to :drumkit ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]

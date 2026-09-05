@@ -1,0 +1,91 @@
+@prefix :    <http://purl.org/stuff/transmissions/setlists/rise-to-techno/> .
+@prefix trn: <http://purl.org/stuff/transmissions/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+## Rise to Techno — a generative DJ set list.
+##
+## Arc: ambient opener → organic groove → dance → peak techno.
+## All patch files are relative to /home/danny/github/transmission/projects/.
+## A runner should resolve them against that root.
+
+:set a trn:DJSet ;
+    rdfs:label "Rise to Techno" ;
+    trn:artist "Claude" ;
+    trn:setDate "2026-09-05"^^xsd:date ;
+    trn:genre "Generative / Electronic" ;
+    trn:cues (
+        :cue-crystal
+        :cue-pastoral
+        :cue-cellular
+        :cue-nocturnal
+        :cue-mosaic
+        :cue-rhythm-memory
+        :cue-dance-birdsong
+        :cue-live-dj
+        :cue-melodic-techno
+        :cue-hardcore
+    ) .
+
+## ── Cues ─────────────────────────────────────────────────────────────────────
+
+:cue-crystal a trn:Cue ;
+    rdfs:label "Crystal Healing Vibratones" ;
+    trn:filePath "patches/crystal-healing-vibratones.ttl" ;
+    trn:durationBeats 128 ;
+    trn:transition [ a trn:HardCut ] .
+
+:cue-pastoral a trn:Cue ;
+    rdfs:label "Pastoral Scene" ;
+    trn:filePath "patches/pastoral-scene.ttl" ;
+    trn:durationBeats 128 ;
+    trn:transition [ a trn:HardCut ] .
+
+:cue-cellular a trn:Cue ;
+    rdfs:label "Cellular Bloom" ;
+    trn:filePath "patches/cellular-bloom.ttl" ;
+    trn:durationBeats 128 ;
+    trn:transition [ a trn:HardCut ] .
+
+:cue-nocturnal a trn:Cue ;
+    rdfs:label "Nocturnal Drift" ;
+    trn:filePath "patches/nocturnal-drift.ttl" ;
+    trn:durationBeats 128 ;
+    trn:transition [ a trn:HardCut ] .
+
+:cue-mosaic a trn:Cue ;
+    rdfs:label "Generative Suite — Mosaic" ;
+    trn:filePath "patches/generative-suite-mosaic.ttl" ;
+    trn:durationBeats 128 ;
+    trn:transition [ a trn:HardCut ] .
+
+:cue-rhythm-memory a trn:Cue ;
+    rdfs:label "Generative Suite — Rhythm Memory" ;
+    trn:filePath "patches/generative-suite-rhythm-memory.ttl" ;
+    trn:durationBeats 128 ;
+    trn:transition [ a trn:HardCut ] .
+
+:cue-dance-birdsong a trn:Cue ;
+    rdfs:label "Dance Birdsong" ;
+    trn:filePath "patches/dance-birdsong.ttl" ;
+    trn:durationBeats 256 ;
+    trn:transition [ a trn:HardCut ] .
+
+:cue-live-dj a trn:Cue ;
+    rdfs:label "Live DJ" ;
+    trn:filePath "patches/live-dj.ttl" ;
+    trn:durationBeats 256 ;
+    trn:transition [ a trn:HardCut ] .
+
+:cue-melodic-techno a trn:Cue ;
+    rdfs:label "Hardcore Melodic Techno" ;
+    trn:filePath "patches/hardcore-melodic-techno.ttl" ;
+    trn:durationBeats 256 ;
+    trn:transition [ a trn:HardCut ] .
+
+:cue-hardcore a trn:Cue ;
+    rdfs:label "Hardcore Techno 160" ;
+    trn:filePath "patches/hardcore-techno-160.ttl" ;
+    trn:durationBeats 0 ;
+    trn:transition [ a trn:HardCut ] .

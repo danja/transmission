@@ -1,0 +1,111 @@
+@prefix trn:  <http://purl.org/stuff/transmissions/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+## DJ Set vocabulary for Transmission.
+##
+## A trn:DJSet is an ordered sequence of trn:Cue items. A runner executes the
+## set list by opening each patch, configuring transport, playing for the stated
+## duration, then advancing to the next cue. Parameter changes scheduled within
+## a cue are applied at the given beat offset from cue start.
+##
+## Reuses from actions.ttl: trn:filePath, trn:tempo, trn:atBeat,
+##   trn:parameterId, trn:normalizedValue.
+## Reuses from profile.ttl: trn:genre.
+
+## ── Classes ───────────────────────────────────────────────────────────────────
+
+trn:DJSet a owl:Class ;
+    rdfs:label "DJ Set" ;
+    rdfs:comment "A complete DJ performance comprising an ordered sequence of cues." .
+
+trn:Cue a owl:Class ;
+    rdfs:label "Cue" ;
+    rdfs:comment "One slot in a DJ set: a patch to load and play for a given duration." .
+
+trn:Transition a owl:Class ;
+    rdfs:label "Transition" ;
+    rdfs:comment "How playback moves from the end of one cue to the start of the next." .
+
+trn:HardCut a owl:Class ; rdfs:subClassOf trn:Transition ;
+    rdfs:label "Hard Cut" ;
+    rdfs:comment "Stop the outgoing cue on the next bar boundary, then load and start the next." .
+
+trn:Crossfade a owl:Class ; rdfs:subClassOf trn:Transition ;
+    rdfs:label "Crossfade" ;
+    rdfs:comment "Fade out the outgoing cue while the incoming one fades in. Requires a mixer node that responds to gain parameters." .
+
+trn:ParameterChange a owl:Class ;
+    rdfs:label "Parameter Change" ;
+    rdfs:comment "A timed parameter automation step applied at a beat offset within a cue." .
+
+## ── DJSet properties ─────────────────────────────────────────────────────────
+
+trn:cues a owl:ObjectProperty ;
+    rdfs:domain trn:DJSet ;
+    rdfs:label "cues" ;
+    rdfs:comment "Ordered rdf:List of trn:Cue items in this set." .
+
+trn:setDate a owl:DatatypeProperty ;
+    rdfs:domain trn:DJSet ;
+    rdfs:range xsd:date ;
+    rdfs:label "set date" .
+
+trn:artist a owl:DatatypeProperty ;
+    rdfs:domain trn:DJSet ;
+    rdfs:range xsd:string ;
+    rdfs:label "artist" .
+
+trn:venue a owl:DatatypeProperty ;
+    rdfs:domain trn:DJSet ;
+    rdfs:range xsd:string ;
+    rdfs:label "venue" .
+
+## ── Cue properties ────────────────────────────────────────────────────────────
+
+## trn:filePath (from actions.ttl) — absolute path to the Turtle project file.
+
+trn:durationBeats a owl:DatatypeProperty ;
+    rdfs:domain trn:Cue ;
+    rdfs:range xsd:integer ;
+    rdfs:label "duration beats" ;
+    rdfs:comment "Number of beats to play before advancing to the next cue. 0 means play indefinitely (manual advance)." .
+
+## trn:tempo (from actions.ttl) — BPM override; absent means use the patch default.
+
+trn:transition a owl:ObjectProperty ;
+    rdfs:domain trn:Cue ;
+    rdfs:range trn:Transition ;
+    rdfs:label "transition" ;
+    rdfs:comment "How to advance to the next cue. Defaults to trn:HardCut if absent." .
+
+trn:onLoad a owl:ObjectProperty ;
+    rdfs:domain trn:Cue ;
+    rdfs:label "on load" ;
+    rdfs:comment "rdf:List of trn:ParameterChange items applied immediately when the patch is loaded." .
+
+trn:scheduled a owl:ObjectProperty ;
+    rdfs:domain trn:Cue ;
+    rdfs:label "scheduled" ;
+    rdfs:comment "rdf:List of trn:ParameterChange items applied at specific beat offsets during the cue." .
+
+## ── Transition properties ────────────────────────────────────────────────────
+
+trn:fadeBeats a owl:DatatypeProperty ;
+    rdfs:domain trn:Crossfade ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "fade beats" ;
+    rdfs:comment "Duration of the crossfade in beats at the current tempo." .
+
+## ── ParameterChange properties ───────────────────────────────────────────────
+
+## trn:atBeat (from actions.ttl) — beat offset from cue start; 0 = at load time.
+## trn:parameterId (from actions.ttl) — VST3 parameter index on the target node.
+## trn:normalizedValue (from actions.ttl) — target value in [0, 1].
+
+trn:targetNode a owl:DatatypeProperty ;
+    rdfs:domain trn:ParameterChange ;
+    rdfs:range xsd:string ;
+    rdfs:label "target node" ;
+    rdfs:comment "Node identifier within the patch (matches the local name in the project Turtle)." .

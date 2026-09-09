@@ -1,7 +1,5 @@
 # TODO
 
-A systematic problem is that some patches require more resources than available in real time with the current buffering setup. Explore how this aspect could be improved. Note that streaming patches to wav works nicely.
-
 ## Feature : scopes
 
 Add built-in modules Oscilloscope & Spectrum analyzer, loaded like the Output built-ins as required. They should display while running in the main window, like the level meters in the output built-in.

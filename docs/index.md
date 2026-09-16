@@ -12,6 +12,8 @@ permalink: /
 
 Transmission hosts VST3 plugins in a directed graph, routes typed MIDI and audio between them, and exposes the full system to AI agents via the [Model Context Protocol](https://modelcontextprotocol.io). It is intended for use primarily with the [Downspout](https://danja.github.io/downspout/) VST plugins.
 
+[Releases](https://github.com/danja/transmission/releases)
+
 ![Transmission graph editor](transmission.jpeg)
 
 The patch above was generated from a prompt using Claude Code, for a description of the procedure used see [Crocotta](https://danja.github.io/transmission/crocotta.html). You can listen to the result on [YouTube](https://youtube.com/shorts/4fgfn_XeoXo).
@@ -47,3 +49,4 @@ See [Installation](installation) for full requirements and build instructions.
 | [MCP Reference](mcp-reference) | MCP tools, resources, and HTTP API endpoints |
 | [Architecture](architecture) | System design and component boundaries |
 | [Plugin System](plugin-profiles) | VST3 discovery, curated profiles, RDF vocabulary |
+| [DJ Set Lists](dj-setlists) | Composing and running autonomous DJ set lists in Turtle |

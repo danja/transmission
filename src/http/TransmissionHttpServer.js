@@ -68,6 +68,20 @@ export class TransmissionHttpServer {
   async _handleGet(path, req, res) {
     const control = this.control
 
+    if (path === '/events') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Access-Control-Allow-Origin': '*'
+      })
+      res.write(':\n\n')
+      const cleanup = control.onStatusChange(status => {
+        res.write(`data: ${JSON.stringify({ revision: status.revision, generation: status.generation, filePath: status.filePath ?? null })}\n\n`)
+      })
+      req.on('close', cleanup)
+      return
+    }
     if (path === '/status') {
       return sendTurtle(res, 200, serializeStatus(control.status()))
     }

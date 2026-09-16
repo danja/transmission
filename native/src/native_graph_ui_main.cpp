@@ -1,6 +1,11 @@
 #include <gtk/gtk.h>
 #include <glib/gstdio.h>
+#include <gio/gunixinputstream.h>
 #include <cairo.h>
+
+// Forward-declare only — including <X11/Xlib.h> pollutes the translation unit
+// with macros (None, Bool, Status, Window) that break GTK/GLib code.
+extern "C" { int XInitThreads(); }
 #include "transmission/AudioClipProcessor.h"
 #include "transmission/AudioProcessor.h"
 #include "transmission/GraphRuntimeController.h"
@@ -41,6 +46,7 @@
 #include <vector>
 #include <signal.h>
 #include <unistd.h>
+#include <optional>
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
 #include <curl/curl.h>
 #endif
@@ -152,17 +158,27 @@ struct GraphView {
     std::string lastSavedSnapshot;
     std::vector<std::string> recentFiles;
     GtkWidget* recentMenu = nullptr;
+    GtkWidget* jackIndicator = nullptr;
+    GtkWidget* mcpIndicator = nullptr;
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
     std::string liveServerUrl{"http://127.0.0.1:7878"};
+    bool mcpServerEnabled = true;
     bool liveServerAvailable = false;
+    bool liveServerEngineRunning = false;
+    bool liveServerProjectOpen = false;
     int liveServerRevision = -1;
+    int liveServerGeneration = -1;
     std::string liveServerFilePath;
     guint liveServerPollTimer = 0;
     GSubprocess* liveServerProcess = nullptr;
+    GIOChannel* liveServerStderr = nullptr;
+    guint liveServerStderrWatch = 0;
 #endif
     std::atomic<float> outputPeakL{0.f};
     std::atomic<float> outputPeakR{0.f};
     guint peakMeterTimer = 0;
+    bool startJackOnStartup = false;
+    std::string jackStartCommand = "jackd -d alsa -r 48000 -p 1024";
     std::size_t requestedBufferSize = 0;
     std::size_t renderAheadMilliseconds = 200;
     std::size_t processingThreads = 0;
@@ -291,6 +307,10 @@ void setStatus(GraphView& view, const std::string& message, bool error = false) 
 }
 
 bool runtimeRunning(const GraphView& view) {
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    if (view.liveServerAvailable)
+        return view.liveServerEngineRunning;
+#endif
 #if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
     return view.runtime && view.runtime->running();
 #else
@@ -1799,8 +1819,25 @@ void startTransportTimer(GraphView& view) {
         view.transportTimer = g_timeout_add(30, transportTick, &view);
 }
 
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+static bool liveTransportPlay(GraphView&);
+static bool liveTransportStop(GraphView&);
+static void liveSetParameter(GraphView&, const std::string&, std::uint32_t, double);
+static void syncToLiveServer(GraphView&, const std::string&);
+#endif
+
 void playStopClicked(GtkButton*, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    if (view.liveServerAvailable) {
+        if (view.liveServerEngineRunning)
+            liveTransportStop(view);
+        else
+            liveTransportPlay(view);
+        updateTransportDisplay(view);
+        return;
+    }
+#endif
     if (runtimeRunning(view)) {
         stopRuntime(view, "Audio stopped");
         updateTransportDisplay(view);
@@ -2227,13 +2264,42 @@ void loadConfig(GraphView& view) {
     std::ifstream f(configFilePath());
     std::string line;
     std::string paths;
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    std::optional<bool> mcpServerEnabled;
+#endif
     while (std::getline(f, line)) {
         if (line.rfind("PLUGIN_PATH\t", 0) == 0) {
             if (!paths.empty()) paths += '\n';
             paths += line.substr(12);
+            continue;
+        }
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+        if (line == "MCP_SERVER\ton") {
+            mcpServerEnabled = true;
+            continue;
+        }
+        if (line == "MCP_SERVER\toff") {
+            mcpServerEnabled = false;
+            continue;
+        }
+#endif
+        if (line == "JACK_AUTOSTART\ton") {
+            view.startJackOnStartup = true;
+            continue;
+        }
+        if (line == "JACK_AUTOSTART\toff") {
+            view.startJackOnStartup = false;
+            continue;
+        }
+        if (line.rfind("JACK_START_CMD\t", 0) == 0) {
+            view.jackStartCommand = line.substr(15);
+            continue;
         }
     }
     if (!paths.empty()) view.pluginSearchPath = paths;
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    if (mcpServerEnabled.has_value()) view.mcpServerEnabled = *mcpServerEnabled;
+#endif
 }
 
 void saveConfig(const GraphView& view) {
@@ -2245,6 +2311,11 @@ void saveConfig(const GraphView& view) {
     std::string line;
     while (std::getline(ss, line))
         if (!line.empty()) f << "PLUGIN_PATH\t" << line << '\n';
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    f << "MCP_SERVER\t" << (view.mcpServerEnabled ? "on" : "off") << '\n';
+#endif
+    f << "JACK_AUTOSTART\t" << (view.startJackOnStartup ? "on" : "off") << '\n';
+    f << "JACK_START_CMD\t" << view.jackStartCommand << '\n';
 }
 
 std::size_t scanPlugins(GraphView& view) {
@@ -2334,6 +2405,120 @@ void pluginPathActivated(GtkMenuItem*, gpointer data) {
         } else {
             break;
         }
+    }
+    gtk_widget_destroy(dialog);
+}
+
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+static bool pingLiveServer(GraphView& view);
+static void launchLiveServer(GraphView& view);
+void updateWindowTitle(GraphView& view);
+
+void mcpServerSettingsActivated(GtkMenuItem*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    auto* dialog = gtk_dialog_new_with_buttons(
+        "MCP Server", GTK_WINDOW(view.window),
+        static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL |
+                                   GTK_DIALOG_DESTROY_WITH_PARENT),
+        "_Cancel", GTK_RESPONSE_CANCEL, "_Apply", GTK_RESPONSE_ACCEPT,
+        nullptr);
+    auto* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+    gtk_box_set_spacing(GTK_BOX(content), 10);
+
+    auto* enabled = GTK_TOGGLE_BUTTON(
+        gtk_check_button_new_with_label("Enable live MCP server"));
+    gtk_toggle_button_set_active(enabled, view.mcpServerEnabled);
+    gtk_box_pack_start(GTK_BOX(content), GTK_WIDGET(enabled), FALSE, FALSE, 0);
+
+    auto* explanation = gtk_label_new(
+        "When enabled, Transmission connects to the live HTTP server used by the "
+        "MCP bridge and launches it automatically if needed. Disable this to keep "
+        "the GTK editor offline.");
+    gtk_label_set_xalign(GTK_LABEL(explanation), 0.0F);
+    gtk_label_set_line_wrap(GTK_LABEL(explanation), TRUE);
+    gtk_widget_set_size_request(explanation, 460, -1);
+    gtk_box_pack_start(GTK_BOX(content), explanation, FALSE, FALSE, 0);
+
+    gtk_widget_show_all(dialog);
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        const bool nextEnabled = gtk_toggle_button_get_active(enabled);
+        if (nextEnabled != view.mcpServerEnabled) {
+            view.mcpServerEnabled = nextEnabled;
+            saveConfig(view);
+            if (!view.mcpServerEnabled) {
+                view.liveServerAvailable = false;
+                view.liveServerRevision = -1;
+                view.liveServerGeneration = -1;
+                view.liveServerFilePath.clear();
+                if (view.liveServerStderrWatch) {
+                    g_source_remove(view.liveServerStderrWatch);
+                    view.liveServerStderrWatch = 0;
+                }
+                if (view.liveServerStderr) {
+                    g_io_channel_unref(view.liveServerStderr);
+                    view.liveServerStderr = nullptr;
+                }
+                if (view.liveServerProcess) {
+                    g_subprocess_send_signal(view.liveServerProcess, SIGTERM);
+                    g_object_unref(view.liveServerProcess);
+                    view.liveServerProcess = nullptr;
+                }
+                updateWindowTitle(view);
+                logConsole(view, "Live MCP server disabled");
+            } else {
+                if (pingLiveServer(view)) {
+                    logConsole(view, "Connected to live server at " + view.liveServerUrl);
+                    updateWindowTitle(view);
+                } else {
+                    launchLiveServer(view);
+                }
+            }
+        }
+    }
+    gtk_widget_destroy(dialog);
+}
+#endif
+
+void jackStartupSettingsActivated(GtkMenuItem*, gpointer data) {
+    auto& view = *static_cast<GraphView*>(data);
+    auto* dialog = gtk_dialog_new_with_buttons(
+        "JACK Startup", GTK_WINDOW(view.window),
+        static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL |
+                                   GTK_DIALOG_DESTROY_WITH_PARENT),
+        "_Cancel", GTK_RESPONSE_CANCEL, "_Apply", GTK_RESPONSE_ACCEPT,
+        nullptr);
+    auto* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+    gtk_box_set_spacing(GTK_BOX(content), 10);
+
+    auto* enableCheck = GTK_TOGGLE_BUTTON(
+        gtk_check_button_new_with_label("Start JACK automatically on startup"));
+    gtk_toggle_button_set_active(enableCheck, view.startJackOnStartup);
+    gtk_box_pack_start(GTK_BOX(content), GTK_WIDGET(enableCheck), FALSE, FALSE, 0);
+
+    auto* cmdRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    auto* cmdLabel = gtk_label_new("Command:");
+    auto* cmdEntry = GTK_ENTRY(gtk_entry_new());
+    gtk_entry_set_text(cmdEntry, view.jackStartCommand.c_str());
+    gtk_widget_set_size_request(GTK_WIDGET(cmdEntry), 320, -1);
+    gtk_box_pack_start(GTK_BOX(cmdRow), cmdLabel, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(cmdRow), GTK_WIDGET(cmdEntry), TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(content), cmdRow, FALSE, FALSE, 0);
+
+    auto* note = gtk_label_new(
+        "The command is run in the background at startup when JACK is not already\n"
+        "running. Transmission waits 2 seconds for the server to become available.");
+    gtk_label_set_xalign(GTK_LABEL(note), 0.0F);
+    gtk_box_pack_start(GTK_BOX(content), note, FALSE, FALSE, 0);
+
+    gtk_widget_show_all(dialog);
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        view.startJackOnStartup =
+            gtk_toggle_button_get_active(enableCheck);
+        const gchar* cmd = gtk_entry_get_text(cmdEntry);
+        if (cmd && *cmd) view.jackStartCommand = cmd;
+        saveConfig(view);
     }
     gtk_widget_destroy(dialog);
 }
@@ -2565,13 +2750,24 @@ void openPluginEditor(GraphView& view, const Node& node) {
         node.pluginPath, node.label,
         [&view, nodeId](std::uint32_t parameterId, double normalizedValue) {
             view.parameterValues[nodeId][parameterId] = normalizedValue;
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+            if (view.liveServerAvailable)
+                liveSetParameter(view, nodeId, parameterId, normalizedValue);
+#endif
 #if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
-            if (runtimeRunning(view) && view.runtime) {
-                std::string error;
-                if (!view.runtime->setParameter(
-                        nodeId, parameterId, normalizedValue, error))
-                    std::cerr << "VST3 editor parameter forwarding failed for "
-                              << nodeId << ": " << error << "\n";
+            {
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+                const bool delegated = view.liveServerAvailable;
+#else
+                const bool delegated = false;
+#endif
+                if (!delegated && runtimeRunning(view) && view.runtime) {
+                    std::string error;
+                    if (!view.runtime->setParameter(
+                            nodeId, parameterId, normalizedValue, error))
+                        std::cerr << "VST3 editor parameter forwarding failed for "
+                                  << nodeId << ": " << error << "\n";
+                }
             }
 #endif
         },
@@ -2582,7 +2778,19 @@ void openPluginEditor(GraphView& view, const Node& node) {
             if (!updatedState.controller.empty())
                 target.controller = std::move(updatedState.controller);
         },
-        state, parameters);
+        state, parameters,
+        [&view, nodeId](const transmission::ProcessorState& liveState) {
+            if (!liveState.component.empty())
+                view.pluginStates[nodeId].component = liveState.component;
+#if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
+            if (runtimeRunning(view) && view.runtime) {
+                std::string error;
+                if (!view.runtime->setPluginState(nodeId, liveState, error))
+                    std::cerr << "VST3 live state forwarding failed for "
+                              << nodeId << ": " << error << "\n";
+            }
+#endif
+        });
 }
 
 void editNodeFromMenu(GtkMenuItem*, gpointer data) {
@@ -3075,11 +3283,115 @@ static bool httpPost(const std::string& url, const std::string& body,
     return result == CURLE_OK;
 }
 
+static std::string urlEncodeComponent(const std::string& s) {
+    static constexpr char hex[] = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(s.size() * 3);
+    for (const unsigned char c : s) {
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~')
+            out += static_cast<char>(c);
+        else { out += '%'; out += hex[c >> 4]; out += hex[c & 0x0f]; }
+    }
+    return out;
+}
+
+static std::string expandNodeId(const std::string& id) {
+    if (id.starts_with("http://") || id.starts_with("https://")) return id;
+    return "http://purl.org/stuff/transmissions/" + id;
+}
+
+static bool liveTransportPlay(GraphView& view) {
+    if (!view.liveServerProjectOpen) {
+        if (view.filePath.empty()) {
+            setStatus(view, "Save the project first to use the live server", true);
+            return false;
+        }
+        syncToLiveServer(view, view.filePath);
+        if (!view.liveServerProjectOpen) {
+            setStatus(view, "Live server failed to load project", true);
+            return false;
+        }
+    }
+    std::string response;
+    if (!httpPost(view.liveServerUrl + "/transport/play", "", "text/turtle", response)) {
+        setStatus(view, "Live server transport play failed", true);
+        return false;
+    }
+    // If the engine lost its project (e.g. server restarted), re-sync and retry once.
+    if (response.find("compiled project") != std::string::npos &&
+        !view.filePath.empty()) {
+        view.liveServerProjectOpen = false;
+        syncToLiveServer(view, view.filePath);
+        if (!view.liveServerProjectOpen ||
+            !httpPost(view.liveServerUrl + "/transport/play", "", "text/turtle", response)) {
+            setStatus(view, "Live server failed to reload project for playback", true);
+            return false;
+        }
+    }
+    if (response.find("trn:Error") != std::string::npos ||
+        response.find("trn:NoProject") != std::string::npos) {
+        const auto msgPos = response.find("trn:message \"");
+        const std::string msg = msgPos != std::string::npos
+            ? response.substr(msgPos + 13, response.find('"', msgPos + 13) - msgPos - 13)
+            : "Live server rejected play";
+        setStatus(view, msg, true);
+        return false;
+    }
+    view.liveServerEngineRunning = true;
+    return true;
+}
+
+static bool liveTransportStop(GraphView& view) {
+    std::string response;
+    if (!httpPost(view.liveServerUrl + "/transport/stop", "", "text/turtle", response)) {
+        setStatus(view, "Live server transport stop failed", true);
+        return false;
+    }
+    view.liveServerEngineRunning = false;
+    return true;
+}
+
+static void liveSetParameter(GraphView& view, const std::string& nodeId,
+                              std::uint32_t parameterId, double value) {
+    const auto url = view.liveServerUrl + "/parameters/" +
+                     urlEncodeComponent(expandNodeId(nodeId)) + "/" +
+                     std::to_string(parameterId);
+    const auto body =
+        std::string("@prefix trn: <http://purl.org/stuff/transmissions/> .\n"
+                    "[] a trn:SetParameter ;\n"
+                    "    trn:expectedRevision ") + std::to_string(view.liveServerRevision) +
+        " ;\n    trn:normalizedValue " + std::to_string(value) + " .\n";
+    std::string response;
+    httpPost(url, body, "text/turtle", response);
+}
+
 static int parseRevisionFromTurtle(const std::string& turtle) {
     const std::string marker = "trn:revision ";
     const auto pos = turtle.find(marker);
     if (pos == std::string::npos) return -1;
     try { return std::stoi(turtle.substr(pos + marker.size())); } catch (...) { return -1; }
+}
+
+static int parseGenerationFromTurtle(const std::string& turtle) {
+    const std::string marker = "trn:generation ";
+    const auto pos = turtle.find(marker);
+    if (pos == std::string::npos) return -1;
+    try { return std::stoi(turtle.substr(pos + marker.size())); } catch (...) { return -1; }
+}
+
+static bool parseEngineRunningFromTurtle(const std::string& turtle) {
+    const std::string marker = "trn:engineState ";
+    const auto pos = turtle.find(marker);
+    if (pos == std::string::npos) return false;
+    return turtle.substr(pos + marker.size(), 9) == "\"running\"";
+}
+
+static bool parseProjectOpenFromTurtle(const std::string& turtle) {
+    const std::string marker = "trn:projectOpen ";
+    const auto pos = turtle.find(marker);
+    if (pos == std::string::npos) return false;
+    return turtle.substr(pos + marker.size(), 4) == "true";
 }
 
 static std::string parseFilePathFromTurtle(const std::string& turtle) {
@@ -3112,11 +3424,15 @@ static void syncToLiveServer(GraphView& view, const std::string& path) {
         "@prefix trn: <http://purl.org/stuff/transmissions/> .\n"
         "[] a trn:OpenProject ; trn:filePath \"" + path + "\" .\n";
     std::string response;
-    if (httpPost(view.liveServerUrl + "/projects/open", body, "text/turtle", response)) {
+    if (httpPost(view.liveServerUrl + "/projects/open", body, "text/turtle", response) &&
+        response.find("trn:Error") == std::string::npos) {
         const int rev = parseRevisionFromJson(response);
         if (rev >= 0) view.liveServerRevision = rev;
         view.liveServerFilePath = path;
+        view.liveServerProjectOpen = true;
         logConsole(view, "Live server synced: " + path);
+    } else if (response.find("trn:Error") != std::string::npos) {
+        logConsole(view, "Warning: live server rejected project open — " + response.substr(0, 120));
     } else {
         logConsole(view, "Warning: live server sync failed — server may have stopped");
         view.liveServerAvailable = false;
@@ -3126,25 +3442,102 @@ static void syncToLiveServer(GraphView& view, const std::string& path) {
 
 bool applyProject(GraphView&, const transmission::UiProject&, std::string&);
 transmission::UiProject captureProject(const GraphView&);
+void updateWindowTitle(GraphView& view);
+
+struct LiveServerStderrCtx { GraphView* view; };
+
+static gboolean onLiveServerStderr(GIOChannel* ch, GIOCondition, gpointer data) {
+    auto* ctx = static_cast<LiveServerStderrCtx*>(data);
+    gchar* line = nullptr;
+    gsize len = 0;
+    GError* err = nullptr;
+    GIOStatus status = g_io_channel_read_line(ch, &line, &len, nullptr, &err);
+    if (err) g_error_free(err);
+    if (status == G_IO_STATUS_NORMAL && line) {
+        std::string msg(line, len);
+        while (!msg.empty() && (msg.back() == '\n' || msg.back() == '\r'))
+            msg.pop_back();
+        if (!msg.empty())
+            logConsole(*ctx->view, "[live] " + msg);
+        g_free(line);
+        return TRUE;
+    }
+    g_free(line);
+    if (status == G_IO_STATUS_EOF || status == G_IO_STATUS_ERROR) {
+        ctx->view->liveServerStderrWatch = 0;
+        delete ctx;
+        return FALSE;
+    }
+    return TRUE;
+}
 
 static void launchLiveServer(GraphView& view) {
-    if (view.projectHelperPath.empty()) return;
-    const auto scriptPath = (std::filesystem::path(view.projectHelperPath).parent_path()
-                             / "transmission-live.js").string();
-    if (!std::filesystem::exists(scriptPath)) {
-        logConsole(view, "Live server script not found: " + scriptPath);
+    // Resolve script path: prefer projectHelperPath, fall back to binary-relative location.
+    std::string scriptPath;
+    if (!view.projectHelperPath.empty()) {
+        const auto candidate = (std::filesystem::path(view.projectHelperPath).parent_path()
+                               / "transmission-live.js").string();
+        if (std::filesystem::exists(candidate))
+            scriptPath = candidate;
+    }
+    if (scriptPath.empty()) {
+        char selfBuf[4096] = {};
+        const ssize_t selfLen = readlink("/proc/self/exe", selfBuf, sizeof(selfBuf) - 1);
+        if (selfLen > 0) {
+            // binary is at <repo>/native/<build-dir>/transmission_graph_ui
+            const auto candidate = (std::filesystem::path(selfBuf)
+                                    .parent_path().parent_path().parent_path()
+                                    / "scripts/transmission-live.js").string();
+            if (std::filesystem::exists(candidate))
+                scriptPath = candidate;
+        }
+    }
+    if (scriptPath.empty()) {
+        logConsole(view, "Live server script not found — set TRANSMISSION_ROOT or run from repo root");
+        return;
+    }
+    // Resolve 'node' via PATH so nvm-managed installs are found even when PATH
+    // is not fully inherited by the subprocess.
+    gchar* nodeBin = g_find_program_in_path("node");
+    if (!nodeBin) {
+        logConsole(view, "Cannot find 'node' in PATH — live server unavailable");
         return;
     }
     GError* err = nullptr;
-    view.liveServerProcess = g_subprocess_new(
-        G_SUBPROCESS_FLAGS_NONE, &err,
-        "node", scriptPath.c_str(), "--jack", "--auto-connect", nullptr);
+    // scripts/ is one level below the repo root; addon lives in native/build-napi-jack-vst3/
+    const auto repoRoot = std::filesystem::path(scriptPath).parent_path().parent_path();
+    const auto addonPath = (repoRoot / "native/build-napi-jack-vst3/transmission_native.node").string();
+    const bool addonExists = std::filesystem::exists(addonPath);
+    const auto stderrFlag = static_cast<GSubprocessFlags>(G_SUBPROCESS_FLAGS_STDERR_PIPE);
+    if (addonExists) {
+        view.liveServerProcess = g_subprocess_new(
+            stderrFlag, &err,
+            nodeBin, scriptPath.c_str(),
+            "--native-addon", addonPath.c_str(),
+            "--jack", "--auto-connect", nullptr);
+    } else {
+        view.liveServerProcess = g_subprocess_new(
+            stderrFlag, &err,
+            nodeBin, scriptPath.c_str(), "--jack", "--auto-connect", nullptr);
+    }
+    g_free(nodeBin);
     if (!view.liveServerProcess) {
         logConsole(view, std::string("Could not launch live server: ") +
                    (err ? err->message : "unknown error"));
         g_clear_error(&err);
-    } else {
-        logConsole(view, "Live server launched (" + scriptPath + ")");
+        return;
+    }
+    logConsole(view, "Live server launched (" + scriptPath + ")");
+    GInputStream* stderrStream = g_subprocess_get_stderr_pipe(view.liveServerProcess);
+    if (stderrStream) {
+        view.liveServerStderr = g_io_channel_unix_new(
+            g_unix_input_stream_get_fd(G_UNIX_INPUT_STREAM(stderrStream)));
+        g_io_channel_set_flags(view.liveServerStderr, G_IO_FLAG_NONBLOCK, nullptr);
+        g_io_channel_set_encoding(view.liveServerStderr, nullptr, nullptr);
+        auto* ctx = new LiveServerStderrCtx{&view};
+        view.liveServerStderrWatch = g_io_add_watch(
+            view.liveServerStderr, static_cast<GIOCondition>(G_IO_IN | G_IO_HUP),
+            onLiveServerStderr, ctx);
     }
 }
 
@@ -3177,33 +3570,85 @@ static void reloadFromLiveServer(GraphView& view, const std::string& serverFileP
     logConsole(view, "Graph reloaded from live server");
 }
 
+static void updateJackIndicator(GraphView& view) {
+    if (!view.jackIndicator) return;
+    const bool ok = view.jackConnections && view.jackConnections->available();
+    gtk_label_set_markup(GTK_LABEL(view.jackIndicator),
+        ok ? "<span color=\"#44cc44\">● JACK</span>"
+           : "<span color=\"#cc4444\">● JACK</span>");
+}
+
+static void updateMcpIndicator(GraphView& view) {
+    if (!view.mcpIndicator) return;
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    const bool ok = view.liveServerAvailable;
+#else
+    const bool ok = false;
+#endif
+    gtk_label_set_markup(GTK_LABEL(view.mcpIndicator),
+        ok ? "<span color=\"#44cc44\">● MCP</span>"
+           : "<span color=\"#cc4444\">● MCP</span>");
+}
+
 static gboolean liveServerPollTick(gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
+    if (!view.mcpServerEnabled) {
+        if (view.liveServerAvailable) {
+            view.liveServerAvailable = false;
+            updateWindowTitle(view);
+        }
+        return G_SOURCE_CONTINUE;
+    }
     const auto status = httpGet(view.liveServerUrl + "/status");
     if (status.empty()) {
         if (view.liveServerAvailable) {
             view.liveServerAvailable = false;
             updateWindowTitle(view);
+            updateMcpIndicator(view);
             logConsole(view, "Live server disconnected");
+        }
+        // Auto-restart if the subprocess we own has exited (or was never spawned).
+        const bool processGone = !view.liveServerProcess ||
+            g_subprocess_get_if_exited(view.liveServerProcess);
+        if (processGone) {
+            if (view.liveServerProcess) {
+                g_object_unref(view.liveServerProcess);
+                view.liveServerProcess = nullptr;
+            }
+            launchLiveServer(view);
         }
         return G_SOURCE_CONTINUE;
     }
     if (!view.liveServerAvailable) {
         view.liveServerAvailable = true;
         updateWindowTitle(view);
+        updateMcpIndicator(view);
         logConsole(view, "Live server reconnected at " + view.liveServerUrl);
+        if (!view.filePath.empty())
+            syncToLiveServer(view, view.filePath);
     }
     const int serverRevision = parseRevisionFromTurtle(status);
+    const int serverGeneration = parseGenerationFromTurtle(status);
     const std::string serverFilePath = parseFilePathFromTurtle(status);
+    const bool serverEngineRunning = parseEngineRunningFromTurtle(status);
+    if (serverEngineRunning != view.liveServerEngineRunning) {
+        view.liveServerEngineRunning = serverEngineRunning;
+        updateTransportDisplay(view);
+    }
+    view.liveServerProjectOpen = parseProjectOpenFromTurtle(status);
+    const bool generationChanged = serverGeneration >= 0 && serverGeneration != view.liveServerGeneration;
     const bool revisionChanged = serverRevision >= 0 && serverRevision != view.liveServerRevision;
     const bool projectChanged = !serverFilePath.empty() && serverFilePath != view.liveServerFilePath;
-    if (revisionChanged || projectChanged) {
-        if (view.liveServerRevision >= 0 && revisionChanged)
-            logConsole(view, "External edit detected (revision " +
+    if (generationChanged || revisionChanged || projectChanged) {
+        if (view.liveServerRevision >= 0 && (generationChanged || revisionChanged))
+            logConsole(view, "External edit detected (generation " +
+                       std::to_string(view.liveServerGeneration) + " → " +
+                       std::to_string(serverGeneration) + ", revision " +
                        std::to_string(view.liveServerRevision) + " → " +
                        std::to_string(serverRevision) + ")");
         reloadFromLiveServer(view, serverFilePath);
         view.liveServerRevision = serverRevision;
+        view.liveServerGeneration = serverGeneration;
         view.liveServerFilePath = serverFilePath;
         updateWindowTitle(view);
     }
@@ -4389,6 +4834,7 @@ static gboolean peakMeterTick(gpointer data) {
         view.outputPeakR.store(newR, std::memory_order_relaxed);
         gtk_widget_queue_draw(view.canvas);
     }
+    updateJackIndicator(view);
     return G_SOURCE_CONTINUE;
 }
 
@@ -4402,6 +4848,15 @@ void activate(GtkApplication* application, gpointer) {
         uiProcessorFactory());
 #endif
     loadConfig(*view);
+    if (view->startJackOnStartup && !view->jackConnections->available()) {
+        const std::string cmd = view->jackStartCommand + " >/dev/null 2>&1 &";
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-result"
+        std::system(cmd.c_str());
+#pragma GCC diagnostic pop
+        sleep(2);
+        view->jackConnections = std::make_unique<transmission::JackConnectionManager>();
+    }
     scanPlugins(*view);
     GtkWidget* window = gtk_application_window_new(application);
     gtk_window_set_title(GTK_WINDOW(window), "Transmission — Graph");
@@ -4440,14 +4895,26 @@ void activate(GtkApplication* application, gpointer) {
     auto* settingsMenu = gtk_menu_new();
     auto* audioSettingsItem =
         gtk_menu_item_new_with_mnemonic("_Audio…");
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    auto* mcpServerItem =
+        gtk_menu_item_new_with_mnemonic("_MCP Server…");
+#endif
     auto* reconnectJackItem =
         gtk_menu_item_new_with_mnemonic("_Reconnect JACK Ports");
+    auto* jackStartupItem =
+        gtk_menu_item_new_with_mnemonic("_JACK Startup…");
     auto* pluginPathItem =
         gtk_menu_item_new_with_mnemonic("Plugin _Path…");
     gtk_menu_shell_append(
         GTK_MENU_SHELL(settingsMenu), audioSettingsItem);
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    gtk_menu_shell_append(
+        GTK_MENU_SHELL(settingsMenu), mcpServerItem);
+#endif
     gtk_menu_shell_append(
         GTK_MENU_SHELL(settingsMenu), reconnectJackItem);
+    gtk_menu_shell_append(
+        GTK_MENU_SHELL(settingsMenu), jackStartupItem);
     gtk_menu_shell_append(
         GTK_MENU_SHELL(settingsMenu), pluginPathItem);
     gtk_menu_item_set_submenu(
@@ -4515,11 +4982,23 @@ void activate(GtkApplication* application, gpointer) {
     gtk_spin_button_set_value(loopBars, 4.0);
     gtk_spin_button_set_numeric(loopBars, TRUE);
     gtk_box_pack_start(GTK_BOX(transportBar), GTK_WIDGET(loopBars), FALSE, FALSE, 4);
+
+    // Right-side status indicators — expand filler pushes them to the end
+    auto* indicatorFiller = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_box_pack_start(GTK_BOX(transportBar), indicatorFiller, TRUE, TRUE, 0);
+    auto* jackIndicator = gtk_label_new(nullptr);
+    auto* mcpIndicator = gtk_label_new(nullptr);
+    gtk_widget_set_margin_end(mcpIndicator, 8);
+    gtk_box_pack_end(GTK_BOX(transportBar), mcpIndicator, FALSE, FALSE, 4);
+    gtk_box_pack_end(GTK_BOX(transportBar), jackIndicator, FALSE, FALSE, 4);
+
     view->tempo = tempo;
     view->loopBars = loopBars;
     view->loop = GTK_TOGGLE_BUTTON(loop);
     view->window = window;
     view->playButton = playButton;
+    view->jackIndicator = jackIndicator;
+    view->mcpIndicator = mcpIndicator;
 
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled),
@@ -4545,16 +5024,20 @@ void activate(GtkApplication* application, gpointer) {
     curl_global_init(CURL_GLOBAL_DEFAULT);
     if (const char* liveUrl = std::getenv("TRANSMISSION_LIVE_URL"))
         view->liveServerUrl = liveUrl;
-    if (pingLiveServer(*view)) {
-        logConsole(*view, "Connected to live server at " + view->liveServerUrl);
-        updateWindowTitle(*view);
-    } else if (!std::getenv("TRANSMISSION_NO_LIVE_SERVER")) {
-        launchLiveServer(*view);
+    if (view->mcpServerEnabled && !std::getenv("TRANSMISSION_NO_LIVE_SERVER")) {
+        if (pingLiveServer(*view)) {
+            logConsole(*view, "Connected to live server at " + view->liveServerUrl);
+            updateWindowTitle(*view);
+        } else {
+            launchLiveServer(*view);
+        }
     }
     view->liveServerPollTimer = g_timeout_add(500, liveServerPollTick, view);
 #endif
     view->peakMeterTimer = g_timeout_add(80, peakMeterTick, view);
 
+    updateJackIndicator(*view);
+    updateMcpIndicator(*view);
     loopChanged(nullptr, view);
     g_signal_connect(playButton, "clicked", G_CALLBACK(playStopClicked), view);
     g_signal_connect(resetButton, "clicked", G_CALLBACK(resetTransportClicked), view);
@@ -4569,8 +5052,14 @@ void activate(GtkApplication* application, gpointer) {
     g_signal_connect(renderMidiItem, "activate", G_CALLBACK(renderMidiActivated), view);
     g_signal_connect(audioSettingsItem, "activate",
                      G_CALLBACK(audioSettingsActivated), view);
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    g_signal_connect(mcpServerItem, "activate",
+                     G_CALLBACK(mcpServerSettingsActivated), view);
+#endif
     g_signal_connect(reconnectJackItem, "activate",
                      G_CALLBACK(reconnectJackActivated), view);
+    g_signal_connect(jackStartupItem, "activate",
+                     G_CALLBACK(jackStartupSettingsActivated), view);
     g_signal_connect(pluginPathItem, "activate",
                      G_CALLBACK(pluginPathActivated), view);
     g_signal_connect(showConsoleItem, "activate",
@@ -4620,6 +5109,7 @@ void activate(GtkApplication* application, gpointer) {
 } // namespace
 
 int main(int argc, char** argv) {
+    XInitThreads();  // Required before any X11 calls; plugins call X11 from their own threads.
     auto* application = gtk_application_new("org.transmission.Graph", G_APPLICATION_DEFAULT_FLAGS);
     g_signal_connect(application, "activate", G_CALLBACK(activate), nullptr);
     const int status = g_application_run(G_APPLICATION(application), argc, argv);

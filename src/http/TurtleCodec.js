@@ -182,7 +182,8 @@ export async function parseServerConfig(turtleBody) {
   const allowedRoots = rootsHead ? getList(dataset, rootsHead).map(t => t.value) : ['.']
   const outputsHead = getOne(dataset, subject, `${TRN}defaultOutputConnections`)
   const defaultOutputConnections = outputsHead ? getList(dataset, outputsHead).map(t => t.value) : null
-  return { port, bindAddress, allowedRoots, defaultOutputConnections }
+  const blockSize = numericValue(getOne(dataset, subject, `${TRN}blockSize`)) ?? null
+  return { port, bindAddress, allowedRoots, defaultOutputConnections, blockSize }
 }
 
 // ── Response serializers ──────────────────────────────────────────────────────
@@ -194,6 +195,7 @@ export function serializeStatus(status) {
     '',
     '<urn:transmission:status> a trn:Status ;'
   ]
+  lines.push(`    trn:generation ${status.generation ?? 0} ;`)
   lines.push(`    trn:revision ${status.revision} ;`)
   lines.push(`    trn:dirty ${status.dirty} ;`)
   lines.push(`    trn:projectOpen ${status.projectOpen} ;`)

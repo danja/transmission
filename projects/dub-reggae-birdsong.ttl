@@ -1,145 +1,155 @@
 @prefix : <http://purl.org/stuff/transmissions/> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 
-<dub-reggae-birdsong> a :Transmission ;
+:main a :Transmission ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Transmission" ;
     :tempoMap ( [ :atBeat 0 ; :bpm 75 ] ) ;
     :loopStart 0 ;
     :loopEnd 64 ;
     :loopEnabled true ;
-    :systemOutputConnections ( "UMC404HD 192k:playback_FL" "UMC404HD 192k:playback_FR" ) ;
-    :pipe ( <conductor> <mixgen> <drumgen> <drumkit> <ground> <basilico> <harmonic_atlas> <canticle> <melgen> <syrinx> <counterpointer> <t_mix> <loopdelay> <lightverb> <guardian> <audio_out> ) ;
-    :connections ( [ :from <conductor> ; :to <drumgen> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <conductor> ; :to <ground> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <conductor> ; :to <harmonic_atlas> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <conductor> ; :to <melgen> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <mixgen> ; :to <t_mix> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <drumgen> ; :to <drumkit> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <ground> ; :to <basilico> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <harmonic_atlas> ; :to <canticle> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <melgen> ; :to <syrinx> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <melgen> ; :to <counterpointer> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <counterpointer> ; :to <canticle> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <drumkit> ; :to <t_mix> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <drumkit> ; :to <t_mix> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <basilico> ; :to <t_mix> ; :kind "audio" ; :fromPort 0 ; :toPort 2 ] [ :from <canticle> ; :to <t_mix> ; :kind "audio" ; :fromPort 0 ; :toPort 3 ] [ :from <canticle> ; :to <t_mix> ; :kind "audio" ; :fromPort 1 ; :toPort 4 ] [ :from <syrinx> ; :to <t_mix> ; :kind "audio" ; :fromPort 0 ; :toPort 5 ] [ :from <syrinx> ; :to <t_mix> ; :kind "audio" ; :fromPort 1 ; :toPort 6 ] [ :from <t_mix> ; :to <loopdelay> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <t_mix> ; :to <loopdelay> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <loopdelay> ; :to <lightverb> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <loopdelay> ; :to <lightverb> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <lightverb> ; :to <guardian> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <lightverb> ; :to <guardian> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <guardian> ; :to <audio_out> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <guardian> ; :to <audio_out> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] ) .
+    :systemInputConnections ( "No connection" "No connection" ) ;
+    :systemOutputConnections ( "UMC404HD 192k-89:playback_AUX0" "UMC404HD 192k-89:playback_AUX1" ) ;
+    :audioSettings [ :renderAheadMs 200 ; :requestedBufferSize 0 ; :processingThreads 0 ] ;
+    :pipe ( :conductor :mixgen :drumgen :drumkit :ground :basilico :harmonic_atlas :canticle :melgen :syrinx :counterpointer :t_mix :loopdelay :lightverb :guardian :audio_out ) ;
+    :connections ( [ :from :conductor ; :to :drumgen ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :conductor ; :to :ground ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :conductor ; :to :harmonic_atlas ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :conductor ; :to :melgen ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :mixgen ; :to :t_mix ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :drumgen ; :to :drumkit ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :ground ; :to :basilico ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :harmonic_atlas ; :to :canticle ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :melgen ; :to :syrinx ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :melgen ; :to :counterpointer ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :counterpointer ; :to :canticle ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from :drumkit ; :to :t_mix ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :drumkit ; :to :t_mix ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :basilico ; :to :t_mix ; :kind "audio" ; :fromPort 0 ; :toPort 2 ] [ :from :canticle ; :to :t_mix ; :kind "audio" ; :fromPort 0 ; :toPort 3 ] [ :from :canticle ; :to :t_mix ; :kind "audio" ; :fromPort 1 ; :toPort 4 ] [ :from :syrinx ; :to :t_mix ; :kind "audio" ; :fromPort 0 ; :toPort 5 ] [ :from :syrinx ; :to :t_mix ; :kind "audio" ; :fromPort 1 ; :toPort 6 ] [ :from :t_mix ; :to :loopdelay ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :t_mix ; :to :loopdelay ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :loopdelay ; :to :lightverb ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :loopdelay ; :to :lightverb ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :lightverb ; :to :guardian ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :lightverb ; :to :guardian ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from :guardian ; :to :audio_out ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from :guardian ; :to :audio_out ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] ) .
 
-<conductor> a :VST3Plugin ;
+:conductor a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Conductor" ;
     :audioOutputs 2 ;
+    :midiInputs 1 ;
     :midiOutputs 1 ;
-    :editorX 100 ;
-    :editorY 50 ;
+    :editorX 40 ;
+    :editorY 80 ;
     :settings [ :pluginPath "/home/danny/.vst3/conductor.vst3" ] .
 
-<mixgen> a :VST3Plugin ;
+:mixgen a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Mixgen" ;
     :audioInputs 2 ;
     :audioOutputs 2 ;
+    :midiInputs 1 ;
     :midiOutputs 1 ;
-    :editorX 350 ;
-    :editorY 50 ;
+    :editorX 40 ;
+    :editorY 180 ;
     :settings [ :pluginPath "/home/danny/.vst3/mixgen.vst3" ] .
 
-<drumgen> a :VST3Plugin ;
+:drumgen a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "DrumGen" ;
     :audioOutputs 2 ;
     :midiInputs 1 ;
     :midiOutputs 1 ;
-    :editorX 100 ;
-    :editorY 220 ;
+    :editorX 270 ;
+    :editorY 80 ;
     :settings [ :pluginPath "/home/danny/.vst3/drumgen.vst3" ] .
 
-<drumkit> a :VST3Plugin ;
+:drumkit a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "DrumKit" ;
     :audioOutputs 2 ;
     :midiInputs 1 ;
-    :editorX 100 ;
-    :editorY 390 ;
+    :editorX 500 ;
+    :editorY 80 ;
     :settings [ :pluginPath "/home/danny/.vst3/drumkit.vst3" ] .
 
-<ground> a :VST3Plugin ;
+:ground a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Ground" ;
     :audioOutputs 2 ;
     :midiInputs 1 ;
     :midiOutputs 1 ;
-    :editorX 350 ;
-    :editorY 220 ;
+    :editorX 270 ;
+    :editorY 180 ;
     :settings [ :pluginPath "/home/danny/.vst3/ground.vst3" ] .
 
-<basilico> a :VST3Plugin ;
+:basilico a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Basilico" ;
     :audioOutputs 2 ;
     :midiInputs 1 ;
-    :editorX 350 ;
-    :editorY 390 ;
+    :editorX 500 ;
+    :editorY 180 ;
     :settings [ :pluginPath "/home/danny/.vst3/basilico.vst3" ] .
 
-<harmonic_atlas> a :VST3Plugin ;
+:harmonic_atlas a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Harmonic Atlas" ;
     :audioOutputs 2 ;
     :midiInputs 1 ;
     :midiOutputs 1 ;
-    :editorX 600 ;
-    :editorY 220 ;
+    :editorX 270 ;
+    :editorY 280 ;
     :settings [ :pluginPath "/home/danny/.vst3/harmonic_atlas.vst3" ] .
 
-<canticle> a :VST3Plugin ;
+:canticle a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Canticle" ;
     :audioOutputs 2 ;
     :midiInputs 1 ;
-    :editorX 600 ;
-    :editorY 390 ;
+    :editorX 730 ;
+    :editorY 80 ;
     :settings [ :pluginPath "/home/danny/.vst3/canticle.vst3" ] .
 
-<melgen> a :VST3Plugin ;
+:melgen a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "MelGen" ;
     :audioOutputs 2 ;
     :midiInputs 1 ;
     :midiOutputs 1 ;
-    :editorX 850 ;
-    :editorY 220 ;
+    :editorX 270 ;
+    :editorY 380 ;
     :settings [ :pluginPath "/home/danny/.vst3/melgen.vst3" ] .
 
-<syrinx> a :VST3Plugin ;
+:syrinx a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Syrinx" ;
     :audioOutputs 2 ;
     :midiInputs 1 ;
-    :editorX 850 ;
-    :editorY 390 ;
+    :editorX 500 ;
+    :editorY 280 ;
     :settings [ :pluginPath "/home/danny/.vst3/syrinx.vst3" ] .
 
-<counterpointer> a :VST3Plugin ;
+:counterpointer a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Counterpointer" ;
     :audioOutputs 2 ;
     :midiInputs 1 ;
     :midiOutputs 1 ;
-    :editorX 850 ;
-    :editorY 560 ;
+    :editorX 500 ;
+    :editorY 380 ;
     :settings [ :pluginPath "/home/danny/.vst3/counterpointer.vst3" ] .
 
-<t_mix> a :VST3Plugin ;
+:t_mix a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "T-Mix" ;
     :audioInputs 8 ;
     :audioOutputs 2 ;
     :midiInputs 1 ;
-    :editorX 450 ;
-    :editorY 560 ;
+    :midiOutputs 1 ;
+    :editorX 960 ;
+    :editorY 80 ;
     :settings [ :pluginPath "/home/danny/.vst3/t_mix.vst3" ] .
 
-<loopdelay> a :VST3Plugin ;
+:loopdelay a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Loopdelay" ;
     :audioInputs 2 ;
     :audioOutputs 2 ;
-    :editorX 300 ;
-    :editorY 730 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 1190 ;
+    :editorY 80 ;
     :settings [ :pluginPath "/home/danny/.vst3/loopdelay.vst3" ] .
 
-<lightverb> a :VST3Plugin ;
+:lightverb a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Lightverb" ;
     :audioInputs 2 ;
     :audioOutputs 2 ;
-    :editorX 550 ;
-    :editorY 730 ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 1420 ;
+    :editorY 80 ;
     :settings [ :pluginPath "/home/danny/.vst3/lightverb.vst3" ] .
 
-<guardian> a :VST3Plugin ;
+:guardian a :VST3Plugin ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Guardian" ;
     :audioInputs 2 ;
     :audioOutputs 2 ;
-    :editorX 450 ;
-    :editorY 900 ;
+    :midiInputs 1 ;
+    :editorX 1650 ;
+    :editorY 80 ;
     :settings [ :pluginPath "/home/danny/.vst3/guardian.vst3" ] .
 
-<audio_out> a :AudioOutput ;
+:audio_out a :AudioOutput ;
     <http://www.w3.org/2000/01/rdf-schema#label> "Audio Out" ;
     :audioInputs 2 ;
-    :editorX 450 ;
-    :editorY 1070 ;
-    :settings [ :externalPort "UMC404HD 192k:playback_FL" ] .
+    :editorX 40 ;
+    :editorY 540 .

@@ -102,6 +102,32 @@ bool getArray(napi_env env, napi_value object, const char* name, napi_value& val
     return isArray;
 }
 
+// Reads pluginPath from a settings object that may use either the short key
+// "pluginPath" (string value) or the full URI key with an array value as
+// produced by TransmissionRdf.js settingsObject().
+bool readPluginPath(napi_env env, napi_value node, std::string& pluginPath) {
+    napi_value settings;
+    napi_valuetype settingsType = napi_undefined;
+    if (napi_get_named_property(env, node, "settings", &settings) != napi_ok ||
+        napi_typeof(env, settings, &settingsType) != napi_ok || settingsType != napi_object)
+        return false;
+    if (getString(env, settings, "pluginPath", pluginPath) && !pluginPath.empty())
+        return true;
+    napi_value arr;
+    if (!getArray(env, settings, "http://purl.org/stuff/transmissions/pluginPath", arr))
+        return false;
+    napi_value elem;
+    napi_valuetype elemType = napi_undefined;
+    if (napi_get_element(env, arr, 0, &elem) != napi_ok ||
+        napi_typeof(env, elem, &elemType) != napi_ok || elemType != napi_string)
+        return false;
+    std::size_t length = 0;
+    napi_get_value_string_utf8(env, elem, nullptr, 0, &length);
+    pluginPath.resize(length);
+    napi_get_value_string_utf8(env, elem, pluginPath.data(), length + 1, &length);
+    return !pluginPath.empty();
+}
+
 bool getObject(napi_env env, napi_value object, const char* name, napi_value& value) {
     napi_valuetype type = napi_undefined;
     return napi_get_named_property(env, object, name, &value) == napi_ok &&
@@ -199,12 +225,8 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
                 audioOutputs = static_cast<std::size_t>(portCount);
         }
         std::unique_ptr<transmission::AudioProcessor> processor;
-        napi_value settings;
         std::string pluginPath;
-        napi_valuetype settingsType = napi_undefined;
-        if (napi_get_named_property(env, node, "settings", &settings) == napi_ok &&
-            napi_typeof(env, settings, &settingsType) == napi_ok && settingsType == napi_object)
-            getString(env, settings, "pluginPath", pluginPath);
+        readPluginPath(env, node, pluginPath);
         if (type == std::string("AudioClipNode") ||
             type == std::string("http://purl.org/stuff/transmissions/AudioClipNode")) {
             auto clip = std::make_unique<transmission::AudioClipProcessor>();
@@ -233,18 +255,19 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
         } else {
             processor = std::make_unique<transmission::PassThroughProcessor>();
         }
-        if (type == "AudioInput" || type == "AudioOutput" ||
-            type == "system-input" || type == "system-output") {
+        const bool isAudioInput  = type == "AudioInput"  || type == "system-input"  ||
+                                   type == "http://purl.org/stuff/transmissions/AudioInput";
+        const bool isAudioOutput = type == "AudioOutput" || type == "system-output" ||
+                                   type == "http://purl.org/stuff/transmissions/AudioOutput";
+        if (isAudioInput || isAudioOutput) {
             audioInputs = engineChannels;
             audioOutputs = engineChannels;
         }
         if (!routed->addNode(id, std::move(processor), audioInputs, audioOutputs))
             return fail(env, "Unable to add native graph node");
-        if ((type == "AudioInput" || type == "system-input") &&
-            !routed->setExternalAudioInput(id))
+        if (isAudioInput && !routed->setExternalAudioInput(id))
             return fail(env, "Unable to configure native audio input endpoint");
-        if ((type == "AudioOutput" || type == "system-output") &&
-            !routed->setExternalAudioOutput(id))
+        if (isAudioOutput && !routed->setExternalAudioOutput(id))
             return fail(env, "Unable to configure native audio output endpoint");
 #ifdef TRANSMISSION_NAPI_WITH_VST3
         napi_value stateObj;
@@ -260,7 +283,8 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
                 if (!controllerB64.empty()) procState.controller = decodeBase64(controllerB64);
                 std::string stateError;
                 if (!routed->restoreProcessorState(id, procState, stateError))
-                    return fail(env, stateError.empty() ? "Unable to restore processor state" : stateError.c_str());
+                    fprintf(stderr, "[napi] State restore skipped for %s: %s\n",
+                            id.c_str(), stateError.empty() ? "unknown error" : stateError.c_str());
             }
         }
         napi_value paramsArr;
@@ -278,7 +302,9 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
                     continue;
                 std::string paramError;
                 if (!routed->setParameter(id, static_cast<std::uint32_t>(idValue), normValue, paramError))
-                    return fail(env, paramError.empty() ? "Unable to restore parameter" : paramError.c_str());
+                    fprintf(stderr, "[napi] Parameter restore skipped for %s param %u: %s\n",
+                            id.c_str(), static_cast<std::uint32_t>(idValue),
+                            paramError.empty() ? "unknown error" : paramError.c_str());
             }
         }
 #endif
@@ -309,6 +335,35 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
     if (!current->loadRuntimeGraph("{\"nativeBridge\":true}") ||
         !current->setRoutedAudioGraph(std::move(routed), engineChannels, engineFrames))
         return fail(env, "Unable to load project into native engine");
+#ifdef TRANSMISSION_NAPI_WITH_JACK
+    if (jackDevice) {
+        auto readStringArray = [&](const char* key) {
+            std::vector<std::string> result;
+            napi_value meta, arr;
+            if (napi_get_named_property(env, argv[0], "metadata", &meta) != napi_ok) return result;
+            if (napi_get_named_property(env, meta, key, &arr) != napi_ok) return result;
+            bool isArr = false;
+            napi_is_array(env, arr, &isArr);
+            if (!isArr) return result;
+            std::uint32_t len = 0;
+            napi_get_array_length(env, arr, &len);
+            for (std::uint32_t i = 0; i < len; ++i) {
+                napi_value elem;
+                napi_get_element(env, arr, i, &elem);
+                std::string s;
+                char buf[512] = {};
+                std::size_t written = 0;
+                if (napi_get_value_string_utf8(env, elem, buf, sizeof(buf), &written) == napi_ok)
+                    s.assign(buf, written);
+                result.push_back(s);
+            }
+            return result;
+        };
+        jackDevice->setNamedConnections(
+            readStringArray("systemInputConnections"),
+            readStringArray("systemOutputConnections"));
+    }
+#endif
     return undefined(env);
 }
 
@@ -523,12 +578,8 @@ napi_value captureMidi(napi_env env, napi_callback_info info) {
                 audioOutputs = static_cast<std::size_t>(portCount);
         }
         std::unique_ptr<transmission::AudioProcessor> processor;
-        napi_value settings;
         std::string pluginPath;
-        napi_valuetype settingsType = napi_undefined;
-        if (napi_get_named_property(env, node, "settings", &settings) == napi_ok &&
-            napi_typeof(env, settings, &settingsType) == napi_ok && settingsType == napi_object)
-            getString(env, settings, "pluginPath", pluginPath);
+        readPluginPath(env, node, pluginPath);
         if (!pluginPath.empty()) {
 #ifdef TRANSMISSION_NAPI_WITH_VST3
             auto vst = std::make_unique<transmission::Vst3Processor>();

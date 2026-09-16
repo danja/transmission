@@ -16,7 +16,8 @@ class Vst3EditorHost {
 public:
     using ParameterEditCallback =
         std::function<void(std::uint32_t, double)>;
-    using StateCallback = std::function<void(ProcessorState)>;
+    using StateCallback     = std::function<void(ProcessorState)>;
+    using LiveStateCallback = std::function<void(const ProcessorState&)>;
 
     Vst3EditorHost();
     ~Vst3EditorHost();
@@ -29,7 +30,8 @@ public:
               StateCallback stateChanged = {},
               const ProcessorState& initialState = {},
               const std::vector<std::pair<std::uint32_t, double>>&
-                  initialParameters = {});
+                  initialParameters = {},
+              LiveStateCallback liveStateChanged = {});
     void close() noexcept;
     bool open() const noexcept;
 

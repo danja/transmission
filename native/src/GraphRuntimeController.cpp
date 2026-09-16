@@ -51,6 +51,12 @@ bool GraphRuntimeController::setParameter(const std::string& nodeId,
     return engine_.setParameter(nodeId, parameterId, normalizedValue, error);
 }
 
+bool GraphRuntimeController::setPluginState(const std::string& nodeId,
+                                            const ProcessorState& state,
+                                            std::string& error) {
+    return engine_.restoreProcessorState(nodeId, state, error);
+}
+
 bool GraphRuntimeController::setRenderAheadBlocks(std::size_t blocks) {
     return engine_.setRenderAheadBlocks(blocks);
 }

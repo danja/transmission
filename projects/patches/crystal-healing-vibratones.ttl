@@ -7,7 +7,7 @@
     :loopStart 0 ;
     :loopEnd 64 ;
     :loopEnabled true ;
-    :systemOutputConnections ( "UMC404HD 192k-44:playback_AUX0" "UMC404HD 192k-44:playback_AUX1" ) ;
+    :systemOutputConnections ( "UMC404HD 192k:playback_FL" "UMC404HD 192k:playback_FR" ) ;
     :pipe ( <melgen> <cadence> <arpgen> <canticle-motion> <canticle-chords> <tmix> <orchid> <ambo> <system-output> ) ;
     :connections ( [ :from <melgen> ; :to <cadence> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <cadence> ; :to <arpgen> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <cadence> ; :to <canticle-chords> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <arpgen> ; :to <canticle-motion> ; :kind "midi" ; :fromPort 0 ; :toPort 0 ] [ :from <canticle-motion> ; :to <tmix> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <canticle-motion> ; :to <tmix> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <canticle-chords> ; :to <tmix> ; :kind "audio" ; :fromPort 0 ; :toPort 2 ] [ :from <canticle-chords> ; :to <tmix> ; :kind "audio" ; :fromPort 1 ; :toPort 3 ] [ :from <tmix> ; :to <orchid> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <tmix> ; :to <orchid> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <orchid> ; :to <ambo> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <orchid> ; :to <ambo> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] [ :from <ambo> ; :to <system-output> ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] [ :from <ambo> ; :to <system-output> ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] ) .
 

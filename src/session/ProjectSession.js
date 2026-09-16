@@ -16,11 +16,18 @@ export class ProjectSession {
     this.compiledGraph = null
     this.filePath = null
     this.revision = 0
+    this.generation = 0
     this.savedRevision = null
     this.history = []
     this.future = []
     this.transport = new Transport()
     this.arrangement = new Arrangement()
+  }
+
+  close() {
+    this.graph = null
+    this.compiledGraph = null
+    this.filePath = null
   }
 
   open(definition, filePath = null) {
@@ -33,6 +40,7 @@ export class ProjectSession {
     this.compiledGraph = this.compiler(this.graph)
     this.filePath = filePath
     this.revision = 0
+    this.generation += 1
     this.savedRevision = filePath ? 0 : null
     this.history = []
     this.future = []

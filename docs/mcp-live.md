@@ -2,6 +2,8 @@
 
 This document tracks the plan for connecting the Transmission MCP interface directly to the live running GTK application. It will serve as documentation once implemented.
 
+The live server is also the execution target for autonomous DJ set lists — see [DJ Set Lists](dj-setlists.md) for how to compose and run them.
+
 ---
 
 ## Problem

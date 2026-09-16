@@ -69,6 +69,28 @@ describe('TransmissionControlService', () => {
     await expect(control.saveProject('../outside.ttl')).rejects.toThrow('outside the allowed roots')
   })
 
+  it('emits status changes to registered listeners and supports cleanup', () => {
+    const control = new TransmissionControlService()
+    const received = []
+    const off = control.onStatusChange(status => received.push(status.revision))
+    control.newProject(graph)
+    expect(received).toEqual([0])
+    control.applyGraphChanges({ expectedRevision: 0, operations: [{ type: 'updateNode', nodeId: 'output', changes: { label: 'Out' } }] })
+    expect(received).toEqual([0, 1])
+    off()
+    control.applyGraphChanges({ expectedRevision: 1, operations: [{ type: 'updateNode', nodeId: 'output', changes: { label: 'Out2' } }] })
+    expect(received).toEqual([0, 1])
+  })
+
+  it('does not emit status change on dry-run applyGraphChanges', () => {
+    const control = new TransmissionControlService()
+    control.newProject(graph)
+    const received = []
+    control.onStatusChange(s => received.push(s.revision))
+    control.applyGraphChanges({ expectedRevision: 0, operations: [{ type: 'updateNode', nodeId: 'output', changes: { label: 'Out' } }], dryRun: true })
+    expect(received).toEqual([])
+  })
+
   it('persists parameter changes and forwards them to a running native engine', () => {
     const bridge = {
       createEngine: vi.fn(), loadProject: vi.fn(), configureTransport: vi.fn(),

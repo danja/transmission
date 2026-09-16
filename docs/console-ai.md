@@ -1,0 +1,3 @@
+# AI Helper
+
+The console view should also support an AI mode where it acts an LLM harness, communicating with an LLM API (Mistral free tier for starters). A system prompt containing all the necessary information on how to make circuits should be provided. The aim here would be for the user to be able to ask the AI to create a plugin circuit of their choice. It will be important to be able to differentiate between conversational text sent back from the server and Turtle code (which should be validated). This will be an experimental feature so it should be built in such a way that it doesn't denegrate the core functionality in terms of resources. An extra set of setting will be needed on the menu, the values of which should be persisted between sessions. 

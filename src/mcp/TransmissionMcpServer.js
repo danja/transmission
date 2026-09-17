@@ -96,6 +96,23 @@ function registerResources(server, control) {
     { title: 'Transmission diagnostics', description: 'Project, transport, engine, and native processing status', mimeType: 'application/json' },
     async uri => resource(uri, JSON.stringify(await control.diagnostics(), null, 2), 'application/json')
   )
+  // Registered whether or not there is a plugin catalogue: a JigDAW plugin has
+  // no registry to be listed in, and dereferencing its IRI is both how it is
+  // found and how it is installed.
+  server.registerTool('jigdaw_describe', {
+    title: 'Describe a JigDAW plugin',
+    description:
+      'Dereference a JigDAW plugin IRI and return its profile and the graph node to add ' +
+      'for it, including the real port counts and the parameters addressable by ' +
+      'jig:paramIndex. Use this before wiring a JigdawPlugin node: the host reads the ' +
+      'same profile and overwrites whatever port counts a project declared.',
+    inputSchema: {
+      iri: z.string().min(1),
+      id: z.string().min(1).default('jigdaw-1')
+    },
+    annotations: { ...readOnly, openWorldHint: true }
+  }, async ({ iri, id }) => result(await control.describeJigdawPlugin(iri, { id })))
+
   if (control.pluginCatalogue) {
     server.registerResource(
       'plugin-catalogue',

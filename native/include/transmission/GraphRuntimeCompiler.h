@@ -12,9 +12,11 @@
 
 namespace transmission {
 
+// Appended to, never reordered: the value is what the native UI interchange
+// and the Node-side type table both encode.
 enum class RuntimeNodeKind {
     SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput, Gain,
-    AudioClip, MidiClip
+    AudioClip, MidiClip, JigdawPlugin
 };
 enum class RuntimeConnectionKind { Audio, Midi };
 
@@ -26,6 +28,7 @@ struct RuntimeParameterValue {
 struct RuntimeGraphNode {
     std::string id;
     RuntimeNodeKind kind = RuntimeNodeKind::Plugin;
+    /// A VST3 bundle path, a clip file, or a JigDAW plugin IRI, by kind.
     std::string pluginPath;
     std::size_t externalMidiPort = 0;
     std::size_t audioInputs = 0;

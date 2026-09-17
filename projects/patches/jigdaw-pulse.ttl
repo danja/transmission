@@ -1,0 +1,54 @@
+# A JigDAW patch: two WebAssembly plugins, each named by an IRI.
+#
+# Dereferencing the IRI is the whole of installing the plugin. These two point
+# at the local jigdaw checkout so the patch runs offline; replacing them with
+# https://strandz.it/jigdaw/plugins/bassgen/ and .../pulse/ changes nothing else.
+#
+# BassGen is jig:Abi2 and generates MIDI from the host transport, so it is
+# silent unless the transport is rolling. Pulse is jig:Abi1, takes that MIDI and
+# is the only thing here that makes a sound.
+#
+# Port counts are read from each profile when the project is applied, exactly as
+# a VST3 node's are read from its binary. They are declared here so the file
+# reads the same as any other project, not because the declaration decides.
+
+@prefix : <http://purl.org/stuff/transmissions/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+:main a :Transmission ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "JigDAW Pulse" ;
+    :tempoMap ( [ :atBeat 0 ; :bpm 128 ] ) ;
+    :loopStart 0 ;
+    :loopEnd 16 ;
+    :loopEnabled true ;
+    :systemInputConnections ( "No connection" "No connection" ) ;
+    :systemOutputConnections ( "UMC404HD 192k:playback_FL" "UMC404HD 192k:playback_FR" ) ;
+    :audioSettings [ :renderAheadMs 200 ; :requestedBufferSize 0 ; :processingThreads 0 ] ;
+    :pipe ( :bassgen :pulse :system-output ) ;
+    :connections (
+        [ :from :bassgen ; :to :pulse ; :kind "midi" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :pulse ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ]
+        [ :from :pulse ; :to :system-output ; :kind "audio" ; :fromPort 1 ; :toPort 1 ] ) .
+
+:bassgen a :JigdawPlugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "BassGen" ;
+    :midiInputs 1 ;
+    :midiOutputs 1 ;
+    :editorX 40 ;
+    :editorY 120 ;
+    :settings [ :pluginIri "file:///home/danny/github/jigdaw/plugins/bassgen/" ] .
+
+:pulse a :JigdawPlugin ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "Pulse" ;
+    :audioOutputs 2 ;
+    :midiInputs 1 ;
+    :editorX 320 ;
+    :editorY 120 ;
+    :settings [ :pluginIri "file:///home/danny/github/jigdaw/plugins/pulse/" ] .
+
+:system-output a :AudioOutput ;
+    <http://www.w3.org/2000/01/rdf-schema#label> "System Output" ;
+    :audioInputs 2 ;
+    :midiInputs 1 ;
+    :editorX 600 ;
+    :editorY 140 .

@@ -83,6 +83,28 @@ revision to 0), any sequence of edits that lands back on the same revision numbe
 will not trigger a reload. Apply a no-op `setProjectMetadata` change to force a unique revision
 if needed.
 
+## JigDAW plugins
+
+JigDAW plugins are WebAssembly modules named by a dereferenceable IRI, hosted through
+`TRANSMISSION_WITH_JIGDAW=ON`. The node type is `:JigdawPlugin` and the IRI goes in
+`:settings [ :pluginIri "..." ]` — dereferenced, never opened as a path.
+
+As with VST3, the declared port counts on a node are overwritten by what the host reads from
+the plugin's profile, and a connection outside the real counts causes a silent apply failure.
+Check before wiring:
+
+```sh
+native/build-ui-jack-vst3/transmission_jigdaw_inspect https://strandz.it/jigdaw/plugins/pulse/ \
+  | grep -E 'audioInputs|audioOutputs|midiInputs|midiOutputs'
+```
+
+Over MCP, `jigdaw_describe` returns the same counts plus the node to add and the parameters
+addressable by `jig:paramIndex`.
+
+A `file://` IRI naming a directory reads `profile.ttl` inside it, which is how the plugins in
+`~/github/jigdaw/plugins/` are used offline. `projects/patches/jigdaw-pulse.ttl` is a worked
+patch. Full notes in `docs/jigdaw.md`; the specification is `~/github/jigdaw/docs/`.
+
 ## Diagnosing audio problems
 
 ### No audio from a project
@@ -93,7 +115,8 @@ if needed.
    ```
    Look for `AUDIO node=guardian totalRms=...` near the bottom. If the probe fails with "module path, output channels, frames, and sample rate must be valid", a plugin has `audioOutputs 0` in the TTL — add the correct `:audioOutputs N` declaration (check with `transmission_vst3_inspect`).
 
-2. **Verify real port counts** before wiring connections:
+2. **Verify real port counts** before wiring connections (`transmission_jigdaw_inspect`
+   for a `:JigdawPlugin` node):
    ```sh
    native/build-ui-jack-vst3/transmission_vst3_inspect /home/danny/.vst3/<name>.vst3 \
      | grep -E 'audioInputs|audioOutputs|midiInputs|midiOutputs'

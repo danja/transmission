@@ -9,6 +9,9 @@
 #include "transmission/AudioProcessor.h"
 #include "transmission/Vst3Processor.h"
 #endif
+#ifdef TRANSMISSION_NAPI_WITH_JIGDAW
+#include "transmission/JigdawProcessor.h"
+#endif
 
 #include <node_api.h>
 
@@ -102,20 +105,19 @@ bool getArray(napi_env env, napi_value object, const char* name, napi_value& val
     return isArray;
 }
 
-// Reads pluginPath from a settings object that may use either the short key
-// "pluginPath" (string value) or the full URI key with an array value as
-// produced by TransmissionRdf.js settingsObject().
-bool readPluginPath(napi_env env, napi_value node, std::string& pluginPath) {
+// Reads one setting from a settings object that may use either the short key
+// ("pluginPath", "pluginIri") with a string value, or the full URI key with an
+// array value as produced by TransmissionRdf.js settingsObject().
+bool readSetting(napi_env env, napi_value node, const char* name, std::string& out) {
     napi_value settings;
     napi_valuetype settingsType = napi_undefined;
     if (napi_get_named_property(env, node, "settings", &settings) != napi_ok ||
         napi_typeof(env, settings, &settingsType) != napi_ok || settingsType != napi_object)
         return false;
-    if (getString(env, settings, "pluginPath", pluginPath) && !pluginPath.empty())
-        return true;
+    if (getString(env, settings, name, out) && !out.empty()) return true;
+    const std::string uriKey = std::string("http://purl.org/stuff/transmissions/") + name;
     napi_value arr;
-    if (!getArray(env, settings, "http://purl.org/stuff/transmissions/pluginPath", arr))
-        return false;
+    if (!getArray(env, settings, uriKey.c_str(), arr)) return false;
     napi_value elem;
     napi_valuetype elemType = napi_undefined;
     if (napi_get_element(env, arr, 0, &elem) != napi_ok ||
@@ -123,9 +125,18 @@ bool readPluginPath(napi_env env, napi_value node, std::string& pluginPath) {
         return false;
     std::size_t length = 0;
     napi_get_value_string_utf8(env, elem, nullptr, 0, &length);
-    pluginPath.resize(length);
-    napi_get_value_string_utf8(env, elem, pluginPath.data(), length + 1, &length);
-    return !pluginPath.empty();
+    out.resize(length);
+    napi_get_value_string_utf8(env, elem, out.data(), length + 1, &length);
+    return !out.empty();
+}
+
+bool readPluginPath(napi_env env, napi_value node, std::string& pluginPath) {
+    return readSetting(env, node, "pluginPath", pluginPath);
+}
+
+bool isJigdawNode(const std::string& type) {
+    return type == "JigdawPlugin" ||
+           type == "http://purl.org/stuff/transmissions/JigdawPlugin";
 }
 
 bool getObject(napi_env env, napi_value object, const char* name, napi_value& value) {
@@ -227,8 +238,24 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
         std::unique_ptr<transmission::AudioProcessor> processor;
         std::string pluginPath;
         readPluginPath(env, node, pluginPath);
-        if (type == std::string("AudioClipNode") ||
-            type == std::string("http://purl.org/stuff/transmissions/AudioClipNode")) {
+        std::string jigdawIri;
+        if (isJigdawNode(type) && readSetting(env, node, "pluginIri", jigdawIri)) {
+#ifdef TRANSMISSION_NAPI_WITH_JIGDAW
+            auto jig = std::make_unique<transmission::JigdawProcessor>();
+            std::string jigError;
+            if (!jig->initialize(jigdawIri, engineFrames, engineSampleRate, jigError))
+                return fail(env, jigError.c_str());
+            // The profile is authoritative about the port shape: a project that
+            // declared something else is corrected rather than left to fail
+            // routing with nothing to say about why.
+            audioInputs = jig->topology().audioInputs;
+            audioOutputs = jig->topology().audioOutputs;
+            processor = std::move(jig);
+#else
+            return fail(env, "JigDAW graph nodes require a JigDAW-enabled N-API build");
+#endif
+        } else if (type == std::string("AudioClipNode") ||
+                   type == std::string("http://purl.org/stuff/transmissions/AudioClipNode")) {
             auto clip = std::make_unique<transmission::AudioClipProcessor>();
             std::string error;
             if (!pluginPath.empty() && !clip->load(pluginPath, engineSampleRate, error))
@@ -580,7 +607,23 @@ napi_value captureMidi(napi_env env, napi_callback_info info) {
         std::unique_ptr<transmission::AudioProcessor> processor;
         std::string pluginPath;
         readPluginPath(env, node, pluginPath);
-        if (!pluginPath.empty()) {
+        std::string jigdawIri;
+        if (isJigdawNode(type) && readSetting(env, node, "pluginIri", jigdawIri)) {
+#ifdef TRANSMISSION_NAPI_WITH_JIGDAW
+            auto jig = std::make_unique<transmission::JigdawProcessor>();
+            std::string jigError;
+            if (!jig->initialize(jigdawIri, blockSz, captureSampleRate, jigError))
+                return fail(env, jigError.c_str());
+            // The profile is authoritative about the port shape: a project that
+            // declared something else is corrected rather than left to fail
+            // routing with nothing to say about why.
+            audioInputs = jig->topology().audioInputs;
+            audioOutputs = jig->topology().audioOutputs;
+            processor = std::move(jig);
+#else
+            return fail(env, "JigDAW graph nodes require a JigDAW-enabled N-API build");
+#endif
+        } else if (!pluginPath.empty()) {
 #ifdef TRANSMISSION_NAPI_WITH_VST3
             auto vst = std::make_unique<transmission::Vst3Processor>();
             std::string vstError;

@@ -160,3 +160,73 @@ export interface PluginCatalogueEntry {
   cautions: string[]
   parameters?: PluginParameterDescriptor[]
 }
+
+export interface JigdawScalePoint {
+  label: string
+  value: number
+}
+
+/** One declared JigDAW parameter. `id` is its jig:paramIndex. */
+export interface JigdawParameterDescriptor {
+  id: number
+  symbol: string
+  name: string
+  unit: string
+  minimum: number
+  maximum: number
+  defaultValue: number
+  toggled: boolean
+  enumeration: boolean
+  scalePoints: JigdawScalePoint[]
+}
+
+export interface JigdawModuleResource {
+  location: string
+  integrity: string
+  mediaType: string
+}
+
+export interface JigdawProfile {
+  /** The plugin's own IRI, which is also where its profile was published. */
+  iri: string
+  /** Where this copy was actually read from, which may be a mirror or a file. */
+  retrievedFrom: string
+  label: string
+  comment: string
+  vendor: string
+  /** jig:Abi1 or jig:Abi2; anything else is refused. */
+  abi: string
+  roles: string[]
+  accepts: string[]
+  produces: string[]
+  requires: string[]
+  /** Channel counts, which is what a transmission graph routes. */
+  ports: {
+    audioInputs: number
+    audioOutputs: number
+    midiInputs: number
+    midiOutputs: number
+  }
+  requiresTransport: boolean
+  module: JigdawModuleResource | null
+  parameters: JigdawParameterDescriptor[]
+}
+
+export declare class JigdawProfileError extends Error {
+  readonly iri: string
+}
+
+export declare function readJigdawProfile(
+  iri: string,
+  options?: { fetch?: (iri: string) => Promise<{ text: string; base: string }> }
+): Promise<JigdawProfile>
+
+export declare function jigdawGraphNode(
+  profile: JigdawProfile,
+  options: { id: string; label?: string; x?: number; y?: number }
+): GraphNode
+
+export declare function normalizeParameter(
+  parameter: JigdawParameterDescriptor, value: number): number
+export declare function denormalizeParameter(
+  parameter: JigdawParameterDescriptor, normalized: number): number

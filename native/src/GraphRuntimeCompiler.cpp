@@ -30,6 +30,10 @@ std::unique_ptr<RoutedAudioGraph> GraphRuntimeCompiler::compile(
             error = "runtime plugin node is missing its bundle path: " + node.id;
             return nullptr;
         }
+        if (node.kind == RuntimeNodeKind::JigdawPlugin && node.pluginPath.empty()) {
+            error = "runtime JigDAW node is missing its plugin IRI: " + node.id;
+            return nullptr;
+        }
     }
 
     std::vector<std::vector<std::size_t>> outgoing(snapshot.nodes.size());

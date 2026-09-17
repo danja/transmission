@@ -61,7 +61,7 @@ describe('native UI Turtle project helper', () => {
     expect(turtle).toContain(':controller 19')
 
     const restored = await runHelper('load', filePath)
-    expect(restored).toContain('TRANSMISSION_UI\t7')
+    expect(restored).toContain('TRANSMISSION_UI\t8')
     expect(restored).toContain('TRANSPORT\t132\t8\t1')
     expect(restored).toContain(`NODE\t${hex('drumgen')}`)
     expect(restored).toContain(`EDGE\t${hex('drumgen')}\t${hex('drumkit')}\t1\t0\t0`)
@@ -112,6 +112,37 @@ describe('native UI Turtle project helper', () => {
     expect(output).toContain(`NODE\t${hex('campione')}\t${hex('Campione')}\t3\t`)
     expect(output).toContain(hex('/fake/campione.vst3'))
     expect(output).toContain(`NODE\t${hex('drumgen')}\t${hex('DrumGen')}\t3\t`)
+  }, 15_000)
+
+  it('round trips a JigdawPlugin node, carrying its IRI in :pluginIri', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'transmission-native-ui-'))
+    temporaryDirectories.push(directory)
+    const filePath = join(directory, 'jigdaw.ttl')
+    const iri = 'https://strandz.it/jigdaw/plugins/pulse/'
+    const interchange = [
+      'TRANSMISSION_UI\t8',
+      `PROJECT\t${hex('main')}\t${hex('JigDAW graph')}`,
+      'TRANSPORT\t128\t4\t0',
+      `INPUT\t0\t${hex('No connection')}`,
+      `INPUT\t1\t${hex('No connection')}`,
+      `OUTPUT\t0\t${hex('playback:left')}`,
+      `OUTPUT\t1\t${hex('playback:right')}`,
+      `NODE\t${hex('pulse')}\t${hex('Pulse')}\t9\t0\t2\t1\t0\t120\t60\t${hex(iri)}`,
+      `NODE\t${hex('system-output')}\t${hex('System Output')}\t1\t2\t0\t1\t0\t400\t60\t-`,
+      `EDGE\t${hex('pulse')}\t${hex('system-output')}\t0\t0\t0`,
+      'END',
+      ''
+    ].join('\n')
+
+    await runHelper('save', filePath, interchange)
+    const turtle = await readFile(filePath, 'utf8')
+    expect(turtle).toContain('a :JigdawPlugin')
+    // The IRI goes in :pluginIri, not :pluginPath: it is dereferenced, not opened.
+    expect(turtle).toContain(`:pluginIri "${iri}"`)
+    expect(turtle).not.toContain(':pluginPath')
+
+    const restored = await runHelper('load', filePath)
+    expect(restored).toContain(`NODE\t${hex('pulse')}\t${hex('Pulse')}\t9\t0\t2\t1\t0\t120\t60\t${hex(iri)}`)
   }, 15_000)
 
   it('rejects a Turtle file without a Transmission project', async () => {

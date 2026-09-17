@@ -3,6 +3,9 @@
 #include "transmission/GraphRuntimeController.h"
 #include "transmission/UiProjectCodec.h"
 #include "transmission/Vst3Processor.h"
+#if defined(TRANSMISSION_WITH_JIGDAW)
+#include "transmission/JigdawProcessor.h"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -108,6 +111,8 @@ RuntimeNodeKind runtimeKind(transmission::UiProjectNodeKind kind) {
     case UiKind::MidiInput: return RuntimeNodeKind::MidiInput;
     case UiKind::MidiOutput: return RuntimeNodeKind::MidiOutput;
     case UiKind::Gain: return RuntimeNodeKind::Gain;
+    case UiKind::JigdawPlugin: return RuntimeNodeKind::JigdawPlugin;
+    default: break;
     }
     return RuntimeNodeKind::PassThrough;
 }
@@ -178,6 +183,19 @@ transmission::RuntimeProcessorFactory processorFactory() {
                         device.blockSize, device.sampleRate, error))
                     return nullptr;
                 return processor;
+            }
+            if (node.kind == RuntimeNodeKind::JigdawPlugin) {
+#if defined(TRANSMISSION_WITH_JIGDAW)
+                auto processor =
+                    std::make_unique<transmission::JigdawProcessor>();
+                if (!processor->initialize(node.pluginPath, device.blockSize,
+                                           device.sampleRate, error))
+                    return nullptr;
+                return processor;
+#else
+                error = "this build does not include JigDAW hosting support";
+                return nullptr;
+#endif
             }
             if (node.kind == RuntimeNodeKind::MidiInput ||
                 node.kind == RuntimeNodeKind::MidiOutput)

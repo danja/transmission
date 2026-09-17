@@ -17,6 +17,9 @@ extern "C" { int XInitThreads(); }
 #include "transmission/OfflineAudioRenderer.h"
 #include "transmission/SmfWriter.h"
 #include "transmission/UiProjectCodec.h"
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+#include "transmission/JigdawProcessor.h"
+#endif
 #include "transmission/Vst3EditorHost.h"
 #include "transmission/Vst3Inspector.h"
 #include "transmission/Vst3Processor.h"
@@ -57,9 +60,11 @@ constexpr double minimumNodeHeight = 70.0;
 constexpr double portSpacing = 18.0;
 constexpr std::int32_t vst3CanAutomateFlag = 1 << 0;
 
+// Mirrors UiProjectNodeKind and RuntimeNodeKind by value; the three are cast
+// into one another. Append only.
 enum class NodeKind {
     SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput, Gain,
-    AudioClip, MidiClip
+    AudioClip, MidiClip, JigdawPlugin
 };
 
 struct PluginCacheEntry {
@@ -126,6 +131,7 @@ struct GraphView {
     std::vector<transmission::UiProjectGainLane> gainLanes;
     std::vector<transmission::UiProjectMidiParameterMapping> midiMappings;
     std::size_t nextPluginId = 1;
+    std::size_t nextJigdawId = 1;
     std::size_t nextMidiInputId = 1;
     std::size_t nextMidiOutputId = 1;
     std::size_t nextGainId = 1;
@@ -336,6 +342,18 @@ transmission::RuntimeProcessorFactory uiProcessorFactory() {
             auto proc = std::make_unique<transmission::MidiClipProcessor>();
             if (!proc->load(node.pluginPath, error)) return nullptr;
             return proc;
+        }
+        if (node.kind == transmission::RuntimeNodeKind::JigdawPlugin) {
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+            auto processor = std::make_unique<transmission::JigdawProcessor>();
+            if (!processor->initialize(node.pluginPath, config.blockSize,
+                                       config.sampleRate, error))
+                return nullptr;
+            return processor;
+#else
+            error = "This UI build does not include JigDAW hosting support";
+            return nullptr;
+#endif
         }
         if (node.kind != transmission::RuntimeNodeKind::Plugin)
             return std::make_unique<transmission::PassThroughProcessor>();
@@ -1405,10 +1423,82 @@ void showMidiDialog(GtkWidget* canvas, GraphView& view, bool input,
     gtk_widget_show_all(dialog);
 }
 
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+struct JigdawDialogContext {
+    GraphView* view = nullptr;
+    GtkWidget* canvas = nullptr;
+    GtkWidget* dialog = nullptr;
+    GtkEntry* entry = nullptr;
+};
+
+void addJigdawNodeFromDialog(GtkDialog*, gint response, gpointer data) {
+    auto* context = static_cast<JigdawDialogContext*>(data);
+    if (response == GTK_RESPONSE_ACCEPT) {
+        std::string iri = gtk_entry_get_text(context->entry);
+        while (!iri.empty() && std::isspace(static_cast<unsigned char>(iri.back())))
+            iri.pop_back();
+        const auto start = iri.find_first_not_of(" \t");
+        iri = start == std::string::npos ? std::string() : iri.substr(start);
+        transmission::JigdawPluginTopology topology;
+        std::string error;
+        if (iri.empty()) {
+            setStatus(*context->view, "A JigDAW plugin needs an IRI", true);
+        }
+        else if (!transmission::JigdawInspector().inspectTopology(iri, topology, error)) {
+            setStatus(*context->view, "Unable to load " + iri + ": " + error, true);
+        }
+        else {
+            const auto id = "jigdaw-" + std::to_string(context->view->nextJigdawId++);
+            stopRuntime(*context->view,
+                        "Graph changed — press Play to compile and start audio");
+            context->view->nodes.push_back({
+                id, topology.name.empty() ? iri : topology.name,
+                NodeKind::JigdawPlugin, topology.audioInputs, topology.audioOutputs,
+                topology.midiInputs, topology.midiOutputs,
+                context->view->pointerX, context->view->pointerY, iri, "", {}, {}});
+            logConsole(*context->view,
+                       "Loaded " + topology.name + " (" + topology.abi + ")");
+            gtk_widget_queue_draw(context->canvas);
+        }
+    }
+    gtk_widget_destroy(context->dialog);
+    delete context;
+}
+
+void showJigdawDialog(GtkWidget* canvas, GraphView& view) {
+    auto* dialog = gtk_dialog_new_with_buttons(
+        "Add JigDAW Plugin", GTK_WINDOW(gtk_widget_get_toplevel(canvas)),
+        GTK_DIALOG_MODAL, "_Cancel", GTK_RESPONSE_CANCEL, "_Add",
+        GTK_RESPONSE_ACCEPT, nullptr);
+    auto* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 8);
+    auto* label = gtk_label_new(
+        "Plugin IRI. Dereferencing it is the whole of installing it:\n"
+        "https://strandz.it/jigdaw/plugins/pulse/  or  file:///path/to/pulse/");
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0F);
+    gtk_box_pack_start(GTK_BOX(content), label, FALSE, FALSE, 4);
+    auto* entry = GTK_ENTRY(gtk_entry_new());
+    gtk_entry_set_activates_default(entry, TRUE);
+    gtk_widget_set_size_request(GTK_WIDGET(entry), 520, -1);
+    gtk_box_pack_start(GTK_BOX(content), GTK_WIDGET(entry), FALSE, FALSE, 4);
+    gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
+    auto* context = new JigdawDialogContext{&view, canvas, dialog, entry};
+    g_signal_connect(dialog, "response", G_CALLBACK(addJigdawNodeFromDialog), context);
+    gtk_widget_show_all(dialog);
+}
+#endif
+
 void addPluginActivated(GtkMenuItem*, gpointer data) {
     auto* context = static_cast<AddNodeMenuContext*>(data);
     showPluginDialog(context->canvas, *context->view);
 }
+
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+void addJigdawActivated(GtkMenuItem*, gpointer data) {
+    auto* context = static_cast<AddNodeMenuContext*>(data);
+    showJigdawDialog(context->canvas, *context->view);
+}
+#endif
 
 void addGainActivated(GtkMenuItem*, gpointer data) {
     auto* context = static_cast<AddNodeMenuContext*>(data);
@@ -1495,12 +1585,18 @@ void showAddNodeMenu(GtkWidget* canvas, GraphView& view,
                      GdkEventButton* event) {
     auto* menu = gtk_menu_new();
     auto* plugin = gtk_menu_item_new_with_label("Add VST3 Plugin…");
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+    auto* jigdaw = gtk_menu_item_new_with_label("Add JigDAW Plugin…");
+#endif
     auto* gain = gtk_menu_item_new_with_label("Add Gain / Pan");
     auto* midiInput = gtk_menu_item_new_with_label("Add MIDI Input…");
     auto* midiOutput = gtk_menu_item_new_with_label("Add MIDI Output…");
     auto* audioClip = gtk_menu_item_new_with_label("Add Audio Clip…");
     auto* midiClip = gtk_menu_item_new_with_label("Add MIDI Clip…");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), plugin);
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), jigdaw);
+#endif
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), gain);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), midiInput);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), midiOutput);
@@ -1508,6 +1604,9 @@ void showAddNodeMenu(GtkWidget* canvas, GraphView& view,
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), midiClip);
     auto* context = new AddNodeMenuContext{&view, canvas};
     g_signal_connect(plugin, "activate", G_CALLBACK(addPluginActivated), context);
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+    g_signal_connect(jigdaw, "activate", G_CALLBACK(addJigdawActivated), context);
+#endif
     g_signal_connect(gain, "activate", G_CALLBACK(addGainActivated), context);
     g_signal_connect(midiInput, "activate", G_CALLBACK(addMidiInputActivated), context);
     g_signal_connect(midiOutput, "activate", G_CALLBACK(addMidiOutputActivated), context);
@@ -3240,6 +3339,28 @@ void updateWindowTitle(GraphView& view) {
     gtk_window_set_title(GTK_WINDOW(view.window), title.c_str());
 }
 
+// The status indicators belong to the window, not to the live server, and
+// are updated whether or not this build has one.
+static void updateJackIndicator(GraphView& view) {
+    if (!view.jackIndicator) return;
+    const bool ok = view.jackConnections && view.jackConnections->available();
+    gtk_label_set_markup(GTK_LABEL(view.jackIndicator),
+        ok ? "<span color=\"#44cc44\">● JACK</span>"
+           : "<span color=\"#cc4444\">● JACK</span>");
+}
+
+static void updateMcpIndicator(GraphView& view) {
+    if (!view.mcpIndicator) return;
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    const bool ok = view.liveServerAvailable;
+#else
+    const bool ok = false;
+#endif
+    gtk_label_set_markup(GTK_LABEL(view.mcpIndicator),
+        ok ? "<span color=\"#44cc44\">● MCP</span>"
+           : "<span color=\"#cc4444\">● MCP</span>");
+}
+
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
 static std::size_t curlWriteCallback(char* ptr, std::size_t size, std::size_t nmemb, void* userdata) {
     static_cast<std::string*>(userdata)->append(ptr, size * nmemb);
@@ -3570,26 +3691,6 @@ static void reloadFromLiveServer(GraphView& view, const std::string& serverFileP
     logConsole(view, "Graph reloaded from live server");
 }
 
-static void updateJackIndicator(GraphView& view) {
-    if (!view.jackIndicator) return;
-    const bool ok = view.jackConnections && view.jackConnections->available();
-    gtk_label_set_markup(GTK_LABEL(view.jackIndicator),
-        ok ? "<span color=\"#44cc44\">● JACK</span>"
-           : "<span color=\"#cc4444\">● JACK</span>");
-}
-
-static void updateMcpIndicator(GraphView& view) {
-    if (!view.mcpIndicator) return;
-#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
-    const bool ok = view.liveServerAvailable;
-#else
-    const bool ok = false;
-#endif
-    gtk_label_set_markup(GTK_LABEL(view.mcpIndicator),
-        ok ? "<span color=\"#44cc44\">● MCP</span>"
-           : "<span color=\"#cc4444\">● MCP</span>");
-}
-
 static gboolean liveServerPollTick(gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
     if (!view.mcpServerEnabled) {
@@ -3804,6 +3905,33 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
             node.midiInputs = std::max<std::size_t>(1, node.midiInputs);
             continue;
         }
+        if (node.kind == transmission::UiProjectNodeKind::JigdawPlugin) {
+            if (node.pluginPath.empty()) {
+                error = "A JigDAW node is missing its plugin IRI";
+                return false;
+            }
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+            // Discovered beats curated here for the same reason it does for a
+            // VST3: the profile says what the plugin is for, and only reading
+            // it says what its ports actually are. A project that disagrees is
+            // corrected rather than allowed to fail validation.
+            transmission::JigdawPluginTopology jigdaw;
+            if (!transmission::JigdawInspector().inspectTopology(
+                    node.pluginPath, jigdaw, error)) {
+                error = "Unable to inspect " + node.pluginPath + ": " + error;
+                return false;
+            }
+            node.audioInputs = jigdaw.audioInputs;
+            node.audioOutputs = jigdaw.audioOutputs;
+            node.midiInputs = jigdaw.midiInputs;
+            node.midiOutputs = jigdaw.midiOutputs;
+            if (!jigdaw.name.empty()) node.label = jigdaw.name;
+#else
+            error = "This UI build does not include JigDAW hosting support";
+            return false;
+#endif
+            continue;
+        }
         if (node.kind != transmission::UiProjectNodeKind::Plugin ||
             node.pluginPath.empty()) continue;
         transmission::Vst3PluginTopology topology;
@@ -3875,6 +4003,7 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
     view.dragging = static_cast<std::size_t>(-1);
     view.connectingFrom = static_cast<std::size_t>(-1);
     view.nextPluginId = 1;
+    view.nextJigdawId = 1;
     view.nextMidiInputId = 1;
     view.nextMidiOutputId = 1;
     view.nextGainId = 1;
@@ -3884,6 +4013,8 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
     for (const auto& node : view.nodes) identifiers.insert(node.id);
     while (identifiers.contains("plugin-" + std::to_string(view.nextPluginId)))
         ++view.nextPluginId;
+    while (identifiers.contains("jigdaw-" + std::to_string(view.nextJigdawId)))
+        ++view.nextJigdawId;
     while (identifiers.contains("midi-input-" + std::to_string(view.nextMidiInputId)))
         ++view.nextMidiInputId;
     while (identifiers.contains("midi-output-" + std::to_string(view.nextMidiOutputId)))

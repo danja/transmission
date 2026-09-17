@@ -3,7 +3,21 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VST3_SDK_ROOT="${HOME}/VST_SDK/vst3sdk"
+JIGDAW_ROOT="${JIGDAW_ROOT:-${HOME}/github/jigdaw}"
+HTTPLIB_DIR="${JIGDAW_HTTPLIB_DIR:-${HOME}/github/downspout/third_party/cpp-httplib}"
 cd "$ROOT_DIR"
+
+# JigDAW hosting is optional: it needs the jigdaw checkout for the spec and its
+# portable core, and cpp-httplib for dereferencing a plugin IRI.
+JIGDAW_FLAGS=(-DTRANSMISSION_WITH_JIGDAW=OFF)
+if [[ -f "$JIGDAW_ROOT/native/jigdaw-adapter/CMakeLists.txt" && -f "$HTTPLIB_DIR/httplib.h" ]]; then
+  JIGDAW_FLAGS=(-DTRANSMISSION_WITH_JIGDAW=ON
+                -DJIGDAW_ROOT="$JIGDAW_ROOT"
+                -DJIGDAW_HTTPLIB_DIR="$HTTPLIB_DIR")
+  echo "JigDAW hosting: enabled ($JIGDAW_ROOT)"
+else
+  echo "JigDAW hosting: disabled (no checkout at $JIGDAW_ROOT, or no cpp-httplib at $HTTPLIB_DIR)"
+fi
 
 echo "Checking JavaScript sources"
 npm run check
@@ -11,6 +25,7 @@ npm test
 
 echo "Building the default native engine and running CTest"
 cmake -S native -B native/build \
+  "${JIGDAW_FLAGS[@]}" \
   -DTRANSMISSION_BUILD_TESTS=ON
 cmake --build native/build --parallel
 ctest --test-dir native/build --output-on-failure
@@ -32,6 +47,7 @@ cmake -S native -B native/build-ui-jack-vst3 \
   -DTRANSMISSION_WITH_JACK=ON \
   -DTRANSMISSION_WITH_VST3=ON \
   -DVST3_SDK_ROOT="$VST3_SDK_ROOT" \
+  "${JIGDAW_FLAGS[@]}" \
   -DTRANSMISSION_BUILD_TESTS=OFF \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build native/build-ui-jack-vst3 --target transmission_graph_ui --parallel
@@ -48,6 +64,7 @@ cmake -S native -B native/build-napi-vst3 \
   -DTRANSMISSION_WITH_JACK=ON \
   -DTRANSMISSION_WITH_VST3=ON \
   -DVST3_SDK_ROOT="$VST3_SDK_ROOT" \
+  "${JIGDAW_FLAGS[@]}" \
   -DTRANSMISSION_BUILD_TESTS=OFF \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build native/build-napi-vst3 --target transmission_native --parallel

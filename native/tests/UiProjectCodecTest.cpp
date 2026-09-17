@@ -27,6 +27,12 @@ int main() {
     project.nodes[1].parameters = {{7, 0.25}, {42, 0.75}};
     project.nodes[1].componentState = {0x00, 0x7f, 0xff};
     project.nodes[1].controllerState = {0x10, 0x20};
+    // A JigDAW node carries a plugin IRI in the same resource slot a VST3 node
+    // carries a bundle path in. The record has one, and which it is is the kind.
+    project.nodes.push_back({
+        "pulse", "Pulse", transmission::UiProjectNodeKind::JigdawPlugin,
+        0, 2, 1, 0, 720.0, 30.0, "https://strandz.it/jigdaw/plugins/pulse/"});
+    // Last, because the gain assertions below read nodes.back().
     project.nodes.push_back({
         "master-gain", "Master Gain", transmission::UiProjectNodeKind::Gain,
         2, 2, 0, 0, 600.0, 30.0, "", "", {}, {}, {}, -3.0, -0.25});
@@ -38,7 +44,7 @@ int main() {
     project.midiMappings = {{"master-gain", 0, -1, 19, true},
                             {"drumgen", 42, 0, 23, false}};
     const auto encoded = transmission::encodeUiProject(project);
-    assert(encoded.starts_with("TRANSMISSION_UI\t7\n"));
+    assert(encoded.starts_with("TRANSMISSION_UI\t8\n"));
     transmission::UiProject decoded;
     std::string error;
     assert(transmission::decodeUiProject(encoded, decoded, error));
@@ -66,6 +72,11 @@ int main() {
     assert(decoded.midiMappings[0].controller == 19);
     assert(decoded.midiMappings[1].parameterId == 42);
     assert(!decoded.midiMappings[1].consume);
+    const auto& jigdaw = decoded.nodes[decoded.nodes.size() - 2];
+    assert(jigdaw.kind == transmission::UiProjectNodeKind::JigdawPlugin);
+    assert(jigdaw.pluginPath == "https://strandz.it/jigdaw/plugins/pulse/");
+    assert(jigdaw.audioOutputs == 2);
+    assert(jigdaw.midiInputs == 1);
 
     assert(!transmission::decodeUiProject("not a project\n", decoded, error));
     assert(!transmission::decodeUiProject(

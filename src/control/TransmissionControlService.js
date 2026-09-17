@@ -2,6 +2,7 @@ import { isAbsolute, relative, resolve } from 'node:path'
 import { compileGraph } from '../compiler/GraphCompiler.js'
 import { ProjectSession } from '../session/ProjectSession.js'
 import { serializeGraph } from '../rdf/TransmissionRdf.js'
+import { jigdawGraphNode, readJigdawProfile } from '../registry/JigdawProfile.js'
 
 export class ProjectRevisionError extends Error {
   constructor(expected, actual) {
@@ -305,6 +306,21 @@ export class TransmissionControlService {
     const plugin = this.pluginCatalogue.get(identifier)
     if (!plugin) throw new Error(`Unknown plugin: ${identifier}`)
     return plugin
+  }
+
+  /**
+   * Dereference a JigDAW plugin IRI and report what it is, what it needs and
+   * what a node for it should look like.
+   *
+   * There is no catalogue to consult and no scan to wait for: a JigDAW plugin's
+   * identity, its metadata and its delivery are one thing, so describing it is
+   * fetching it. The returned `node` carries the port counts a project must
+   * declare, because the native host overwrites whatever a project guessed and
+   * a mismatch fails validation with nothing useful to say.
+   */
+  async describeJigdawPlugin(iri, { id = 'jigdaw-1' } = {}) {
+    const profile = await readJigdawProfile(iri)
+    return { profile, node: jigdawGraphNode(profile, { id }) }
   }
 
   validatePluginChain(identifiers) {

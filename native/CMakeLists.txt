@@ -14,7 +14,12 @@ option(TRANSMISSION_WITH_VST3 "Build Steinberg SDK-backed VST3 hosting tools" OF
 option(TRANSMISSION_WITH_JACK "Build the JACK audio-device backend" OFF)
 option(TRANSMISSION_WITH_NAPI "Build the Node N-API control addon" OFF)
 option(TRANSMISSION_WITH_GTK_UI "Build the native GTK graph editor" OFF)
+option(TRANSMISSION_WITH_JIGDAW "Build JigDAW (WebAssembly plugin-by-IRI) hosting" OFF)
 set(VST3_SDK_ROOT "$ENV{HOME}/VST_SDK/vst3sdk" CACHE PATH "Path to the Steinberg VST3 SDK")
+# A path rather than a fetch, for the same reason jigdaw itself takes DPF as a
+# path: this is the checkout whose specification the host implements, and two
+# copies would be two answers about what jig:Abi2 says.
+set(JIGDAW_ROOT "$ENV{HOME}/github/jigdaw" CACHE PATH "Path to the JigDAW checkout")
 
 add_library(transmission_engine STATIC
   src/AudioClipProcessor.cpp
@@ -110,6 +115,39 @@ if(fs.existsSync(p.join(c,'node_api.h'))){process.stdout.write(c);return true;}}
   endif()
 endif()
 
+if(TRANSMISSION_WITH_JIGDAW)
+  if(NOT EXISTS "${JIGDAW_ROOT}/native/jigdaw-adapter/CMakeLists.txt")
+    message(FATAL_ERROR "JIGDAW_ROOT does not contain a JigDAW checkout: ${JIGDAW_ROOT}")
+  endif()
+  # jigdaw_core is the portable half of jigdaw's own native adapter: profile
+  # parsing, fetching, integrity and the wasm3-backed module ABI. The adapter's
+  # VST3 wrapper and its tests belong to that repository and are not built here.
+  # wasm3 is C, and this project is otherwise C++ only.
+  enable_language(C)
+  set(JIGDAW_BUILD_PLUGIN OFF CACHE BOOL "" FORCE)
+  set(JIGDAW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  # Defaults jigdaw's own top-level CMakeLists supplies. The adapter directory
+  # is added on its own here, so they have to be supplied with it.
+  set(JIGDAW_HTTPLIB_DIR "$ENV{HOME}/github/downspout/third_party/cpp-httplib"
+      CACHE PATH "cpp-httplib checkout used by jigdaw_core")
+  if(NOT EXISTS "${JIGDAW_HTTPLIB_DIR}/httplib.h")
+    message(FATAL_ERROR
+      "jigdaw_core needs cpp-httplib. Pass -DJIGDAW_HTTPLIB_DIR=<dir containing httplib.h>. "
+      "Looked in: ${JIGDAW_HTTPLIB_DIR}")
+  endif()
+  list(APPEND CMAKE_MODULE_PATH "${JIGDAW_ROOT}/native/cmake")
+  add_subdirectory("${JIGDAW_ROOT}/native/jigdaw-adapter"
+                   "${CMAKE_BINARY_DIR}/jigdaw" EXCLUDE_FROM_ALL)
+  add_library(transmission_jigdaw STATIC src/JigdawProcessor.cpp)
+  target_include_directories(transmission_jigdaw PUBLIC include)
+  target_link_libraries(transmission_jigdaw PUBLIC transmission_engine jigdaw_core)
+  set_target_properties(transmission_jigdaw PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  add_executable(transmission_jigdaw_inspect src/jigdaw_inspect_main.cpp)
+  target_link_libraries(transmission_jigdaw_inspect PRIVATE transmission_jigdaw)
+  add_executable(transmission_jigdaw_probe src/jigdaw_probe_main.cpp)
+  target_link_libraries(transmission_jigdaw_probe PRIVATE transmission_jigdaw)
+endif()
+
 if(TRANSMISSION_WITH_VST3)
   if(NOT EXISTS "${VST3_SDK_ROOT}/CMakeLists.txt")
     message(FATAL_ERROR "VST3_SDK_ROOT does not contain a VST3 SDK: ${VST3_SDK_ROOT}")
@@ -168,6 +206,12 @@ if(TRANSMISSION_WITH_VST3)
   target_link_libraries(transmission_vst3_chain_probe PRIVATE transmission_vst3_inspector transmission_engine)
   add_executable(transmission_vst3_project_probe src/vst3_project_probe_main.cpp)
   target_link_libraries(transmission_vst3_project_probe PRIVATE transmission_vst3_inspector transmission_engine)
+  if(TRANSMISSION_WITH_JIGDAW)
+    # The headless project probe is what "no audio from a project" is diagnosed
+    # with, so it has to be able to run every node kind a project can contain.
+    target_compile_definitions(transmission_vst3_project_probe PRIVATE TRANSMISSION_WITH_JIGDAW=1)
+    target_link_libraries(transmission_vst3_project_probe PRIVATE transmission_jigdaw)
+  endif()
   if(TRANSMISSION_WITH_JACK)
     add_executable(transmission_vst3_jack_chain_probe
       src/vst3_jack_chain_probe_main.cpp
@@ -186,6 +230,10 @@ if(TRANSMISSION_WITH_NAPI AND TRANSMISSION_WITH_VST3)
 endif()
 if(TRANSMISSION_WITH_NAPI AND TRANSMISSION_WITH_JACK)
   target_compile_definitions(transmission_native PRIVATE TRANSMISSION_NAPI_WITH_JACK=1)
+endif()
+if(TRANSMISSION_WITH_NAPI AND TRANSMISSION_WITH_JIGDAW)
+  target_compile_definitions(transmission_native PRIVATE TRANSMISSION_NAPI_WITH_JIGDAW=1)
+  target_link_libraries(transmission_native PRIVATE transmission_jigdaw)
 endif()
 
 # JACK/PipeWire and the Node bridge sit behind these stable engine interfaces.
@@ -243,6 +291,20 @@ if(TRANSMISSION_BUILD_TESTS)
     add_test(NAME transmission_vst3_midi_event_conversion_test
       COMMAND transmission_vst3_midi_event_conversion_test)
   endif()
+  if(TRANSMISSION_WITH_JIGDAW)
+    add_executable(transmission_jigdaw_processor_test tests/JigdawProcessorTest.cpp)
+    target_link_libraries(transmission_jigdaw_processor_test PRIVATE transmission_jigdaw)
+    target_compile_definitions(transmission_jigdaw_processor_test
+      PRIVATE TRANSMISSION_JIGDAW_PLUGIN_ROOT="${JIGDAW_ROOT}/plugins")
+    # A Release build defines NDEBUG, and a test whose assertions are compiled
+    # out passes whatever it is given.
+    target_compile_options(transmission_jigdaw_processor_test PRIVATE -UNDEBUG)
+    add_test(NAME transmission_jigdaw_processor_test
+      COMMAND transmission_jigdaw_processor_test)
+    # The worked plugins live in the jigdaw checkout. Without them there is
+    # nothing to load, and a skip says so rather than reporting a pass.
+    set_tests_properties(transmission_jigdaw_processor_test PROPERTIES SKIP_RETURN_CODE 77)
+  endif()
   add_executable(transmission_transport_test tests/TransportClockTest.cpp)
   target_link_libraries(transmission_transport_test PRIVATE transmission_engine)
   add_test(NAME transmission_transport_test COMMAND transmission_transport_test)
@@ -276,6 +338,10 @@ if(TRANSMISSION_WITH_GTK_UI)
     target_compile_definitions(transmission_graph_ui PRIVATE TRANSMISSION_UI_WITH_JACK=1)
     target_include_directories(transmission_graph_ui PRIVATE "${TRANSMISSION_UI_JACK_INCLUDE_DIR}")
     target_link_libraries(transmission_graph_ui PRIVATE "${TRANSMISSION_UI_JACK_LIBRARY}")
+  endif()
+  if(TRANSMISSION_WITH_JIGDAW)
+    target_compile_definitions(transmission_graph_ui PRIVATE TRANSMISSION_UI_WITH_JIGDAW=1)
+    target_link_libraries(transmission_graph_ui PRIVATE transmission_jigdaw)
   endif()
   find_package(CURL)
   if(CURL_FOUND)

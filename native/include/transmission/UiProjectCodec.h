@@ -10,9 +10,11 @@
 
 namespace transmission {
 
+// Kept in step, by value, with RuntimeNodeKind and the Node-side type table.
+// Append only.
 enum class UiProjectNodeKind {
     SystemInput, SystemOutput, PassThrough, Plugin, MidiInput, MidiOutput, Gain,
-    AudioClip, MidiClip
+    AudioClip, MidiClip, JigdawPlugin
 };
 enum class UiProjectConnectionKind { Audio, Midi };
 
@@ -31,6 +33,8 @@ struct UiProjectNode {
     std::size_t midiOutputs = 0;
     double x = 0.0;
     double y = 0.0;
+    /// A VST3 bundle path, a clip file, or a JigDAW plugin IRI, by kind. One
+    /// slot because the interchange record carries one resource per node.
     std::string pluginPath;
     std::string externalPort;
     std::vector<UiProjectParameter> parameters;

@@ -1,5 +1,7 @@
 # TODO
 
+
+
 ## Feature : scopes
 
 Add built-in modules Oscilloscope & Spectrum analyzer, loaded like the Output built-ins as required. They should display while running in the main window, like the level meters in the output built-in.
@@ -48,6 +50,28 @@ For `transport_play` and audio control to work via MCP from a Claude session:
 - Gremlin DSP is expensive (~12 ms/block probe average). Enable render-ahead
   before using this patch live; all other nodes remain at previous cost.
 
+## JigDAW hosting — remaining gaps
+
+`:JigdawPlugin` nodes load, run and route (see `docs/jigdaw.md`). Still open:
+
+- No state serialisation: `jig:Abi1` and `jig:Abi2` carry none, so a project restores a
+  JigDAW plugin's parameters but not anything it keeps beyond them. Needs a profile
+  statement or a processor message upstream in jigdaw before a host can do anything.
+- `jigdaw::Chain::process` (in the jigdaw repo, not used here) processes only
+  `min(frames, jig_max_frames())` and leaves the rest of the block stale. Transmission
+  drives `jigdaw::Module` directly and sub-blocks it instead, but the adapter that ships
+  in jigdaw has the bug at any host buffer above 128 frames. Report upstream.
+- The generated parameter panel the jigdaw adapter draws from `lv2:port` statements has no
+  equivalent in the GTK UI: a JigDAW node's parameters are reachable over MCP and through
+  the project file, but not from the editor.
+- `jig:latencyFrames` is read into the profile and then ignored; there is no latency
+  compensation for a JigDAW node.
+- The GTK "Add JigDAW Plugin…" dialog dereferences the IRI on the main thread, so a slow
+  or unreachable https origin freezes the editor for up to the fetch timeout. This matches
+  what the UI already does for VST3 inspection, but that reads a local file and this reads
+  the network. jigdaw's own editor runs the same load on a worker for exactly this reason
+  (`native/jigdaw-adapter/src/dpf/JigdawUI.cpp`); do the same here.
+
 ## Engine features
 
 - Suspend schedule-only instrument processors outside their authored activity
@@ -67,6 +91,7 @@ For `transport_play` and audio control to work via MCP from a Claude session:
 ## Recurring — check periodically
 
 - Remove completed tasks from this file.
+- Check INBOX.md for new tasks and place them here on in a plan as appropriate
 - Check MISTAKES.md for systematic problems; promote recurring issues to CLAUDE.md.
 - If an issue in MISTAKES.md is fully resolved, remove it.
 - For new material, check test coverage.

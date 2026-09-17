@@ -110,6 +110,17 @@ All graph mutations require stopped audio and the current `expectedRevision`.
 | `plugin_validate_chain` | Check two adjacent plugins for compatible signal flow |
 | `plugins_scan` | Rescan VST3 bundles under `~/.vst3` and refresh metadata |
 
+### JigDAW plugins
+
+| Tool | Description |
+|------|-------------|
+| `jigdaw_describe` | Dereference a JigDAW plugin IRI and return its profile plus the graph node to add for it |
+
+A JigDAW plugin has no catalogue to be listed in, so `jigdaw_describe` is available whether or
+not a plugin catalogue is configured, and it is the step to take before wiring a
+`JigdawPlugin` node: the port counts it returns are read from the profile, and the host reads
+the same profile and overwrites whatever a project declared. See [JigDAW plugins](jigdaw).
+
 ---
 
 ## HTTP API

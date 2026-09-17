@@ -12,6 +12,22 @@ import { ProjectSession } from '../src/session/ProjectSession.js'
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 
 const BASE = 'http://purl.org/stuff/transmissions/'
+
+// The node kind table, by interchange value. Kept in step with
+// UiProjectNodeKind and RuntimeNodeKind in native/. Append only: the index is
+// what the interchange record carries.
+const NODE_KINDS = [
+  'AudioInput', 'AudioOutput', 'PassThrough', 'VST3Plugin', 'MidiInput',
+  'MidiOutput', 'Gain', 'AudioClipNode', 'MidiClipNode', 'JigdawPlugin'
+]
+
+// One resource slot per node record, named for what that kind puts in it: a
+// JACK port, a JigDAW plugin IRI, or a bundle/clip path.
+function resourceSettingKey(kind) {
+  if (kind === 4 || kind === 5) return 'externalPort'
+  if (kind === 9) return 'pluginIri'
+  return 'pluginPath'
+}
 const [command, filePath, interchangePath] = process.argv.slice(2)
 
 if (!['load', 'save', 'check'].includes(command) || !filePath ||
@@ -93,7 +109,7 @@ function decodeProject(text) {
     const invalid = () => { throw new Error(`Invalid native UI project interchange at line ${index + 1}`) }
     if (!header) {
       if (fields.length !== 2 || fields[0] !== 'TRANSMISSION_UI' ||
-          !['1', '2', '3', '4', '5', '6', '7'].includes(fields[1])) invalid()
+          !['1', '2', '3', '4', '5', '6', '7', '8'].includes(fields[1])) invalid()
       header = true
       continue
     }
@@ -123,10 +139,10 @@ function decodeProject(text) {
     } else if (fields[0] === 'NODE' && fields.length === 11) {
       const kind = integer(fields[3])
       const id = hexDecode(fields[1])
-      if (kind < 0 || kind > 8 || !id) invalid()
+      if (kind < 0 || kind > 9 || !id) invalid()
       const resource = hexDecode(fields[10])
-      const type = ['AudioInput', 'AudioOutput', 'PassThrough', 'VST3Plugin', 'MidiInput', 'MidiOutput', 'Gain', 'AudioClipNode', 'MidiClipNode'][kind]
-      const settingsKey = (kind === 4 || kind === 5) ? 'externalPort' : 'pluginPath'
+      const type = NODE_KINDS[kind]
+      const settingsKey = resourceSettingKey(kind)
       project.nodes.push({
         id: fullId(id),
         label: hexDecode(fields[2]),
@@ -230,7 +246,7 @@ function encodeProject(session, profilePaths = new Map()) {
   const graph = session.graph
   const transport = session.transport.toJSON()
   const lines = [
-    'TRANSMISSION_UI\t7',
+    'TRANSMISSION_UI\t8',
     `PROJECT\t${hexEncode(shortId(graph.id))}\t${hexEncode(graph.label)}`,
     `TRANSPORT\t${transport.tempoMap[0]?.bpm ?? 120}\t${(transport.loop?.endBeat ?? 16) / 4}\t${transport.loop?.enabled ? 1 : 0}`
   ]
@@ -242,13 +258,9 @@ function encodeProject(session, profilePaths = new Map()) {
   }
   for (const node of graph.nodes.values()) {
     const type = shortId(node.type)
-    let kind = {
-      AudioInput: 0, AudioOutput: 1, PassThrough: 2,
-      VST3Plugin: 3, MidiInput: 4, MidiOutput: 5, Gain: 6,
-      AudioClipNode: 7, MidiClipNode: 8
-    }[type]
-    if (kind === undefined) kind = 3
-    const settingsKey = (kind === 4 || kind === 5) ? 'externalPort' : 'pluginPath'
+    let kind = NODE_KINDS.indexOf(type)
+    if (kind < 0) kind = 3
+    const settingsKey = resourceSettingKey(kind)
     const resource = firstSetting(node.settings, settingsKey) || (kind === 3 ? (profilePaths.get(node.type) ?? '') : '')
     lines.push([
       'NODE', hexEncode(shortId(node.id)), hexEncode(node.label), kind,

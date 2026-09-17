@@ -30,3 +30,22 @@ format version is a reader and a writer, and changing one without the other is n
 change, it is a break: bump both in the same edit and run a round trip afterwards. The round
 trip here is `npx vitest run tests/rdf/NativeUiProject.test.js`, which asserts the version
 string in both directions and would have caught it.
+
+## native_graph_ui_main.cpp — a new node kind reused pluginPath and inherited its readers
+
+**What happened:** Double-clicking a `:JigdawPlugin` node opened the VST3 editor, which
+reported "https://strandz.it/jigdaw/plugins/pulse/ is not a module directory".
+
+**Root cause:** A JigDAW node stores its plugin IRI in `Node::pluginPath`, the same slot a
+VST3 node stores its bundle path in, because the UI interchange record carries one resource
+per node. The double-click handler dispatched on `!node->pluginPath.empty()` rather than on
+the node's kind, so the new kind silently inherited a branch written for a different one.
+
+**Fix:** Dispatch on `kind == NodeKind::Plugin`, and give JigDAW nodes their own branch —
+a parameter panel generated from the profile's `lv2:port` declarations, since a JigDAW
+plugin has no editor a native host can open.
+
+**Prevention:** This is the same shape as the `pluginPath` entry above: a field whose
+meaning depends on the node kind, read by code that does not check the kind. When a field is
+reused for a new kind, grep every reader of that field and make each one state which kinds it
+is for. `grep -n "pluginPath" native/src/*.cpp` was the whole audit and it was not done.

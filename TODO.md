@@ -61,9 +61,6 @@ For `transport_play` and audio control to work via MCP from a Claude session:
   `min(frames, jig_max_frames())` and leaves the rest of the block stale. Transmission
   drives `jigdaw::Module` directly and sub-blocks it instead, but the adapter that ships
   in jigdaw has the bug at any host buffer above 128 frames. Report upstream.
-- The generated parameter panel the jigdaw adapter draws from `lv2:port` statements has no
-  equivalent in the GTK UI: a JigDAW node's parameters are reachable over MCP and through
-  the project file, but not from the editor.
 - `jig:latencyFrames` is read into the profile and then ignored; there is no latency
   compensation for a JigDAW node.
 - The GTK "Add JigDAW Plugin…" dialog dereferences the IRI on the main thread, so a slow

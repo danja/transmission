@@ -40,7 +40,10 @@ int main(int argc, char** argv) {
                   << "parameter." << index << ".units=" << parameter.unit << "\n"
                   << "parameter." << index << ".minimum=" << parameter.minimum << "\n"
                   << "parameter." << index << ".maximum=" << parameter.maximum << "\n"
-                  << "parameter." << index << ".default=" << parameter.defaultValue << "\n";
+                  << "parameter." << index << ".default=" << parameter.defaultValue << "\n"
+                  << "parameter." << index << ".toggled=" << (parameter.toggled ? 1 : 0) << "\n"
+                  << "parameter." << index << ".enumeration=" << (parameter.enumeration ? 1 : 0) << "\n"
+                  << "parameter." << index << ".scalePoints=" << parameter.scalePoints.size() << "\n";
         for (std::size_t point = 0; point < parameter.scalePoints.size(); ++point)
             std::cout << "parameter." << index << ".scalePoint." << point << "="
                       << parameter.scalePoints[point].value << " "

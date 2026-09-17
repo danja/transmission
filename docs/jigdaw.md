@@ -60,6 +60,25 @@ Over MCP, `jigdaw_describe` returns the profile and the graph node to add for it
 the real port counts. Call it before wiring anything: the host reads the same profile and
 overwrites whatever a project declared, so a project that guessed fails validation.
 
+## The parameter panel
+
+A JigDAW plugin has no editor a native host can open: `jig:ui` is a web page and there is no
+JavaScript engine here. Double-clicking a JigDAW node instead opens a panel generated from
+the profile's own `lv2:port` declarations, which is the same panel the browser host and
+jigdaw's adapter draw, from the same statements. The widget follows the shape of the
+declaration and is never named by the author:
+
+| Declaration | Control |
+|---|---|
+| `lv2:portProperty lv2:toggled` | switch |
+| an enumeration with scale points | selector, every option named |
+| anything else | slider over the declared range |
+
+Each control is labelled with its `jig:paramIndex`, because that is what everything else
+addresses the parameter by: the project file, MCP, and `jig_set_param` itself. Applying
+writes normalised values into the project and, when audio is running, straight into the
+plugin.
+
 ## Local plugins during development
 
 A `file://` IRI is dereferenced like any other, and one naming a directory reads `profile.ttl`
@@ -109,6 +128,15 @@ therefore processed in sub-blocks of at most that many frames, with incoming MID
 rebased into each sub-block, the transport advanced across them, and outgoing MIDI rebased
 back onto the whole block.
 
+## A note on locales
+
+jigdaw's profile parser used `std::stof`, which reads the decimal separator from the global
+C locale. GTK calls `setlocale(LC_ALL, "")`, so under a comma-decimal locale every
+fractional `lv2:default`, `lv2:minimum` and `lv2:maximum` in every profile parsed as zero —
+Pulse came up with its gain at 0. Fixed upstream in `jigdaw/native/jigdaw-adapter/src/Profile.cpp`;
+a JigDAW checkout older than that will misread profiles inside the GTK editor while the
+command-line tools, which never set a locale, look correct.
+
 ## Real-time behaviour
 
 Everything that fetches, verifies, allocates or compiles happens in `initialize()` on the
@@ -124,8 +152,8 @@ retune on a parameter write.
 
 - No state serialisation. `jig:Abi1` and `jig:Abi2` have none, so a project restores a
   JigDAW plugin's parameters but not any state it keeps beyond them.
-- No plugin-supplied UI. `jig:ui` is a web page and this host has no JavaScript engine;
-  parameters are addressed by index through the usual transmission mechanisms.
+- No plugin-supplied UI. `jig:ui` is a web page and this host has no JavaScript engine, so
+  the panel is generated from the profile rather than fetched.
 - No latency reporting, and no system exclusive: the ABI carries neither.
 - Integrity is verified against the digest in the profile and there is no way to skip it, so
   a plugin whose module has been rebuilt without its profile being regenerated is refused.

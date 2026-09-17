@@ -2,10 +2,37 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VST3_SDK_ROOT="${HOME}/VST_SDK/vst3sdk"
 JIGDAW_ROOT="${JIGDAW_ROOT:-${HOME}/github/jigdaw}"
 HTTPLIB_DIR="${JIGDAW_HTTPLIB_DIR:-${HOME}/github/downspout/third_party/cpp-httplib}"
 cd "$ROOT_DIR"
+
+# The Steinberg VST3 SDK. Set VST3_SDK_ROOT to say where it is; otherwise the
+# first of these that looks like one wins. Checked here rather than left to
+# CMake so that a missing SDK is reported before the test suite and two builds
+# have run, and with somewhere to look rather than only what was not found.
+VST3_SDK_CANDIDATES=(
+  "${HOME}/VST_SDK/vst3sdk"
+  /chalet/VST_SDK/vst3sdk
+  /opt/VST_SDK/vst3sdk
+  /usr/local/share/vst3sdk
+)
+if [[ -n "${VST3_SDK_ROOT:-}" ]]; then
+  VST3_SDK_CANDIDATES=("$VST3_SDK_ROOT")
+fi
+VST3_SDK_ROOT=""
+for candidate in "${VST3_SDK_CANDIDATES[@]}"; do
+  if [[ -f "$candidate/CMakeLists.txt" ]]; then
+    VST3_SDK_ROOT="$candidate"
+    break
+  fi
+done
+if [[ -z "$VST3_SDK_ROOT" ]]; then
+  echo "No VST3 SDK found. Looked in:" >&2
+  printf '  %s\n' "${VST3_SDK_CANDIDATES[@]}" >&2
+  echo "Set VST3_SDK_ROOT=/path/to/vst3sdk and run again." >&2
+  exit 1
+fi
+echo "VST3 SDK: $VST3_SDK_ROOT"
 
 # JigDAW hosting is optional: it needs the jigdaw checkout for the spec and its
 # portable core, and cpp-httplib for dereferencing a plugin IRI.

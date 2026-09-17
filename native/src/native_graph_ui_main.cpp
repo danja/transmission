@@ -130,6 +130,13 @@ struct GraphView {
     std::vector<transmission::UiProjectMidiClip> midiClips;
     std::vector<transmission::UiProjectGainLane> gainLanes;
     std::vector<transmission::UiProjectMidiParameterMapping> midiMappings;
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+    // Keyed by plugin IRI, filled whenever a profile is read. A panel is
+    // generated from these declarations, and opening one must not be a second
+    // trip to the network.
+    std::unordered_map<std::string, transmission::JigdawPluginTopology>
+        jigdawTopologies;
+#endif
     std::size_t nextPluginId = 1;
     std::size_t nextJigdawId = 1;
     std::size_t nextMidiInputId = 1;
@@ -1448,6 +1455,7 @@ void addJigdawNodeFromDialog(GtkDialog*, gint response, gpointer data) {
             setStatus(*context->view, "Unable to load " + iri + ": " + error, true);
         }
         else {
+            context->view->jigdawTopologies[iri] = topology;
             const auto id = "jigdaw-" + std::to_string(context->view->nextJigdawId++);
             stopRuntime(*context->view,
                         "Graph changed — press Play to compile and start audio");
@@ -1484,6 +1492,208 @@ void showJigdawDialog(GtkWidget* canvas, GraphView& view) {
     gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
     auto* context = new JigdawDialogContext{&view, canvas, dialog, entry};
     g_signal_connect(dialog, "response", G_CALLBACK(addJigdawNodeFromDialog), context);
+    gtk_widget_show_all(dialog);
+}
+
+// A JigDAW plugin has no editor this host can open. `jig:ui` is a web page and
+// there is no JavaScript engine here, so a panel generated from the profile's
+// own lv2:port declarations is the only honest one to draw — and it is the same
+// panel the browser host and jigdaw's native adapter draw, from the same
+// statements. The widget follows the shape of the declaration and is never
+// named by the author: a switch, a selector, or a slider.
+
+// units:hz arrives as its IRI. The fragment is the name the profile meant.
+std::string unitSuffix(const std::string& unit) {
+    const auto hash = unit.rfind('#');
+    return hash == std::string::npos ? unit : unit.substr(hash + 1);
+}
+
+double jigdawNormalize(const transmission::JigdawParameterDescriptor& parameter,
+                       double value) {
+    const double span = parameter.maximum - parameter.minimum;
+    if (!(span > 0.0)) return 0.0;
+    return std::clamp((value - parameter.minimum) / span, 0.0, 1.0);
+}
+
+double jigdawDenormalize(const transmission::JigdawParameterDescriptor& parameter,
+                         double normalized) {
+    const double value = parameter.minimum +
+        std::clamp(normalized, 0.0, 1.0) * (parameter.maximum - parameter.minimum);
+    return parameter.toggled || parameter.enumeration ? std::round(value) : value;
+}
+
+struct JigdawParameterWidget {
+    std::size_t parameter = 0;
+    GtkWidget* widget = nullptr;
+};
+
+struct JigdawParameterDialogContext {
+    GraphView* view = nullptr;
+    GtkWidget* canvas = nullptr;
+    GtkWidget* dialog = nullptr;
+    std::size_t node = 0;
+    // By value: a project applied while this dialog is open clears the cache.
+    transmission::JigdawPluginTopology topology;
+    std::vector<JigdawParameterWidget> widgets;
+};
+
+double jigdawWidgetValue(const transmission::JigdawParameterDescriptor& parameter,
+                         GtkWidget* widget) {
+    if (parameter.toggled)
+        return gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))
+            ? parameter.maximum : parameter.minimum;
+    if (parameter.enumeration && !parameter.scalePoints.empty()) {
+        const auto active = gtk_combo_box_get_active(GTK_COMBO_BOX(widget));
+        const auto index = active < 0 ? 0
+            : std::min<std::size_t>(static_cast<std::size_t>(active),
+                                    parameter.scalePoints.size() - 1);
+        return parameter.scalePoints[index].value;
+    }
+    return gtk_range_get_value(GTK_RANGE(widget));
+}
+
+void editJigdawParametersFromDialog(GtkDialog*, gint response, gpointer data) {
+    auto* context = static_cast<JigdawParameterDialogContext*>(data);
+    if (response == GTK_RESPONSE_ACCEPT &&
+        context->node < context->view->nodes.size()) {
+        auto& view = *context->view;
+        const auto& node = view.nodes[context->node];
+        auto& values = view.parameterValues[node.id];
+        for (const auto& entry : context->widgets) {
+            const auto& parameter = context->topology.parameters[entry.parameter];
+            const double normalized =
+                jigdawNormalize(parameter, jigdawWidgetValue(parameter, entry.widget));
+            values[parameter.id] = normalized;
+#if defined(TRANSMISSION_UI_WITH_JACK) && defined(TRANSMISSION_UI_WITH_VST3)
+            if (runtimeRunning(view) && view.runtime) {
+                std::string error;
+                if (!view.runtime->setParameter(node.id, parameter.id,
+                                                normalized, error))
+                    setStatus(view, error, true);
+            }
+#endif
+        }
+        gtk_widget_queue_draw(context->canvas);
+    }
+    gtk_widget_destroy(context->dialog);
+    delete context;
+}
+
+void showJigdawParameterDialog(GtkWidget* canvas, GraphView& view,
+                               std::size_t nodeIndex) {
+    if (nodeIndex >= view.nodes.size() ||
+        view.nodes[nodeIndex].kind != NodeKind::JigdawPlugin)
+        return;
+    const auto& node = view.nodes[nodeIndex];
+
+    // Normally cached when the node was added or the project applied. A project
+    // that arrived some other way is read now rather than refused.
+    auto cached = view.jigdawTopologies.find(node.pluginPath);
+    if (cached == view.jigdawTopologies.end()) {
+        transmission::JigdawPluginTopology topology;
+        std::string error;
+        if (!transmission::JigdawInspector().inspectTopology(
+                node.pluginPath, topology, error)) {
+            setStatus(view, "Unable to read " + node.pluginPath + ": " + error, true);
+            return;
+        }
+        cached = view.jigdawTopologies.emplace(node.pluginPath,
+                                               std::move(topology)).first;
+    }
+    const auto& topology = cached->second;
+
+    auto* dialog = gtk_dialog_new_with_buttons(
+        (node.label.empty() ? std::string("JigDAW Plugin") : node.label).c_str(),
+        GTK_WINDOW(gtk_widget_get_toplevel(canvas)),
+        static_cast<GtkDialogFlags>(
+            GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
+        "_Cancel", GTK_RESPONSE_CANCEL, "_Apply", GTK_RESPONSE_ACCEPT, nullptr);
+    auto* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 16);
+    gtk_box_set_spacing(GTK_BOX(content), 8);
+
+    auto* iriLabel = gtk_label_new(nullptr);
+    auto* markup = g_markup_printf_escaped(
+        "<small>%s</small>", topology.iri.c_str());
+    gtk_label_set_markup(GTK_LABEL(iriLabel), markup);
+    g_free(markup);
+    gtk_widget_set_halign(iriLabel, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(content), iriLabel, FALSE, FALSE, 0);
+
+    if (topology.parameters.empty()) {
+        auto* none = gtk_label_new("This plugin declares no parameters.");
+        gtk_widget_set_halign(none, GTK_ALIGN_START);
+        gtk_box_pack_start(GTK_BOX(content), none, FALSE, FALSE, 8);
+    }
+
+    auto* context = new JigdawParameterDialogContext{
+        &view, canvas, dialog, nodeIndex, topology, {}};
+    const auto stored = view.parameterValues.find(node.id);
+
+    auto* scroller = gtk_scrolled_window_new(nullptr, nullptr);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroller),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_size_request(scroller, 520, 360);
+    auto* list = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_container_add(GTK_CONTAINER(scroller), list);
+    gtk_box_pack_start(GTK_BOX(content), scroller, TRUE, TRUE, 0);
+
+    for (std::size_t index = 0; index < context->topology.parameters.size(); ++index) {
+        const auto& parameter = context->topology.parameters[index];
+        const double normalized =
+            stored != view.parameterValues.end() &&
+            stored->second.count(parameter.id)
+                ? stored->second.at(parameter.id)
+                : jigdawNormalize(parameter, parameter.defaultValue);
+        const double value = jigdawDenormalize(parameter, normalized);
+        // The index is shown because it is what everything else addresses the
+        // parameter by: the project file, MCP, and jig_set_param itself.
+        const auto title = (parameter.name.empty() ? parameter.symbol : parameter.name) +
+            "  (#" + std::to_string(parameter.id) +
+            (parameter.unit.empty() ? std::string()
+                                    : ", " + unitSuffix(parameter.unit)) + ")";
+        auto* label = gtk_label_new(title.c_str());
+        gtk_widget_set_halign(label, GTK_ALIGN_START);
+        gtk_box_pack_start(GTK_BOX(list), label, FALSE, FALSE, 0);
+
+        GtkWidget* widget = nullptr;
+        if (parameter.toggled) {
+            widget = gtk_check_button_new_with_label("On");
+            gtk_toggle_button_set_active(
+                GTK_TOGGLE_BUTTON(widget),
+                value >= (parameter.minimum + parameter.maximum) * 0.5);
+        }
+        else if (parameter.enumeration && !parameter.scalePoints.empty()) {
+            widget = gtk_combo_box_text_new();
+            std::size_t active = 0;
+            for (std::size_t point = 0; point < parameter.scalePoints.size(); ++point) {
+                gtk_combo_box_text_append_text(
+                    GTK_COMBO_BOX_TEXT(widget),
+                    parameter.scalePoints[point].label.c_str());
+                if (std::fabs(parameter.scalePoints[point].value - value) <
+                    std::fabs(parameter.scalePoints[active].value - value))
+                    active = point;
+            }
+            gtk_combo_box_set_active(GTK_COMBO_BOX(widget),
+                                     static_cast<gint>(active));
+        }
+        else {
+            const double span = parameter.maximum - parameter.minimum;
+            const double step = parameter.enumeration || span >= 64.0
+                ? 1.0 : span / 200.0;
+            widget = gtk_scale_new_with_range(
+                GTK_ORIENTATION_HORIZONTAL, parameter.minimum,
+                parameter.maximum, step > 0.0 ? step : 0.01);
+            gtk_scale_set_digits(GTK_SCALE(widget), span >= 64.0 ? 0 : 3);
+            gtk_scale_set_value_pos(GTK_SCALE(widget), GTK_POS_RIGHT);
+            gtk_range_set_value(GTK_RANGE(widget), value);
+        }
+        gtk_box_pack_start(GTK_BOX(list), widget, FALSE, FALSE, 0);
+        context->widgets.push_back({index, widget});
+    }
+
+    g_signal_connect(dialog, "response",
+                     G_CALLBACK(editJigdawParametersFromDialog), context);
     gtk_widget_show_all(dialog);
 }
 #endif
@@ -3238,11 +3448,22 @@ gboolean buttonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
     if (event->button != GDK_BUTTON_PRIMARY) return FALSE;
     if (event->type == GDK_2BUTTON_PRESS) {
         if (auto* node = nodeAt(view, cx, cy);
-            node && !node->pluginPath.empty() && view.editorHost) {
+            node && node->kind == NodeKind::Plugin &&
+            !node->pluginPath.empty() && view.editorHost) {
             cancelPointerInteraction(widget, view);
             openPluginEditor(view, *node);
             return TRUE;
         }
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+        if (auto* node = nodeAt(view, cx, cy);
+            node && node->kind == NodeKind::JigdawPlugin) {
+            cancelPointerInteraction(widget, view);
+            showJigdawParameterDialog(
+                widget, view,
+                static_cast<std::size_t>(node - view.nodes.data()));
+            return TRUE;
+        }
+#endif
         if (auto* node = nodeAt(view, cx, cy);
             node && (node->kind == NodeKind::SystemInput ||
                      node->kind == NodeKind::SystemOutput)) {
@@ -3900,6 +4121,11 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
     auto normalized = project;
     std::unordered_map<std::string, std::vector<std::string>> inputLabels;
     std::unordered_map<std::string, std::vector<std::string>> outputLabels;
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+    // Re-read rather than trusted: a profile on disk may have changed since the
+    // last apply, and a cached port shape is the thing that would hide it.
+    view.jigdawTopologies.clear();
+#endif
     for (auto& node : normalized.nodes) {
         if (node.kind == transmission::UiProjectNodeKind::Gain) {
             node.midiInputs = std::max<std::size_t>(1, node.midiInputs);
@@ -3926,6 +4152,7 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
             node.midiInputs = jigdaw.midiInputs;
             node.midiOutputs = jigdaw.midiOutputs;
             if (!jigdaw.name.empty()) node.label = jigdaw.name;
+            view.jigdawTopologies[node.pluginPath] = std::move(jigdaw);
 #else
             error = "This UI build does not include JigDAW hosting support";
             return false;

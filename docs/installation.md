@@ -50,8 +50,15 @@ and extract it so this file exists:
 ~/VST_SDK/vst3sdk/CMakeLists.txt
 ```
 
-The standard `build.sh` script uses that location. For a manual CMake build,
-another SDK location can be supplied with:
+`build.sh` looks there first, then in `/chalet/VST_SDK/vst3sdk`,
+`/opt/VST_SDK/vst3sdk` and `/usr/local/share/vst3sdk`, and says which it chose.
+To use an SDK somewhere else, set the environment variable:
+
+```sh
+VST3_SDK_ROOT=/path/to/vst3sdk ./build.sh
+```
+
+For a manual CMake build, pass the same path as a cache variable:
 
 ```sh
 -DVST3_SDK_ROOT=/path/to/vst3sdk
@@ -374,8 +381,10 @@ scripts/test-napi-vst3-parameter.sh /path/to/Plugin.vst3
 
 ### The build cannot find the VST3 SDK
 
-Confirm that `~/VST_SDK/vst3sdk/CMakeLists.txt` exists. If the SDK is elsewhere,
-run CMake manually and set `VST3_SDK_ROOT`.
+`build.sh` lists the locations it tried and stops before building anything. If
+the SDK is somewhere else, point at it with `VST3_SDK_ROOT=/path/to/vst3sdk
+./build.sh`, or pass `-DVST3_SDK_ROOT=...` to a manual CMake configure. The path
+must contain `CMakeLists.txt`.
 
 ### Plugins are missing from the browser or MCP catalogue
 

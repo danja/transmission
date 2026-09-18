@@ -11,8 +11,8 @@ nav_order: 8
 Every published plugin profile in this project, in
 [plugin-universe](https://github.com/danja/plugin-universe), in
 [downspout](https://github.com/danja/downspout) and in
-[JigDAW](https://github.com/danja/jigdaw) writes IRIs in this namespace. Until this was
-deployed, every one of them resolved to a 404.
+[JigDAW](https://github.com/danja/jigdaw) writes IRIs in this namespace. Until 2026-09-18
+every one of them resolved to a 404. They resolve now.
 
 ## What resolves where
 
@@ -73,6 +73,17 @@ include /home/github/transmission/deploy/nginx/vocab.conf;
 cd /home/github/transmission && git pull
 sudo nginx -t && sudo systemctl reload nginx
 ```
+
+To check it:
+
+```sh
+curl -sS -H "Accept: text/turtle" https://hyperdata.it/xmlns/transmissions/ | grep -c '^trn:'
+curl -sS -o /dev/null -w '%{http_code}\n' https://hyperdata.it/xmlns/transmissions/PluginProfile
+```
+
+Expect the term count and 303. Piping the document into `head` makes curl exit 23, which is
+`head` closing the pipe on a 42 kB body rather than anything being wrong; `grep -c` and
+`sed -n` read to the end and exit 0.
 
 Adding a term afterwards is `npm run build:vocab`, commit, and `git pull` on the server. No
 nginx reload: the files are read from disk on every request.

@@ -1,37 +1,32 @@
 # TODO
 
-## Deploy the trn: namespace
+## The trn: namespace is deployed
 
-**Ready, needs the server.** `http://purl.org/stuff/transmissions/` redirects to
-`https://hyperdata.it/xmlns/transmissions/`, which has always returned 404, so every `trn:`
-IRI published by this project, by plugin-universe, by downspout and by JigDAW resolves to
-nothing. The PURL side was already correct; only the far end was missing.
+**Done, 2026-09-18.** `http://purl.org/stuff/transmissions/` resolves. It had always returned
+404: the PURL side was correct all along and nothing was served at the far end, so every
+`trn:` IRI published by this project, by plugin-universe, by downspout and by JigDAW pointed
+at nothing.
 
-Prepared here: `vocabs/ontology.ttl`, `scripts/build-vocab-site.js`, the generated
-`deploy/vocab/`, `deploy/nginx/vocab.conf`, `deploy/nginx/check.sh` and
-`tests/vocab/site.test.js`. Validated with `nginx -t` in a container and exercised with real
-requests against a container serving the real files: content negotiation, the 301 for the bare
-form, 303 for a term, and CORS on every response.
+Measured against the live server after deployment: the PURL chain ends at 200, `text/turtle`
+when asked for and `text/html` for a browser, 42048 bytes matching the committed build byte
+for byte, parsing to 628 triples and 209 subjects. Every term 303s, including the hyphenated
+and slashed IRIs that saved projects mint. CORS on every response. `jig:` still resolves, so
+the second `include` in that server block broke nothing.
 
-On the server, once:
-
-```nginx
-# inside the existing `server { server_name hyperdata.it; ... }` block,
-# beside the JigDAW include that is already there
-include /home/github/transmission/deploy/nginx/vocab.conf;
-```
+To check it again:
 
 ```sh
-cd /home/github/transmission && git pull
-sudo nginx -t && sudo systemctl reload nginx
-curl -H "Accept: text/turtle" https://hyperdata.it/xmlns/transmissions/ | head
-curl -sSI https://hyperdata.it/xmlns/transmissions/PluginProfile | head -3   # expect 303
+curl -sS -H "Accept: text/turtle" https://hyperdata.it/xmlns/transmissions/ | grep -c '^trn:'
+curl -sS -o /dev/null -w '%{http_code}\n' https://hyperdata.it/xmlns/transmissions/PluginProfile
 ```
 
-Afterwards, adding a term is `npm run build:vocab`, commit, `git pull` on the server. No nginx
-reload: files are read from disk per request.
+Expect 208 and 303. Pipe the document into `head` and curl exits 23: that is `head` closing
+the pipe on a 42 kB body, not a failure. `grep -c` and `sed -n '1,20p'` read to the end and
+exit 0.
 
-See `docs/namespace.md`.
+Adding a term is `npm run build:vocab`, commit, `git pull` on the server. No nginx reload:
+files are read from disk per request, and `tests/vocab/site.test.js` fails if the committed
+copy is stale. See `docs/namespace.md`.
 
 ## Instance data lives in the vocabulary namespace
 

@@ -1,0 +1,28 @@
+@prefix trn:     <http://purl.org/stuff/transmissions/> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix vann:    <http://purl.org/vocab/vann/> .
+
+# The namespace's own description. Separate from the term files so that each of
+# those stays a list of terms, and so the document served at the namespace IRI
+# says what it is rather than only what is in it.
+#
+# scripts/build-vocab-site.js merges this with the term files into
+# deploy/vocab/transmissions.ttl, which is what
+# http://purl.org/stuff/transmissions/ resolves to.
+
+<http://purl.org/stuff/transmissions/>
+    a owl:Ontology ;
+    rdfs:label "Transmission" ;
+    dcterms:title "Transmission Vocabulary" ;
+    dcterms:description """Terms for describing audio plugins and the graphs they run in:
+        what a plugin is musically, the signals it accepts and produces, how nodes are
+        routed, the actions an agent can ask a host to perform, and the shape of a DJ set
+        list. It is used by Transmission, by the plugin-universe catalogue, by downspout's
+        plugin profiles and by JigDAW, whose web delivery terms extend it rather than
+        replacing it.""" ;
+    vann:preferredNamespacePrefix "trn" ;
+    vann:preferredNamespaceUri "http://purl.org/stuff/transmissions/" ;
+    rdfs:seeAlso <https://danja.github.io/transmission/> ,
+                 <https://github.com/danja/transmission> .

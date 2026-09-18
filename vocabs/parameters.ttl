@@ -1,0 +1,92 @@
+@prefix trn:  <http://purl.org/stuff/transmissions/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+## The parameter terms downspout's hand-written profiles use.
+##
+## All of these were already in published profiles and declared nowhere. They
+## are recorded because http://purl.org/stuff/transmissions/ now resolves, and a
+## term in a published profile is a promise that something is served at the
+## other end of it. Counts below are from the 52 profiles in
+## ~/github/downspout/plugins as of 2026-09-18.
+##
+## Several are marked deprecated rather than described as good practice. That is
+## not a judgement made here: plugin-universe's catalogue already normalises
+## them away, and the replacement in every case is an lv2: term that says the
+## same thing in a form a query can compare.
+
+## ── Describing one parameter ────────────────────────────────────────────────
+
+trn:symbol a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:label "symbol" ;
+    rdfs:comment "A parameter's stable machine name, as in \"duck_depth\". What automation and a saved project key on, as against the human label, which may be translated or changed. Equivalent to lv2:symbol." .
+
+trn:unit a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:label "unit" ;
+    rdfs:comment "The unit a parameter is expressed in, as a display string such as \"%\", \"ms\" or \"Hz\". units:unit carries the same thing as an IRI, which is comparable where this is not." .
+
+trn:default a owl:DatatypeProperty ;
+    rdfs:label "default" ;
+    rdfs:comment "The value a parameter takes when the plugin loads, in the parameter's own units rather than normalised." .
+
+trn:datatype a owl:ObjectProperty ;
+    rdfs:label "datatype" ;
+    rdfs:comment "What kind of number a parameter is: xsd:float, xsd:integer or xsd:boolean. A boolean parameter is a switch and an integer one steps, and a generated control that does not know this draws a continuous slider for both." .
+
+trn:paramId a owl:DatatypeProperty ; rdfs:range xsd:integer ;
+    rdfs:label "parameter id" ;
+    rdfs:comment "The host-facing identifier a parameter is addressed by, which is a property of the build rather than a position in the document." .
+
+trn:direction a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:label "direction" ;
+    rdfs:comment "\"input\" or \"output\". An output parameter is read by the host and not set by it, such as a meter." .
+
+trn:readonly a owl:DatatypeProperty ; rdfs:range xsd:boolean ;
+    rdfs:label "read only" ;
+    rdfs:comment "True where the host may read a parameter and must not write it." .
+
+trn:range a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:label "range" ;
+    rdfs:comment "A parameter's range written for a person, as in \"0-100\" or \"0.10-1.50 m\". It is a display string and nothing can compare two of them, so lv2:minimum and lv2:maximum are what a host should be given. Kept because 28 published profiles carry one." .
+
+## ── Plugin-level state and bus behaviour ────────────────────────────────────
+
+trn:state a owl:DatatypeProperty ;
+    rdfs:label "state" ;
+    rdfs:comment "Plugin state that is not a parameter, saved and restored with the project." .
+
+trn:stateKey a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:label "state key" ;
+    rdfs:comment "The key a piece of such state is stored under." .
+
+trn:ccGate a owl:DatatypeProperty ; rdfs:range xsd:boolean ;
+    rdfs:label "CC gate" ;
+    rdfs:comment "True where the plugin is gated by a MIDI continuous controller rather than by note on and note off." .
+
+trn:busRole a owl:ObjectProperty ; rdfs:range trn:BusRole ;
+    rdfs:label "bus role" ;
+    rdfs:comment "Which end of a shared bus a plugin sits at. The bus carries signal between plugins that are not connected in the graph, so the role is the only statement of the relationship." .
+
+trn:BusRole a owl:Class ; rdfs:label "Bus Role" .
+
+trn:BusProducer a trn:BusRole ; rdfs:label "Bus Producer" ;
+    rdfs:comment "Writes to a shared bus." .
+
+trn:BusReceiver a trn:BusRole ; rdfs:label "Bus Receiver" ;
+    rdfs:comment "Reads from a shared bus." .
+
+trn:InstrumentPlugin a owl:Class ; rdfs:subClassOf trn:PluginRole ;
+    rdfs:label "Instrument Plugin" ;
+    rdfs:comment "Used by one published profile where trn:AudioInstrument is meant. Kept so the IRI resolves." .
+
+trn:Sampler a owl:Class ; rdfs:subClassOf trn:PluginRole ;
+    rdfs:label "Sampler" ;
+    rdfs:comment "An instrument that plays recorded audio rather than synthesising it." .
+
+## ── Retired ─────────────────────────────────────────────────────────────────
+## rdfs: already says both of these, and a profile that uses the trn: spelling
+## is invisible to every tool that looks for the standard one.
+
+trn:label   owl:deprecated true ; rdfs:comment "Use rdfs:label." .
+trn:comment owl:deprecated true ; rdfs:comment "Use rdfs:comment." .

@@ -1,0 +1,222 @@
+@prefix trn:  <http://purl.org/stuff/transmissions/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+## The project format: the graph, the transport and the arrangement, as saved.
+##
+## Every term here was already in use, written and read by
+## src/rdf/TransmissionRdf.js and named in src/rdf/Vocabulary.js, and declared
+## nowhere. They are recorded now because http://purl.org/stuff/transmissions/
+## resolves, so a term in a saved project is a promise that something is served
+## at the other end of it. tests/vocab/site.test.js binds this file to
+## src/rdf/Vocabulary.js in both directions.
+
+## ── The project ─────────────────────────────────────────────────────────────
+
+trn:Transmission a owl:Class ; rdfs:label "Transmission" ;
+    rdfs:comment "One saved project: a graph of nodes, the connections between them, and the transport and arrangement state that go with it." .
+
+trn:EntryTransmission a owl:Class ; rdfs:subClassOf trn:Transmission ;
+    rdfs:label "Entry Transmission" ;
+    rdfs:comment "The transmission a file is opened at, where a file holds more than one." .
+
+trn:pipe a owl:ObjectProperty ; rdfs:domain trn:Transmission ;
+    rdfs:label "pipe" ;
+    rdfs:comment "The project's nodes, as an rdf:List. The order is the order they were added and is not the execution order, which the scheduler computes from the connections." .
+
+trn:connections a owl:ObjectProperty ; rdfs:domain trn:Transmission ;
+    rdfs:label "connections" ;
+    rdfs:comment "The edges between nodes, as an rdf:List. Absent means a chain: each node connected to the next, which is what a project written before connections existed means." .
+
+trn:systemInputConnections a owl:DatatypeProperty ; rdfs:domain trn:Transmission ; rdfs:range xsd:string ;
+    rdfs:label "system input connections" ;
+    rdfs:comment "The JACK or PipeWire ports the system input is wired to, by name, one per channel. \"No connection\" for a channel that is not wired." .
+
+trn:systemOutputConnections a owl:DatatypeProperty ; rdfs:domain trn:Transmission ; rdfs:range xsd:string ;
+    rdfs:label "system output connections" ;
+    rdfs:comment "The same for the system output. Port names rather than indices, so a session reopens onto the same hardware after the device order has changed." .
+
+## ── Nodes ───────────────────────────────────────────────────────────────────
+
+trn:VST3Plugin a owl:Class ; rdfs:label "VST3 Plugin" ;
+    rdfs:comment "A node that is a VST3 loaded from disk, named by trn:pluginPath or by a plugin profile IRI." .
+
+trn:JigdawPlugin a owl:Class ; rdfs:label "JigDAW Plugin" ;
+    rdfs:comment "A node that is a JigDAW plugin: a WebAssembly module named by a dereferenceable IRI in trn:pluginIri. Fetching that IRI returns the profile, and there is no other install step." .
+
+trn:AudioInput a owl:Class ; rdfs:label "Audio Input" ;
+    rdfs:comment "The built-in node carrying audio from the system input into the graph." .
+
+trn:AudioOutput a owl:Class ; rdfs:label "Audio Output" ;
+    rdfs:comment "The built-in node carrying audio from the graph to the system output." .
+
+trn:MidiInput a owl:Class ; rdfs:label "MIDI Input" ;
+    rdfs:comment "The built-in node carrying MIDI from an external device into the graph." .
+
+trn:MidiOutput a owl:Class ; rdfs:label "MIDI Output" ;
+    rdfs:comment "The built-in node carrying MIDI from the graph to an external device." .
+
+trn:Gain a owl:Class ; rdfs:label "Gain" ;
+    rdfs:comment "A built-in gain node. A host service rather than a plugin, so it is a node type rather than something loaded." .
+
+trn:AudioClipNode a owl:Class ; rdfs:label "Audio Clip Node" ;
+    rdfs:comment "A node that plays an audio clip from the arrangement rather than processing its input." .
+
+trn:MidiClipNode a owl:Class ; rdfs:label "MIDI Clip Node" ;
+    rdfs:comment "A node that plays a MIDI clip from the arrangement." .
+
+trn:pluginPath a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:label "plugin path" ;
+    rdfs:comment "Where a VST3 bundle is on this machine. A property of an installation, not of the plugin, which is why a profile IRI is preferred where there is one." .
+
+trn:pluginIri a owl:DatatypeProperty ; rdfs:domain trn:JigdawPlugin ; rdfs:range xsd:string ;
+    rdfs:label "plugin IRI" ;
+    rdfs:comment "The dereferenceable IRI of a JigDAW plugin. Unlike trn:pluginPath this identifies the plugin rather than a copy of it, so a project carrying one opens on another machine." .
+
+trn:audioInputs a owl:DatatypeProperty ; rdfs:range xsd:integer ;
+    rdfs:label "audio inputs" ;
+    rdfs:comment "How many audio input ports the node has. Read back from the plugin when the project is applied; the declaration is what the file says, not what decides." .
+
+trn:audioOutputs a owl:DatatypeProperty ; rdfs:range xsd:integer ; rdfs:label "audio outputs" .
+trn:midiInputs  a owl:DatatypeProperty ; rdfs:range xsd:integer ; rdfs:label "MIDI inputs" .
+trn:midiOutputs a owl:DatatypeProperty ; rdfs:range xsd:integer ; rdfs:label "MIDI outputs" .
+
+trn:settings a owl:ObjectProperty ;
+    rdfs:label "settings" ;
+    rdfs:comment "Node settings that are not plugin parameters: what the node is pointed at, rather than how it is tuned." .
+
+trn:parameters a owl:ObjectProperty ;
+    rdfs:label "parameters" ;
+    rdfs:comment "The node's saved parameter values, as an rdf:List of nodes carrying trn:parameterId and trn:normalizedValue." .
+
+trn:componentState a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:label "component state" ;
+    rdfs:comment "A VST3 component's opaque saved state, base64 encoded. Not interpretable outside the plugin that wrote it." .
+
+trn:controllerState a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:label "controller state" ;
+    rdfs:comment "The matching controller state, saved and restored alongside the component state." .
+
+## Editor metadata. A separate concern from execution: moving a node on screen
+## must not change what the graph computes.
+trn:editorX a owl:DatatypeProperty ; rdfs:range xsd:decimal ; rdfs:label "editor x" .
+trn:editorY a owl:DatatypeProperty ; rdfs:range xsd:decimal ; rdfs:label "editor y" .
+
+## ── Connections ─────────────────────────────────────────────────────────────
+
+trn:from a owl:ObjectProperty ; rdfs:label "from" ;
+    rdfs:comment "The node an edge leaves." .
+
+trn:to a owl:ObjectProperty ; rdfs:label "to" ;
+    rdfs:comment "The node an edge enters." .
+
+trn:kind a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:label "kind" ;
+    rdfs:comment "What travels along the edge: \"audio\" or \"midi\". Two nodes may be joined by one of each, so the kind is part of what identifies an edge rather than a note about it." .
+
+trn:fromPort a owl:DatatypeProperty ; rdfs:range xsd:integer ;
+    rdfs:label "from port" ;
+    rdfs:comment "Which output port of the source node, zero based." .
+
+trn:toPort a owl:DatatypeProperty ; rdfs:range xsd:integer ;
+    rdfs:label "to port" ;
+    rdfs:comment "Which input port of the target node, zero based." .
+
+## ── Transport ───────────────────────────────────────────────────────────────
+
+trn:tempoMap a owl:ObjectProperty ; rdfs:domain trn:Transmission ;
+    rdfs:label "tempo map" ;
+    rdfs:comment "Tempo changes as an rdf:List, each carrying trn:atBeat and trn:bpm. A map rather than one tempo, so a project can change speed without the timeline meaning something different before and after." .
+
+trn:bpm a owl:DatatypeProperty ; rdfs:range xsd:decimal ;
+    rdfs:label "bpm" ;
+    rdfs:comment "Beats per minute, from the beat this entry is at until the next one." .
+
+trn:loopStart a owl:DatatypeProperty ; rdfs:range xsd:decimal ; rdfs:label "loop start" ;
+    rdfs:comment "The beat the loop starts at. A loop needs both ends; one alone is ignored." .
+trn:loopEnd a owl:DatatypeProperty ; rdfs:range xsd:decimal ; rdfs:label "loop end" .
+
+## ── Arrangement ─────────────────────────────────────────────────────────────
+
+trn:arrangementLength a owl:DatatypeProperty ; rdfs:domain trn:Transmission ; rdfs:range xsd:decimal ;
+    rdfs:label "arrangement length" ;
+    rdfs:comment "How long the arrangement is, in beats." .
+
+trn:midiClips a owl:ObjectProperty ; rdfs:domain trn:Transmission ;
+    rdfs:label "MIDI clips" ;
+    rdfs:comment "The arrangement's MIDI clips, as an rdf:List." .
+
+trn:clipId a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:label "clip id" ;
+    rdfs:comment "A clip's identifier within the arrangement." .
+
+trn:startBeat a owl:DatatypeProperty ; rdfs:range xsd:decimal ;
+    rdfs:label "start beat" ;
+    rdfs:comment "Where a clip or a note begins, in beats. A note's is relative to its clip." .
+
+trn:lengthBeats a owl:DatatypeProperty ; rdfs:range xsd:decimal ;
+    rdfs:label "length in beats" .
+
+trn:notes a owl:ObjectProperty ;
+    rdfs:label "notes" ;
+    rdfs:comment "A clip's notes, as an rdf:List." .
+
+trn:pitch a owl:DatatypeProperty ; rdfs:range xsd:integer ;
+    rdfs:label "pitch" ;
+    rdfs:comment "MIDI note number, 0 to 127." .
+
+trn:velocity a owl:DatatypeProperty ; rdfs:range xsd:integer ;
+    rdfs:label "velocity" ;
+    rdfs:comment "MIDI velocity, 0 to 127." .
+
+trn:channel a owl:DatatypeProperty ; rdfs:range xsd:integer ;
+    rdfs:label "channel" ;
+    rdfs:comment "MIDI channel, for a note or for a controller mapping." .
+
+trn:gainLanes a owl:ObjectProperty ; rdfs:domain trn:Transmission ;
+    rdfs:label "gain lanes" ;
+    rdfs:comment "Gain automation, one lane per target node, as an rdf:List." .
+
+trn:points a owl:ObjectProperty ;
+    rdfs:label "points" ;
+    rdfs:comment "A lane's breakpoints, as an rdf:List, each with trn:atBeat, trn:valueDb and trn:shape." .
+
+trn:valueDb a owl:DatatypeProperty ; rdfs:range xsd:decimal ;
+    rdfs:label "value in dB" ;
+    rdfs:comment "The gain at this breakpoint, in decibels." .
+
+trn:shape a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:label "shape" ;
+    rdfs:comment "How the value moves to the next breakpoint. \"linear\" when unstated." .
+
+## ── MIDI control mapping ────────────────────────────────────────────────────
+
+trn:midiMappings a owl:ObjectProperty ; rdfs:domain trn:Transmission ;
+    rdfs:label "MIDI mappings" ;
+    rdfs:comment "External controller assignments, as an rdf:List. Each names a target node, a parameter and the channel and controller number that drive it." .
+
+trn:controller a owl:DatatypeProperty ; rdfs:range xsd:integer ;
+    rdfs:label "controller" ;
+    rdfs:comment "The MIDI continuous controller number a mapping listens to." .
+
+trn:consume a owl:DatatypeProperty ; rdfs:range xsd:boolean ;
+    rdfs:label "consume" ;
+    rdfs:comment "Whether the mapped message stops here rather than also reaching the plugin. True unless stated otherwise." .
+
+## ── Audio settings ──────────────────────────────────────────────────────────
+
+trn:audioSettings a owl:ObjectProperty ; rdfs:domain trn:Transmission ;
+    rdfs:label "audio settings" ;
+    rdfs:comment "Engine settings saved with the project. Properties of this machine rather than of the music, kept so a session reopens as it was running." .
+
+trn:renderAheadMs a owl:DatatypeProperty ; rdfs:range xsd:integer ;
+    rdfs:label "render ahead (ms)" .
+
+trn:requestedBufferSize a owl:DatatypeProperty ; rdfs:range xsd:integer ;
+    rdfs:label "requested buffer size" ;
+    rdfs:comment "Frames per block to ask the device for. 0 means whatever the device offers." .
+
+trn:processingThreads a owl:DatatypeProperty ; rdfs:range xsd:integer ;
+    rdfs:label "processing threads" ;
+    rdfs:comment "How many threads run independent nodes in parallel. 0 means decide from the machine." .

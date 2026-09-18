@@ -13,6 +13,8 @@
     "live:start:jack": "node scripts/transmission-live.js --jack --auto-connect",
     "gen:omega": "node scripts/gen-omega-arrangement.js",
     "gen:omega:project": "node scripts/gen-omega-project.js",
+    "build:vocab": "node scripts/build-vocab-site.js",
+    "check:nginx": "bash deploy/nginx/check.sh",
     "mcp:start": "node scripts/transmission-mcp.js",
     "mcp:smoke": "node scripts/test-mcp-stdio.js",
     "probe:project": "node scripts/probe-project.js",

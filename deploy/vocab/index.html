@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transmission Vocabulary</title>
+<meta name="description" content="The trn: vocabulary: terms for describing audio plugins and the graphs they run in.">
+<style>
+  :root { color-scheme: light dark; --fg: #16181d; --bg: #fff; --muted: #5a616e; --rule: #dcdfe5; --accent: #1d4ed8; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e6e8ec; --bg: #14161a; --muted: #9aa2b1; --rule: #2c313a; --accent: #8ab4ff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; padding: 2rem 1rem 4rem; max-width: 46rem;
+         font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); }
+  h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.1rem; margin: 2.5rem 0 .5rem; padding-bottom: .3rem; border-bottom: 1px solid var(--rule); }
+  .count { color: var(--muted); font-weight: 400; font-size: .85rem; }
+  .lede { color: var(--muted); margin: 0 0 1.5rem; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em; }
+  dt { margin-top: 1rem; }
+  dt code { font-weight: 600; }
+  dd { margin: .15rem 0 0; color: var(--fg); }
+  .label, .parent { color: var(--muted); font-weight: 400; font-size: .9rem; margin-left: .4rem; }
+  .undescribed { color: var(--muted); font-style: italic; }
+  a { color: var(--accent); }
+  .box { border: 1px solid var(--rule); border-radius: .5rem; padding: .85rem 1rem; margin: 1.5rem 0; }
+  .box p { margin: .4rem 0; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+<h1>Transmission Vocabulary</h1>
+<p class="lede"><code>http://purl.org/stuff/transmissions/</code>, prefix <code>trn:</code>.
+208 terms.</p>
+
+<p>Terms for describing audio plugins and the graphs they run in: what a plugin is musically,
+the signals it accepts and produces, how nodes are routed, the actions an agent can ask a host
+to perform, and the shape of a DJ set list.</p>
+
+<div class="box">
+<p>The machine-readable form is <a href="transmissions.ttl">transmissions.ttl</a>, which this
+page is generated from and which is what you get by asking for <code>text/turtle</code>.</p>
+<p>A term IRI such as <code>trn:PluginProfile</code> answers 303 and redirects here, because
+the term denotes a class or a property and not this page.</p>
+</div>
+
+<div class="box">
+<p><strong>Terms defined elsewhere.</strong> Some <code>trn:</code> IRIs in published data are
+not defined in this document: the plugin format individuals and the parameter terms are
+maintained in
+<a href="https://github.com/danja/plugin-universe">plugin-universe</a>'s
+<code>vocabs/trn-extensions.ttl</code>, and a few used by
+<a href="https://github.com/danja/downspout">downspout</a> are not yet declared anywhere.
+Which repository owns <code>trn:</code> is an open question rather than an oversight, and this
+page would rather say so than look complete.</p>
+</div>
+
+
+<h2>Classes <span class="count">58</span></h2>
+<dl>
+  <dt id="Action"><code>trn:Action</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="AddConnection"><code>trn:AddConnection</code> <span class="parent">a kind of <a href="#GraphAction">trn:GraphAction</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="AddNode"><code>trn:AddNode</code> <span class="parent">a kind of <a href="#GraphAction">trn:GraphAction</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="AudioClipNode"><code>trn:AudioClipNode</code> <span class="label">Audio Clip Node</span></dt>
+  <dd>A node that plays an audio clip from the arrangement rather than processing its input.</dd>
+  <dt id="AudioEffect"><code>trn:AudioEffect</code> <span class="label">Audio Effect</span> <span class="parent">a kind of <a href="#PluginRole">trn:PluginRole</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="AudioInput"><code>trn:AudioInput</code> <span class="label">Audio Input</span></dt>
+  <dd>The built-in node carrying audio from the system input into the graph.</dd>
+  <dt id="AudioInstrument"><code>trn:AudioInstrument</code> <span class="label">Audio Instrument</span> <span class="parent">a kind of <a href="#PluginRole">trn:PluginRole</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="AudioMixer"><code>trn:AudioMixer</code> <span class="label">Audio Mixer</span> <span class="parent">a kind of <a href="#PluginRole">trn:PluginRole</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="AudioOutput"><code>trn:AudioOutput</code> <span class="label">Audio Output</span></dt>
+  <dd>The built-in node carrying audio from the graph to the system output.</dd>
+  <dt id="AudioSink"><code>trn:AudioSink</code> <span class="label">Audio Sink</span> <span class="parent">a kind of <a href="#PluginRole">trn:PluginRole</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="AudioSource"><code>trn:AudioSource</code> <span class="label">Audio Source</span> <span class="parent">a kind of <a href="#PluginRole">trn:PluginRole</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="BassInstrument"><code>trn:BassInstrument</code> <span class="label">Bass Instrument</span> <span class="parent">a kind of <a href="#Instrument">trn:Instrument</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="BusRole"><code>trn:BusRole</code> <span class="label">Bus Role</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="ChangeSet"><code>trn:ChangeSet</code> <span class="label">Change Set</span> <span class="parent">a kind of <a href="#GraphAction">trn:GraphAction</a></span></dt>
+  <dd>Atomic list of graph operations applied against an expected revision.</dd>
+  <dt id="ConfigureTransport"><code>trn:ConfigureTransport</code> <span class="parent">a kind of <a href="#TransportAction">trn:TransportAction</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="Controller"><code>trn:Controller</code> <span class="parent">a kind of <a href="#PluginRole">trn:PluginRole</a></span></dt>
+  <dd>Emits control signals (CC, scene notes) that reshape other plugins rather than producing musical audio or notes.</dd>
+  <dt id="Crossfade"><code>trn:Crossfade</code> <span class="parent">a kind of <a href="#Transition">trn:Transition</a></span></dt>
+  <dd>Fade out the outgoing cue while the incoming one fades in. Requires a mixer node that responds to gain parameters.</dd>
+  <dt id="Cue"><code>trn:Cue</code></dt>
+  <dd>One slot in a DJ set: a patch to load and play for a given duration.</dd>
+  <dt id="DiscoveredPlugin"><code>trn:DiscoveredPlugin</code> <span class="label">Discovered Plugin</span></dt>
+  <dd>Technical metadata extracted by the isolated VST3 inspector.</dd>
+  <dt id="DJSet"><code>trn:DJSet</code> <span class="label">DJ Set</span></dt>
+  <dd>A complete DJ performance comprising an ordered sequence of cues.</dd>
+  <dt id="DrumInstrument"><code>trn:DrumInstrument</code> <span class="label">Drum Instrument</span> <span class="parent">a kind of <a href="#Instrument">trn:Instrument</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="EntryTransmission"><code>trn:EntryTransmission</code> <span class="label">Entry Transmission</span> <span class="parent">a kind of <a href="#Transmission">trn:Transmission</a></span></dt>
+  <dd>The transmission a file is opened at, where a file holds more than one.</dd>
+  <dt id="Gain"><code>trn:Gain</code></dt>
+  <dd>A built-in gain node. A host service rather than a plugin, so it is a node type rather than something loaded.</dd>
+  <dt id="GraphAction"><code>trn:GraphAction</code> <span class="label">Graph Action</span> <span class="parent">a kind of <a href="#Action">trn:Action</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="HardCut"><code>trn:HardCut</code> <span class="label">Hard Cut</span> <span class="parent">a kind of <a href="#Transition">trn:Transition</a></span></dt>
+  <dd>Stop the outgoing cue on the next bar boundary, then load and start the next.</dd>
+  <dt id="Instrument"><code>trn:Instrument</code> <span class="parent">a kind of <a href="#PluginRole">trn:PluginRole</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="InstrumentPlugin"><code>trn:InstrumentPlugin</code> <span class="label">Instrument Plugin</span> <span class="parent">a kind of <a href="#PluginRole">trn:PluginRole</a></span></dt>
+  <dd>Used by one published profile where trn:AudioInstrument is meant. Kept so the IRI resolves.</dd>
+  <dt id="JigdawPlugin"><code>trn:JigdawPlugin</code> <span class="label">JigDAW Plugin</span></dt>
+  <dd>A node that is a JigDAW plugin: a WebAssembly module named by a dereferenceable IRI in trn:pluginIri. Fetching that IRI returns the profile, and there is no other install step.</dd>
+  <dt id="MidiClipNode"><code>trn:MidiClipNode</code> <span class="label">MIDI Clip Node</span></dt>
+  <dd>A node that plays a MIDI clip from the arrangement.</dd>
+  <dt id="MidiGenerator"><code>trn:MidiGenerator</code> <span class="label">MIDI Generator</span> <span class="parent">a kind of <a href="#PluginRole">trn:PluginRole</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="MidiInput"><code>trn:MidiInput</code> <span class="label">MIDI Input</span></dt>
+  <dd>The built-in node carrying MIDI from an external device into the graph.</dd>
+  <dt id="MidiOutput"><code>trn:MidiOutput</code> <span class="label">MIDI Output</span></dt>
+  <dd>The built-in node carrying MIDI from the graph to an external device.</dd>
+  <dt id="MidiProcessor"><code>trn:MidiProcessor</code> <span class="label">MIDI Processor</span> <span class="parent">a kind of <a href="#PluginRole">trn:PluginRole</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="NewProject"><code>trn:NewProject</code> <span class="parent">a kind of <a href="#ProjectAction">trn:ProjectAction</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="OpenProject"><code>trn:OpenProject</code> <span class="parent">a kind of <a href="#ProjectAction">trn:ProjectAction</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="ParameterChange"><code>trn:ParameterChange</code> <span class="label">Parameter Change</span></dt>
+  <dd>A timed parameter automation step applied at a beat offset within a cue.</dd>
+  <dt id="PerformanceInstrument"><code>trn:PerformanceInstrument</code> <span class="label">Performance Instrument</span> <span class="parent">a kind of <a href="#PluginRole">trn:PluginRole</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="PlayAction"><code>trn:PlayAction</code> <span class="parent">a kind of <a href="#TransportAction">trn:TransportAction</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="PluginAction"><code>trn:PluginAction</code> <span class="label">Plugin Action</span> <span class="parent">a kind of <a href="#Action">trn:Action</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="PluginFormat"><code>trn:PluginFormat</code> <span class="label">Plugin Format</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="PluginProfile"><code>trn:PluginProfile</code> <span class="label">Plugin Profile</span></dt>
+  <dd>Curated behavioural knowledge about a VST3 plugin.</dd>
+  <dt id="PluginRole"><code>trn:PluginRole</code> <span class="label">Plugin Role</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="ProjectAction"><code>trn:ProjectAction</code> <span class="label">Project Action</span> <span class="parent">a kind of <a href="#Action">trn:Action</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="RemoveConnection"><code>trn:RemoveConnection</code> <span class="parent">a kind of <a href="#GraphAction">trn:GraphAction</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="RemoveNode"><code>trn:RemoveNode</code> <span class="parent">a kind of <a href="#GraphAction">trn:GraphAction</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="Sampler"><code>trn:Sampler</code> <span class="parent">a kind of <a href="#PluginRole">trn:PluginRole</a></span></dt>
+  <dd>An instrument that plays recorded audio rather than synthesising it.</dd>
+  <dt id="SaveProject"><code>trn:SaveProject</code> <span class="parent">a kind of <a href="#ProjectAction">trn:ProjectAction</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="ScanPlugins"><code>trn:ScanPlugins</code> <span class="parent">a kind of <a href="#PluginAction">trn:PluginAction</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="ServerConfig"><code>trn:ServerConfig</code> <span class="label">Server Configuration</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="SetParameter"><code>trn:SetParameter</code> <span class="parent">a kind of <a href="#Action">trn:Action</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="SetProjectMetadata"><code>trn:SetProjectMetadata</code> <span class="parent">a kind of <a href="#GraphAction">trn:GraphAction</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="StopAction"><code>trn:StopAction</code> <span class="parent">a kind of <a href="#TransportAction">trn:TransportAction</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="Transition"><code>trn:Transition</code></dt>
+  <dd>How playback moves from the end of one cue to the start of the next.</dd>
+  <dt id="Transmission"><code>trn:Transmission</code></dt>
+  <dd>One saved project: a graph of nodes, the connections between them, and the transport and arrangement state that go with it.</dd>
+  <dt id="TransportAction"><code>trn:TransportAction</code> <span class="label">Transport Action</span> <span class="parent">a kind of <a href="#Action">trn:Action</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="UpdateNode"><code>trn:UpdateNode</code> <span class="parent">a kind of <a href="#GraphAction">trn:GraphAction</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="Utility"><code>trn:Utility</code> <span class="parent">a kind of <a href="#PluginRole">trn:PluginRole</a></span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="VST3Plugin"><code>trn:VST3Plugin</code> <span class="label">VST3 Plugin</span></dt>
+  <dd>A node that is a VST3 loaded from disk, named by trn:pluginPath or by a plugin profile IRI.</dd>
+</dl>
+
+<h2>Object properties <span class="count">32</span></h2>
+<dl>
+  <dt id="accepts"><code>trn:accepts</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="allowedRoots"><code>trn:allowedRoots</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="audioSettings"><code>trn:audioSettings</code> <span class="label">audio settings</span></dt>
+  <dd>Engine settings saved with the project. Properties of this machine rather than of the music, kept so a session reopens as it was running.</dd>
+  <dt id="busRole"><code>trn:busRole</code> <span class="label">bus role</span></dt>
+  <dd>Which end of a shared bus a plugin sits at. The bus carries signal between plugins that are not connected in the graph, so the role is the only statement of the relationship.</dd>
+  <dt id="ccMapping"><code>trn:ccMapping</code> <span class="label">CC mapping</span></dt>
+  <dd>Links a plugin profile to a blank node describing one CC→parameter binding.</dd>
+  <dt id="companion"><code>trn:companion</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="connections"><code>trn:connections</code></dt>
+  <dd>The edges between nodes, as an rdf:List. Absent means a chain: each node connected to the next, which is what a project written before connections existed means.</dd>
+  <dt id="cues"><code>trn:cues</code></dt>
+  <dd>Ordered rdf:List of trn:Cue items in this set.</dd>
+  <dt id="datatype"><code>trn:datatype</code></dt>
+  <dd>What kind of number a parameter is: xsd:float, xsd:integer or xsd:boolean. A boolean parameter is a switch and an integer one steps, and a generated control that does not know this draws a continuous slider for both.</dd>
+  <dt id="feedsControls"><code>trn:feedsControls</code> <span class="label">feeds controls</span></dt>
+  <dd>This plugin emits MIDI CC or scene control signals that can reshape live parameters on the target plugin. Route its MIDI output to the target's MIDI input and set the target's conductor channel parameter to match.</dd>
+  <dt id="format"><code>trn:format</code></dt>
+  <dd>A plugin format this plugin is built for.</dd>
+  <dt id="from"><code>trn:from</code></dt>
+  <dd>The node an edge leaves.</dd>
+  <dt id="gainLanes"><code>trn:gainLanes</code> <span class="label">gain lanes</span></dt>
+  <dd>Gain automation, one lane per target node, as an rdf:List.</dd>
+  <dt id="midiClips"><code>trn:midiClips</code> <span class="label">MIDI clips</span></dt>
+  <dd>The arrangement's MIDI clips, as an rdf:List.</dd>
+  <dt id="midiMappings"><code>trn:midiMappings</code> <span class="label">MIDI mappings</span></dt>
+  <dd>External controller assignments, as an rdf:List. Each names a target node, a parameter and the channel and controller number that drive it.</dd>
+  <dt id="notes"><code>trn:notes</code></dt>
+  <dd>A clip's notes, as an rdf:List.</dd>
+  <dt id="onLoad"><code>trn:onLoad</code> <span class="label">on load</span></dt>
+  <dd>rdf:List of trn:ParameterChange items applied immediately when the patch is loaded.</dd>
+  <dt id="operations"><code>trn:operations</code></dt>
+  <dd>rdf:List of operation blank nodes within a ChangeSet.</dd>
+  <dt id="parameter"><code>trn:parameter</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="parameters"><code>trn:parameters</code></dt>
+  <dd>The node's saved parameter values, as an rdf:List of nodes carrying trn:parameterId and trn:normalizedValue.</dd>
+  <dt id="pipe"><code>trn:pipe</code></dt>
+  <dd>The project's nodes, as an rdf:List. The order is the order they were added and is not the execution order, which the scheduler computes from the connections.</dd>
+  <dt id="points"><code>trn:points</code></dt>
+  <dd>A lane's breakpoints, as an rdf:List, each with trn:atBeat, trn:valueDb and trn:shape.</dd>
+  <dt id="produces"><code>trn:produces</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="recommendedAfter"><code>trn:recommendedAfter</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="recommendedBefore"><code>trn:recommendedBefore</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="requires"><code>trn:requires</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="role"><code>trn:role</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="scheduled"><code>trn:scheduled</code></dt>
+  <dd>rdf:List of trn:ParameterChange items applied at specific beat offsets during the cue.</dd>
+  <dt id="settings"><code>trn:settings</code></dt>
+  <dd>Node settings that are not plugin parameters: what the node is pointed at, rather than how it is tuned.</dd>
+  <dt id="tempoMap"><code>trn:tempoMap</code> <span class="label">tempo map</span></dt>
+  <dd>Tempo changes as an rdf:List, each carrying trn:atBeat and trn:bpm. A map rather than one tempo, so a project can change speed without the timeline meaning something different before and after.</dd>
+  <dt id="to"><code>trn:to</code></dt>
+  <dd>The node an edge enters.</dd>
+  <dt id="transition"><code>trn:transition</code></dt>
+  <dd>How to advance to the next cue. Defaults to trn:HardCut if absent.</dd>
+</dl>
+
+<h2>Datatype properties <span class="count">88</span></h2>
+<dl>
+  <dt id="arrangementLength"><code>trn:arrangementLength</code> <span class="label">arrangement length</span></dt>
+  <dd>How long the arrangement is, in beats.</dd>
+  <dt id="artist"><code>trn:artist</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="atBeat"><code>trn:atBeat</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="audioInputs"><code>trn:audioInputs</code> <span class="label">audio inputs</span></dt>
+  <dd>How many audio input ports the node has. Read back from the plugin when the project is applied; the declaration is what the file says, not what decides.</dd>
+  <dt id="audioOutputs"><code>trn:audioOutputs</code> <span class="label">audio outputs</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="bindAddress"><code>trn:bindAddress</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="bpm"><code>trn:bpm</code></dt>
+  <dd>Beats per minute, from the beat this entry is at until the next one.</dd>
+  <dt id="bundleName"><code>trn:bundleName</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="category"><code>trn:category</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="caution"><code>trn:caution</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="ccGate"><code>trn:ccGate</code> <span class="label">CC gate</span></dt>
+  <dd>True where the plugin is gated by a MIDI continuous controller rather than by note on and note off.</dd>
+  <dt id="ccNumber"><code>trn:ccNumber</code> <span class="label">CC number</span></dt>
+  <dd>MIDI continuous controller number (0–127).</dd>
+  <dt id="ccRole"><code>trn:ccRole</code> <span class="label">CC role</span></dt>
+  <dd>Semantic name for this CC as emitted by the controller (e.g. Density, Energy, Scene, Reset).</dd>
+  <dt id="ccTriggerValue"><code>trn:ccTriggerValue</code> <span class="label">CC trigger value</span></dt>
+  <dd>When set, the mapping fires only when the CC value equals this integer (e.g. 127 for Reset triggers).</dd>
+  <dt id="changesJson"><code>trn:changesJson</code></dt>
+  <dd>JSON-encoded partial node changes within an UpdateNode operation.</dd>
+  <dt id="channel"><code>trn:channel</code></dt>
+  <dd>MIDI channel, for a note or for a controller mapping.</dd>
+  <dt id="clearLoop"><code>trn:clearLoop</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="clipId"><code>trn:clipId</code> <span class="label">clip id</span></dt>
+  <dd>A clip's identifier within the arrangement.</dd>
+  <dt id="componentState"><code>trn:componentState</code> <span class="label">component state</span></dt>
+  <dd>A VST3 component's opaque saved state, base64 encoded. Not interpretable outside the plugin that wrote it.</dd>
+  <dt id="conductorChannelParam"><code>trn:conductorChannelParam</code> <span class="label">conductor channel parameter</span></dt>
+  <dd>Name of the parameter on this (receiver) plugin that selects which MIDI channel to listen on for Conductor CCs. Set to 0 to disable.</dd>
+  <dt id="connectionJson"><code>trn:connectionJson</code></dt>
+  <dd>JSON-encoded connection definition within an AddConnection or RemoveConnection operation.</dd>
+  <dt id="consume"><code>trn:consume</code></dt>
+  <dd>Whether the mapped message stops here rather than also reaching the plugin. True unless stated otherwise.</dd>
+  <dt id="controller"><code>trn:controller</code></dt>
+  <dd>The MIDI continuous controller number a mapping listens to.</dd>
+  <dt id="controllerState"><code>trn:controllerState</code> <span class="label">controller state</span></dt>
+  <dd>The matching controller state, saved and restored alongside the component state.</dd>
+  <dt id="default"><code>trn:default</code></dt>
+  <dd>The value a parameter takes when the plugin loads, in the parameter's own units rather than normalised.</dd>
+  <dt id="defaultNormalized"><code>trn:defaultNormalized</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="direction"><code>trn:direction</code></dt>
+  <dd>"input" or "output". An output parameter is read by the host and not set by it, such as a meter.</dd>
+  <dt id="discoverySource"><code>trn:discoverySource</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="dryRun"><code>trn:dryRun</code></dt>
+  <dd>Validate without committing when true.</dd>
+  <dt id="durationBeats"><code>trn:durationBeats</code> <span class="label">duration beats</span></dt>
+  <dd>Number of beats to play before advancing to the next cue. 0 means play indefinitely (manual advance).</dd>
+  <dt id="editorX"><code>trn:editorX</code> <span class="label">editor x</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="editorY"><code>trn:editorY</code> <span class="label">editor y</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="expectedRevision"><code>trn:expectedRevision</code></dt>
+  <dd>Project revision the client last observed; rejected if stale.</dd>
+  <dt id="fadeBeats"><code>trn:fadeBeats</code> <span class="label">fade beats</span></dt>
+  <dd>Duration of the crossfade in beats at the current tempo.</dd>
+  <dt id="filePath"><code>trn:filePath</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="fromPort"><code>trn:fromPort</code> <span class="label">from port</span></dt>
+  <dd>Which output port of the source node, zero based.</dd>
+  <dt id="genre"><code>trn:genre</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="homepage"><code>trn:homepage</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="kind"><code>trn:kind</code></dt>
+  <dd>What travels along the edge: "audio" or "midi". Two nodes may be joined by one of each, so the kind is part of what identifies an edge rather than a note about it.</dd>
+  <dt id="lengthBeats"><code>trn:lengthBeats</code> <span class="label">length in beats</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="loopEnabled"><code>trn:loopEnabled</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="loopEnd"><code>trn:loopEnd</code> <span class="label">loop end</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="loopEndBeat"><code>trn:loopEndBeat</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="loopStart"><code>trn:loopStart</code> <span class="label">loop start</span></dt>
+  <dd>The beat the loop starts at. A loop needs both ends; one alone is ignored.</dd>
+  <dt id="loopStartBeat"><code>trn:loopStartBeat</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="metadataJson"><code>trn:metadataJson</code></dt>
+  <dd>JSON-encoded metadata object within a SetProjectMetadata operation.</dd>
+  <dt id="midiInputs"><code>trn:midiInputs</code> <span class="label">MIDI inputs</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="midiOutputs"><code>trn:midiOutputs</code> <span class="label">MIDI outputs</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="modulePath"><code>trn:modulePath</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="nodeId"><code>trn:nodeId</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="nodeJson"><code>trn:nodeJson</code></dt>
+  <dd>JSON-encoded node definition within an AddNode or UpdateNode operation.</dd>
+  <dt id="normalizedValue"><code>trn:normalizedValue</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="parameterFlags"><code>trn:parameterFlags</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="parameterId"><code>trn:parameterId</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="parameterTitle"><code>trn:parameterTitle</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="paramId"><code>trn:paramId</code> <span class="label">parameter id</span></dt>
+  <dd>The host-facing identifier a parameter is addressed by, which is a property of the build rather than a position in the document.</dd>
+  <dt id="pitch"><code>trn:pitch</code></dt>
+  <dd>MIDI note number, 0 to 127.</dd>
+  <dt id="pluginIri"><code>trn:pluginIri</code> <span class="label">plugin IRI</span></dt>
+  <dd>The dereferenceable IRI of a JigDAW plugin. Unlike trn:pluginPath this identifies the plugin rather than a copy of it, so a project carrying one opens on another machine.</dd>
+  <dt id="pluginPath"><code>trn:pluginPath</code> <span class="label">plugin path</span></dt>
+  <dd>Where a VST3 bundle is on this machine. A property of an installation, not of the plugin, which is why a profile IRI is preferred where there is one.</dd>
+  <dt id="port"><code>trn:port</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="positionBeats"><code>trn:positionBeats</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="processingThreads"><code>trn:processingThreads</code> <span class="label">processing threads</span></dt>
+  <dd>How many threads run independent nodes in parallel. 0 means decide from the machine.</dd>
+  <dt id="range"><code>trn:range</code></dt>
+  <dd>A parameter's range written for a person, as in "0-100" or "0.10-1.50 m". It is a display string and nothing can compare two of them, so lv2:minimum and lv2:maximum are what a host should be given. Kept because 28 published profiles carry one.</dd>
+  <dt id="readonly"><code>trn:readonly</code> <span class="label">read only</span></dt>
+  <dd>True where the host may read a parameter and must not write it.</dd>
+  <dt id="renderAheadMs"><code>trn:renderAheadMs</code> <span class="label">render ahead (ms)</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="requestedBufferSize"><code>trn:requestedBufferSize</code> <span class="label">requested buffer size</span></dt>
+  <dd>Frames per block to ask the device for. 0 means whatever the device offers.</dd>
+  <dt id="sampleOffset"><code>trn:sampleOffset</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="setDate"><code>trn:setDate</code> <span class="label">set date</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="shape"><code>trn:shape</code></dt>
+  <dd>How the value moves to the next breakpoint. "linear" when unstated.</dd>
+  <dt id="shortTitle"><code>trn:shortTitle</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="startBeat"><code>trn:startBeat</code> <span class="label">start beat</span></dt>
+  <dd>Where a clip or a note begins, in beats. A note's is relative to its clip.</dd>
+  <dt id="state"><code>trn:state</code></dt>
+  <dd>Plugin state that is not a parameter, saved and restored with the project.</dd>
+  <dt id="stateKey"><code>trn:stateKey</code> <span class="label">state key</span></dt>
+  <dd>The key a piece of such state is stored under.</dd>
+  <dt id="stepCount"><code>trn:stepCount</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="symbol"><code>trn:symbol</code></dt>
+  <dd>A parameter's stable machine name, as in "duck_depth". What automation and a saved project key on, as against the human label, which may be translated or changed. Equivalent to lv2:symbol.</dd>
+  <dt id="systemInputConnections"><code>trn:systemInputConnections</code> <span class="label">system input connections</span></dt>
+  <dd>The JACK or PipeWire ports the system input is wired to, by name, one per channel. "No connection" for a channel that is not wired.</dd>
+  <dt id="systemOutputConnections"><code>trn:systemOutputConnections</code> <span class="label">system output connections</span></dt>
+  <dd>The same for the system output. Port names rather than indices, so a session reopens onto the same hardware after the device order has changed.</dd>
+  <dt id="targetNode"><code>trn:targetNode</code> <span class="label">target node</span></dt>
+  <dd>Node identifier within the patch (matches the local name in the project Turtle).</dd>
+  <dt id="targetParameter"><code>trn:targetParameter</code> <span class="label">target parameter</span></dt>
+  <dd>Symbol or display name of the plugin parameter driven by this CC.</dd>
+  <dt id="tempo"><code>trn:tempo</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="toPort"><code>trn:toPort</code> <span class="label">to port</span></dt>
+  <dd>Which input port of the target node, zero based.</dd>
+  <dt id="unit"><code>trn:unit</code></dt>
+  <dd>The unit a parameter is expressed in, as a display string such as "%", "ms" or "Hz". units:unit carries the same thing as an IRI, which is comparable where this is not.</dd>
+  <dt id="units"><code>trn:units</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="valueDb"><code>trn:valueDb</code> <span class="label">value in dB</span></dt>
+  <dd>The gain at this breakpoint, in decibels.</dd>
+  <dt id="velocity"><code>trn:velocity</code></dt>
+  <dd>MIDI velocity, 0 to 127.</dd>
+  <dt id="vendor"><code>trn:vendor</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="venue"><code>trn:venue</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="vstClassId"><code>trn:vstClassId</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+</dl>
+
+<h2>Individuals <span class="count">22</span></h2>
+<dl>
+  <dt id="AAX"><code>trn:AAX</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="Audio"><code>trn:Audio</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="AudioUnit"><code>trn:AudioUnit</code> <span class="label">Audio Unit</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="AudioUnitV3"><code>trn:AudioUnitV3</code> <span class="label">Audio Unit v3</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="BassMidi"><code>trn:BassMidi</code> <span class="label">Bass MIDI</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="BusProducer"><code>trn:BusProducer</code> <span class="label">Bus Producer</span></dt>
+  <dd>Writes to a shared bus.</dd>
+  <dt id="BusReceiver"><code>trn:BusReceiver</code> <span class="label">Bus Receiver</span></dt>
+  <dd>Reads from a shared bus.</dd>
+  <dt id="CLAP"><code>trn:CLAP</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="ControlMidi"><code>trn:ControlMidi</code> <span class="label">Control MIDI</span></dt>
+  <dd>MIDI CCs and scene notes used to reshape other generators rather than to produce musical content directly.</dd>
+  <dt id="DrumMidi"><code>trn:DrumMidi</code> <span class="label">Drum MIDI</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="HarmonyMidi"><code>trn:HarmonyMidi</code> <span class="label">Harmony MIDI</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="HostTransport"><code>trn:HostTransport</code> <span class="label">Host Transport</span></dt>
+  <dd>Plugin requires the host to provide tempo/beat position.</dd>
+  <dt id="LADSPA"><code>trn:LADSPA</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="Launchpad"><code>trn:Launchpad</code></dt>
+  <dd>Plugin expects a Novation Launchpad MIDI controller for full functionality.</dd>
+  <dt id="LV2"><code>trn:LV2</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="MelodyMidi"><code>trn:MelodyMidi</code> <span class="label">Melody MIDI</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="Midi"><code>trn:Midi</code> <span class="label">MIDI</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="MultiPartMidi"><code>trn:MultiPartMidi</code> <span class="label">Multi-part MIDI</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="Standalone"><code>trn:Standalone</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="VST2"><code>trn:VST2</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="VST3"><code>trn:VST3</code></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+  <dt id="WebAudio"><code>trn:WebAudio</code> <span class="label">Web Audio</span></dt>
+  <dd><span class="undescribed">No description.</span></dd>
+</dl>
+
+<h2>Deprecated <span class="count">8</span></h2>
+<dl>
+  <dt id="comment"><code>trn:comment</code></dt>
+  <dd>Use rdfs:comment.</dd>
+  <dt id="hasParameter"><code>trn:hasParameter</code></dt>
+  <dd>Typo for trn:parameter; parameters now use lv2:port.</dd>
+  <dt id="label"><code>trn:label</code></dt>
+  <dd>Use rdfs:label.</dd>
+  <dt id="max"><code>trn:max</code></dt>
+  <dd>Use lv2:maximum.</dd>
+  <dt id="maximum"><code>trn:maximum</code></dt>
+  <dd>Use lv2:maximum.</dd>
+  <dt id="MIDI"><code>trn:MIDI</code></dt>
+  <dd>Typo for trn:Midi.</dd>
+  <dt id="min"><code>trn:min</code></dt>
+  <dd>Use lv2:minimum. Downspout uses trn:min and trn:minimum inconsistently; both are retired.</dd>
+  <dt id="minimum"><code>trn:minimum</code></dt>
+  <dd>Use lv2:minimum.</dd>
+</dl>
+
+<footer>
+Generated from <code>vocabs/</code> by <code>scripts/build-vocab-site.js</code>.
+Source: <a href="https://github.com/danja/transmission">github.com/danja/transmission</a>.
+Documentation: <a href="https://danja.github.io/transmission/">danja.github.io/transmission</a>.
+</footer>
+</body>
+</html>

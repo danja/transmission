@@ -1,5 +1,49 @@
 # TODO
 
+## Deploy the trn: namespace
+
+**Ready, needs the server.** `http://purl.org/stuff/transmissions/` redirects to
+`https://hyperdata.it/xmlns/transmissions/`, which has always returned 404, so every `trn:`
+IRI published by this project, by plugin-universe, by downspout and by JigDAW resolves to
+nothing. The PURL side was already correct; only the far end was missing.
+
+Prepared here: `vocabs/ontology.ttl`, `scripts/build-vocab-site.js`, the generated
+`deploy/vocab/`, `deploy/nginx/vocab.conf`, `deploy/nginx/check.sh` and
+`tests/vocab/site.test.js`. Validated with `nginx -t` in a container and exercised with real
+requests against a container serving the real files: content negotiation, the 301 for the bare
+form, 303 for a term, and CORS on every response.
+
+On the server, once:
+
+```nginx
+# inside the existing `server { server_name hyperdata.it; ... }` block,
+# beside the JigDAW include that is already there
+include /home/github/transmission/deploy/nginx/vocab.conf;
+```
+
+```sh
+cd /home/github/transmission && git pull
+sudo nginx -t && sudo systemctl reload nginx
+curl -H "Accept: text/turtle" https://hyperdata.it/xmlns/transmissions/ | head
+curl -sSI https://hyperdata.it/xmlns/transmissions/PluginProfile | head -3   # expect 303
+```
+
+Afterwards, adding a term is `npm run build:vocab`, commit, `git pull` on the server. No nginx
+reload: files are read from disk per request.
+
+See `docs/namespace.md`.
+
+## Instance data lives in the vocabulary namespace
+
+Not urgent, and worth knowing. Saved projects bind the default `:` prefix to
+`http://purl.org/stuff/transmissions/`, so every patch node is minted in the vocabulary
+namespace: 160 such IRIs across the four repositories, from `trn:pulse` to
+`trn:plugins/downspout/ambo`. They are data and the vocabulary document does not define them.
+
+`deploy/nginx/vocab.conf` 303s them to the namespace rather than 404ing, which is the ordinary
+behaviour of a slash namespace for an IRI it does not define. Separating them properly means a
+namespace of their own and rewriting every committed project file, which changes what every
+saved project says. See `docs/namespace.md`.
 
 
 ## Feature : scopes

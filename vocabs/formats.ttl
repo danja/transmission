@@ -1,0 +1,58 @@
+@prefix trn:  <http://purl.org/stuff/transmissions/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+## Plugin formats, and the terms retired in favour of lv2:.
+##
+## Moved here from plugin-universe's vocabs/trn-extensions.ttl, which says in
+## its own header that these should be proposed upstream to this repository
+## rather than maintained separately. This is upstream. The wording is that
+## file's, unchanged.
+##
+## plugin-universe keeps its copy because its SHACL shapes validate against it
+## there. tests/vocab/site.test.js compares the two when that checkout is
+## present, so the pair cannot drift silently; it skips when it is absent, so
+## nothing here depends on it.
+
+## ── Plugin formats ──────────────────────────────────────────────────────────
+## valis improvises this as val:formats "VST3" string literals. Typed
+## individuals let a query ask for LV2 plugins without matching on strings.
+
+trn:PluginFormat a owl:Class ; rdfs:label "Plugin Format" .
+
+trn:VST3       a trn:PluginFormat ; rdfs:label "VST3" .
+trn:VST2       a trn:PluginFormat ; rdfs:label "VST2" .
+trn:CLAP       a trn:PluginFormat ; rdfs:label "CLAP" .
+trn:AudioUnit  a trn:PluginFormat ; rdfs:label "Audio Unit" .
+trn:AudioUnitV3 a trn:PluginFormat ; rdfs:label "Audio Unit v3" .
+trn:LV2        a trn:PluginFormat ; rdfs:label "LV2" .
+trn:LADSPA     a trn:PluginFormat ; rdfs:label "LADSPA" .
+trn:AAX        a trn:PluginFormat ; rdfs:label "AAX" .
+trn:Standalone a trn:PluginFormat ; rdfs:label "Standalone" .
+
+## A plugin that runs in a browser. Not a native binary and not a wrapper around
+## one: the processor is JavaScript on an AudioWorklet and the signal processing
+## is WebAssembly, fetched from the plugin's own IRI. Added for JigDAW, whose
+## plugins are all of this kind and none of the others, and which could not
+## publish a conformant profile without it.
+##
+## pu:supportedPlatform does not apply to one of these. The platform is the
+## browser, which is not one of the operating systems that predicate enumerates,
+## and this format term carries what the platform list was carrying.
+trn:WebAudio   a trn:PluginFormat ; rdfs:label "Web Audio" .
+
+trn:format a owl:ObjectProperty ; rdfs:range trn:PluginFormat ;
+    rdfs:label "format" ;
+    rdfs:comment "A plugin format this plugin is built for." .
+
+## ── Deprecations ────────────────────────────────────────────────────────────
+## Terms in use across downspout that the catalogue normalises away. Recorded
+## here so the normaliser has something to point at, and so nobody reintroduces
+## them by copying an existing profile.
+
+trn:min     owl:deprecated true ; rdfs:comment "Use lv2:minimum. Downspout uses trn:min and trn:minimum inconsistently; both are retired." .
+trn:max     owl:deprecated true ; rdfs:comment "Use lv2:maximum." .
+trn:minimum owl:deprecated true ; rdfs:comment "Use lv2:minimum." .
+trn:maximum owl:deprecated true ; rdfs:comment "Use lv2:maximum." .
+trn:hasParameter owl:deprecated true ; rdfs:comment "Typo for trn:parameter; parameters now use lv2:port." .
+trn:MIDI    owl:deprecated true ; rdfs:comment "Typo for trn:Midi." .

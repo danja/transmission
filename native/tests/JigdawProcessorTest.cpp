@@ -119,6 +119,7 @@ int main() {
         assert(topology.audioOutputs == 2);
         assert(topology.midiInputs == 1);
         assert(topology.midiOutputs == 0);
+        assert(topology.latencyFrames == 0);
         assert(topology.parameters.size() == 5);
         assert(topology.parameters.front().id == 0);
         assert(topology.parameters.front().symbol == "waveform");

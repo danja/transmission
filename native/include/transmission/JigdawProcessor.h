@@ -64,6 +64,9 @@ struct JigdawPluginTopology {
     std::size_t midiInputs = 0;
     std::size_t midiOutputs = 0;
     bool requiresTransport = false;
+    /// The plugin's declared processing latency in frames (jig:latencyFrames).
+    /// Surfaced for hosts to see; this engine does not compensate it.
+    int latencyFrames = 0;
     std::vector<JigdawParameterDescriptor> parameters;
     std::vector<JigdawAssetDescriptor> assets;
 };

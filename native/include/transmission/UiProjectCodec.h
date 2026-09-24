@@ -23,6 +23,11 @@ struct UiProjectParameter {
     double normalizedValue = 0.0;
 };
 
+struct UiProjectJigdawAsset {
+    std::string key;
+    std::string path;
+};
+
 struct UiProjectNode {
     std::string id;
     std::string label;
@@ -42,6 +47,9 @@ struct UiProjectNode {
     std::vector<std::uint8_t> controllerState;
     double gainDb = 0.0;
     double pan = 0.0;
+    /// Local files loaded into a JigDAW node's jig:userReplaceable assets.
+    /// Empty for every other kind.
+    std::vector<UiProjectJigdawAsset> jigdawAssetOverrides;
 };
 
 struct UiProjectConnection {

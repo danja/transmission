@@ -19,6 +19,10 @@ const nodeSchema = z.object({
   ports: portsSchema.optional(),
   settings: metadataSchema.optional(),
   parameters: z.array(parameterSchema).optional(),
+  jigdawAssetOverrides: z.array(z.object({
+    key: z.string().min(1),
+    path: z.string().min(1)
+  })).optional(),
   state: z.object({ component: z.string().optional(), controller: z.string().optional() }).optional(),
   metadata: metadataSchema.optional()
 })
@@ -28,6 +32,13 @@ const connectionSchema = z.object({
   kind: z.enum(['audio', 'midi']),
   fromPort: z.number().int().nonnegative().optional(),
   toPort: z.number().int().nonnegative().optional()
+})
+const midiMappingSchema = z.object({
+  targetNodeId: z.string().min(1),
+  parameterId: z.coerce.number().int().nonnegative(),
+  channel: z.coerce.number().int().min(-1).max(15).default(-1),
+  controller: z.coerce.number().int().min(0).max(127),
+  consume: z.boolean().default(true)
 })
 const graphSchema = z.object({
   id: z.string().min(1),
@@ -56,6 +67,8 @@ const operationSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('removeNode'), nodeId: z.string().min(1) }),
   z.object({ type: z.literal('addConnection'), connection: connectionSchema }),
   z.object({ type: z.literal('removeConnection'), connection: connectionSchema }),
+  z.object({ type: z.literal('addMidiMapping'), mapping: midiMappingSchema }),
+  z.object({ type: z.literal('removeMidiMapping'), mapping: midiMappingSchema }),
   z.object({ type: z.literal('setProjectMetadata'), metadata: metadataSchema })
 ])
 
@@ -317,6 +330,38 @@ function registerTools(server, control) {
     }))
   })
 
+  server.registerTool('midi_mapping_add', {
+    title: 'Map a MIDI CC to a parameter',
+    description: 'Route one MIDI CC on a channel to a plugin parameter. Existing mappings are listed under graph.metadata.midiMappings in project_get. Audio must be stopped.',
+    inputSchema: {
+      expectedRevision: z.coerce.number().int().nonnegative(),
+      mapping: midiMappingSchema
+    },
+    annotations: destructive
+  }, async ({ expectedRevision, mapping }) => {
+    return result(await control.applyGraphChanges({
+      expectedRevision,
+      operations: [{ type: 'addMidiMapping', mapping }],
+      dryRun: false
+    }))
+  })
+
+  server.registerTool('midi_mapping_remove', {
+    title: 'Remove a MIDI CC mapping',
+    description: 'Remove a MIDI CC to parameter mapping. All five mapping fields identify it. Audio must be stopped.',
+    inputSchema: {
+      expectedRevision: z.coerce.number().int().nonnegative(),
+      mapping: midiMappingSchema
+    },
+    annotations: destructive
+  }, async ({ expectedRevision, mapping }) => {
+    return result(await control.applyGraphChanges({
+      expectedRevision,
+      operations: [{ type: 'removeMidiMapping', mapping }],
+      dryRun: false
+    }))
+  })
+
   server.registerTool('parameters_set_batch', {
     title: 'Set multiple plugin parameters',
     description: 'Set several normalized parameter values on one node atomically. Applies live when the native engine is running. Use instead of repeated parameter_set calls.',
@@ -417,6 +462,19 @@ function registerTools(server, control) {
     inputSchema: { filePath: z.string().min(1) },
     annotations: mutatingIdempotent
   }, async ({ filePath }) => result(await control.renderMidi(filePath)))
+
+  server.registerTool('arrangement_render_audio', {
+    title: 'Render project to audio file',
+    description: 'Offline-bounce the current project to a stereo WAV file (IEEE float) without an audio device. totalBeats defaults to the arrangement length (max 256 beats — render longer pieces in sections). Requires the native engine (--native-addon). Audio must be stopped before calling. A relative path is resolved below the configured project root.',
+    inputSchema: {
+      filePath: z.string().min(1),
+      totalBeats: z.coerce.number().positive().optional(),
+      tempo: z.coerce.number().positive().optional(),
+      sampleRate: z.coerce.number().positive().optional(),
+      blockSize: z.coerce.number().int().positive().optional()
+    },
+    annotations: mutatingIdempotent
+  }, async input => result(await control.renderAudio(input)))
 
   if (control.pluginCatalogue) {
     server.registerTool('plugins_list', {

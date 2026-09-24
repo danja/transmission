@@ -32,7 +32,7 @@
 <body>
 <h1>Transmission Vocabulary</h1>
 <p class="lede"><code>http://purl.org/stuff/transmissions/</code>, prefix <code>trn:</code>.
-208 terms.</p>
+211 terms.</p>
 
 <p>Terms for describing audio plugins and the graphs they run in: what a plugin is musically,
 the signals it accepts and produces, how nodes are routed, the actions an agent can ask a host
@@ -177,7 +177,7 @@ page would rather say so than look complete.</p>
   <dd>A node that is a VST3 loaded from disk, named by trn:pluginPath or by a plugin profile IRI.</dd>
 </dl>
 
-<h2>Object properties <span class="count">32</span></h2>
+<h2>Object properties <span class="count">33</span></h2>
 <dl>
   <dt id="accepts"><code>trn:accepts</code></dt>
   <dd><span class="undescribed">No description.</span></dd>
@@ -205,6 +205,8 @@ page would rather say so than look complete.</p>
   <dd>The node an edge leaves.</dd>
   <dt id="gainLanes"><code>trn:gainLanes</code> <span class="label">gain lanes</span></dt>
   <dd>Gain automation, one lane per target node, as an rdf:List.</dd>
+  <dt id="jigdawAssetOverrides"><code>trn:jigdawAssetOverrides</code> <span class="label">JigDAW asset overrides</span></dt>
+  <dd>Local files loaded into a JigDAW node's jig:userReplaceable assets, as an rdf:List of nodes carrying trn:assetKey and trn:assetPath. Like trn:pluginPath these name files on this machine, so a project carrying them opens with the shipped defaults elsewhere.</dd>
   <dt id="midiClips"><code>trn:midiClips</code> <span class="label">MIDI clips</span></dt>
   <dd>The arrangement's MIDI clips, as an rdf:List.</dd>
   <dt id="midiMappings"><code>trn:midiMappings</code> <span class="label">MIDI mappings</span></dt>
@@ -245,12 +247,16 @@ page would rather say so than look complete.</p>
   <dd>How to advance to the next cue. Defaults to trn:HardCut if absent.</dd>
 </dl>
 
-<h2>Datatype properties <span class="count">88</span></h2>
+<h2>Datatype properties <span class="count">90</span></h2>
 <dl>
   <dt id="arrangementLength"><code>trn:arrangementLength</code> <span class="label">arrangement length</span></dt>
   <dd>How long the arrangement is, in beats.</dd>
   <dt id="artist"><code>trn:artist</code></dt>
   <dd><span class="undescribed">No description.</span></dd>
+  <dt id="assetKey"><code>trn:assetKey</code> <span class="label">asset key</span></dt>
+  <dd>Which user-replaceable asset of a JigDAW plugin an override is for, by the asset's fragment (e.g. "nam").</dd>
+  <dt id="assetPath"><code>trn:assetPath</code> <span class="label">asset path</span></dt>
+  <dd>The local file loaded into a JigDAW asset in place of the shipped default.</dd>
   <dt id="atBeat"><code>trn:atBeat</code></dt>
   <dd><span class="undescribed">No description.</span></dd>
   <dt id="audioInputs"><code>trn:audioInputs</code> <span class="label">audio inputs</span></dt>

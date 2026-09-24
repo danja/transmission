@@ -1,5 +1,23 @@
 # Mistakes
 
+## edit tool — newString dropping the trailing newline glues two lines
+
+**What happened:** Four times across sessions, an `edit` whose `newString`
+dropped the source's trailing newline fused two lines into one (e.g.
+`})` + `function connectionMatches...` on one line, `it(...)` + `const
+control...` on one line). Twice the fused line was still valid syntax, so
+only a re-read of the edited region caught it; once the compiler caught it.
+
+**Root cause:** Issuing a second "paired" edit with no real purpose (a no-op
+whitespace touch-up, or an `oldString` ending at a line boundary while the
+`newString` does not reproduce it). The tool does exactly what it is told:
+byte replacement, no line-structure awareness.
+
+**Prevention:** Never issue an edit without a functional purpose. When
+`oldString` ends at a line boundary, `newString` must end at one too —
+check the last character before calling. Always re-read the edited region
+afterwards (this caught every occurrence so far).
+
 ## napi_bridge.cpp — wrong settings key format for pluginPath
 
 **What happened:** VST3 plugins loaded via the MCP/Node control path produced silence. BassGen and Basilico were silently replaced by PassThroughProcessors, so no MIDI or audio was generated.

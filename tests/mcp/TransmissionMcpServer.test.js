@@ -131,6 +131,93 @@ describe('Transmission MCP server', () => {
     expect(described.structuredContent.node.settings.pluginIri)
       .toBe('https://example.org/plugins/pulse/')
   })
+
+  it('adds and removes MIDI CC mappings over graph operations', async () => {
+    const control = new TransmissionControlService()
+    server = createTransmissionMcpServer(control)
+    client = new Client({ name: 'transmission-midi-mapping-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+
+    const tools = await client.listTools()
+    expect(tools.tools.map(tool => tool.name)).toContain('midi_mapping_add')
+    expect(tools.tools.map(tool => tool.name)).toContain('midi_mapping_remove')
+
+    const created = await client.callTool({
+      name: 'project_new',
+      arguments: {
+        project: {
+          id: 'http://purl.org/stuff/transmissions/mcp-midi',
+          nodes: [{ id: 'synth', type: 'VST3Plugin', ports: { audioOutputs: 2 } }]
+        }
+      }
+    })
+    expect(created.isError).not.toBe(true)
+
+    const mapping = { targetNodeId: 'synth', parameterId: 3, controller: 19 }
+    const added = await client.callTool({
+      name: 'midi_mapping_add',
+      arguments: { expectedRevision: 0, mapping }
+    })
+    expect(added.isError).not.toBe(true)
+    expect(added.structuredContent.graph.metadata.midiMappings).toEqual([
+      { targetNodeId: 'synth', parameterId: 3, channel: -1, controller: 19, consume: true }
+    ])
+
+    const duplicate = await client.callTool({
+      name: 'midi_mapping_add',
+      arguments: { expectedRevision: 1, mapping }
+    })
+    expect(duplicate.isError).toBe(true)
+
+    const badController = await client.callTool({
+      name: 'midi_mapping_add',
+      arguments: { expectedRevision: 1, mapping: { ...mapping, controller: 200 } }
+    })
+    expect(badController.isError).toBe(true)
+
+    const removed = await client.callTool({
+      name: 'midi_mapping_remove',
+      arguments: {
+        expectedRevision: 1,
+        mapping: { targetNodeId: 'synth', parameterId: 3, channel: -1, controller: 19, consume: true }
+      }
+    })
+    expect(removed.isError).not.toBe(true)
+    expect(removed.structuredContent.graph.metadata.midiMappings).toEqual([])
+  })
+
+  it('keeps JigDAW asset overrides on node_add', async () => {
+    const control = new TransmissionControlService()
+    server = createTransmissionMcpServer(control)
+    client = new Client({ name: 'transmission-asset-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+
+    const created = await client.callTool({
+      name: 'project_new',
+      arguments: { project: { id: 'http://purl.org/stuff/transmissions/assets', nodes: [] } }
+    })
+    expect(created.isError).not.toBe(true)
+
+    const added = await client.callTool({
+      name: 'node_add',
+      arguments: {
+        expectedRevision: 0,
+        node: {
+          id: 'pulse',
+          type: 'http://purl.org/stuff/transmissions/JigdawPlugin',
+          jigdawAssetOverrides: [{ key: 'nam', path: '/models/amp.nam' }]
+        }
+      }
+    })
+    expect(added.isError).not.toBe(true)
+    const project = await client.readResource({ uri: 'transmission://project' })
+    expect(JSON.parse(project.contents[0].text).graph.nodes[0].jigdawAssetOverrides)
+      .toEqual([{ key: 'nam', path: '/models/amp.nam' }])
+  })
 })
 
 const fixtureProfile = `

@@ -1,61 +1,26 @@
 # TODO
 
-## MCP parity with the GTK UI
+## MCP parity with the GTK UI — audited, no open gaps
 
-From INBOX.md: "ensure the MCP support is up-to-date with the facilities offered by
-the UI." First-pass audit (2026-09-24) comparing `src/mcp/TransmissionMcpServer.js`'s
-32 tools against the GTK UI's feature set. Node/connection creation itself is generic
-enough (`type`/`settings` are free-form in `node_add`/`graph_apply_changes`, not a
-closed enum) to already cover Gain, AudioClip, MidiClip, and JigdawPlugin node kinds.
-Two concrete gaps found so far:
+First-pass audit (2026-09-24) of `TransmissionMcpServer.js` against the GTK
+UI's feature set. Node/connection creation is generic enough
+(`type`/`settings` free-form) to cover Gain, AudioClip, MidiClip, and
+JigdawPlugin kinds. Both concrete gaps found are now closed:
+`midi_mapping_add`/`midi_mapping_remove` (2026-09-24) and audio render
+`arrangement_render_audio` (2026-09-24, needs the native addon).
 
-- MIDI CC → parameter mappings (the GTK "MIDI Mapping" dialog on a node, `jig:` and
-  VST3 parameters both) exist only in the GTK UI and the RDF file format
-  (`src/rdf/TransmissionRdf.js`, `src/rdf/Vocabulary.js`) — `src/model/Graph.js`, the
-  live in-memory model every MCP tool operates on, has no concept of them at all. A
-  project saved from the GTK UI keeps its mappings on its own reload, but `project_open`
-  over MCP silently drops them on the way into `Graph`, and no tool can read or write
-  one. Needs: mappings carried in `Graph`'s model and `toJSON()`, a schema addition to
-  `TransmissionMcpServer.js` (probably `midi_mapping_add` / `midi_mapping_remove`,
-  mirroring `clip_add`/`clip_remove`, plus surfacing existing ones from `project_get`
-  or `arrangement_get`).
-- No MCP equivalent of File → Render (`Ctrl+Shift+R`, `OfflineAudioRenderer` in
-  `native_graph_ui_main.cpp`) — bouncing the arrangement to an audio file.
-  `arrangement_render_midi` only captures MIDI events to a `.mid`, not audio to a
-  `.wav`. Would need a control-service method driving `OfflineAudioRenderer` (or the
-  Node-side offline path it mirrors) plus a tool wrapping it.
-
-Not yet audited: parity for Settings (JACK startup command, plugin search paths,
-JigDAW collection URLs — arguably editor/host config rather than MCP's concern),
-system input/output JACK port connection strings, and node port-label metadata.
-
-## The trn: namespace is deployed
-
-**Done, 2026-09-18.** `http://purl.org/stuff/transmissions/` resolves. It had always returned
-404: the PURL side was correct all along and nothing was served at the far end, so every
-`trn:` IRI published by this project, by plugin-universe, by downspout and by JigDAW pointed
-at nothing.
-
-Measured against the live server after deployment: the PURL chain ends at 200, `text/turtle`
-when asked for and `text/html` for a browser, 42048 bytes matching the committed build byte
-for byte, parsing to 628 triples and 209 subjects. Every term 303s, including the hyphenated
-and slashed IRIs that saved projects mint. CORS on every response. `jig:` still resolves, so
-the second `include` in that server block broke nothing.
-
-To check it again:
-
-```sh
-curl -sS -H "Accept: text/turtle" https://hyperdata.it/xmlns/transmissions/ | grep -c '^trn:'
-curl -sS -o /dev/null -w '%{http_code}\n' https://hyperdata.it/xmlns/transmissions/PluginProfile
-```
-
-Expect 208 and 303. Pipe the document into `head` and curl exits 23: that is `head` closing
-the pipe on a 42 kB body, not a failure. `grep -c` and `sed -n '1,20p'` read to the end and
-exit 0.
-
-Adding a term is `npm run build:vocab`, commit, `git pull` on the server. No nginx reload:
-files are read from disk per request, and `tests/vocab/site.test.js` fails if the committed
-copy is stale. See `docs/namespace.md`.
+Remaining audit list, all verdict: correctly out of MCP scope, no work:
+- Settings (JACK startup command/autostart, plugin search paths, JigDAW
+  collection URLs): editor-owned, in the GTK app's own
+  `~/.config/transmission/config.ttl` (ad-hoc tab format — a different file
+  from the server's Turtle `./config.ttl`; see `docs/mcp-live.md`). Server
+  operators use CLI flags + `trn:ServerConfig` instead.
+- System input/output JACK port strings: already covered end to end
+  (`graph.metadata.system{In,Out}putConnections` ↔ RDF ↔ `project_get` /
+  `setProjectMetadata`); free-form by design, fuzzy-matched to JACK ports.
+- Node port-label metadata: GTK-only display names with no vocabulary term
+  and no `Graph` field; per repo convention editor metadata stays out of the
+  execution model. Port counts (the execution-relevant part) are covered.
 
 ## Instance data lives in the vocabulary namespace
 
@@ -70,47 +35,11 @@ namespace of their own and rewriting every committed project file, which changes
 saved project says. See `docs/namespace.md`.
 
 
-## Fixed from INBOX.md
-
-**Done, 2026-09-24.** Sorting the "Add Plugin…" dialog by clicking a column header
-crashed the console with `Gtk-CRITICAL **: gtk_tree_sortable_has_default_sort_func:
-assertion 'GTK_IS_TREE_SORTABLE (sortable)' failed`. Cause: the dialog's `GtkTreeView`
-was attached directly to the `GtkTreeModelFilter` (for the search box), which does not
-implement `GtkTreeSortable` — clicking a column header made GTK try to sort that model
-anyway. Fixed by inserting the standard GTK3 `store -> filter -> GtkTreeModelSort ->
-view` stack and moving the default sort-column call from the (list-store-only) sortable
-to the new sort model. `transmission_graph_ui` rebuilds clean.
-
 ## Feature : scopes
 
 Add built-in modules Oscilloscope & Spectrum analyzer, loaded like the Output built-ins as required. They should display while running in the main window, like the level meters in the output built-in.
 
-## Parameter control
-
-Right now we can load the generative plugins from Downspout into transmission but they all carry the default parameters. In the agent-as-DJ scenario, the agent should be able to modify the parameters over MCP. It would be inconveient to add a MCP server to every plugin, but maybe a common midi interface that is loaded as a plugin or built-in might allow this kind of control?
-
 ## Bugs
-
-- **Done, 2026-09-24.** File > New didn't clear the *live server's* project state,
-  even though it correctly reset the GTK canvas: `newProjectActivated` called
-  `applyProject(view, defaultProject(), error)` (which does fully reset the local
-  model — nodes, edges, parameters, plugin states, ID counters, etc.) but, unlike
-  `openProjectActivated`/`saveProject`, never called `syncToLiveServer`. So with the
-  live server running (MCP enabled), Play/MCP tools kept operating on whatever project
-  the live server had loaded before New — the canvas looked reset, the engine wasn't.
-  `syncToLiveServer` needs a file path to `POST /projects/open` with, and New has no
-  saved file yet, so fixed by writing the fresh default project to a scratch `.ttl`
-  (via the same `native-ui-project.js save` helper `saveProject` uses), syncing that,
-  then deleting the scratch file — without touching `view.filePath` or recent files,
-  so New still behaves as "untitled" locally. `transmission_graph_ui` rebuilds clean.
-
-  Not fixed here, same underlying gap: `TransmissionHttpClient.js`'s `newProject()` /
-  `projectDefinitionToTurtle` (the MCP-side `project_new` tool's HTTP client) is the
-  pre-existing separate bug below — it only serializes node IDs, so the server's
-  `parseNewProject` rejects it. Unrelated code path from the GTK fix above (GTK talks
-  raw Turtle over libcurl directly, not through this JS client), but worth fixing
-  together since both are "the new-project path doesn't actually take" in different
-  parts of the app.
 
 - Plugin-scan duplicate entries reported ("every time the VSTs are scanned on disk a
   duplicate entry for each is added"), on a different machine than the one most of this
@@ -129,66 +58,42 @@ Right now we can load the generative plugins from Downspout into transmission bu
   a mounted duplicate), which `sortAndDedupePlugins`'s exact-string dedupe wouldn't
   catch either?
 
-- ~~GTK console missing `connections`/`peaks`/`diag`~~ **Not actually missing** —
-  `consoleCommandActivated` in `native_graph_ui_main.cpp` implements `status`, `diag`,
-  `lsp`, `connections`, `peaks`, `watch`, `unwatch`, `reconnect`, `scan`, `parse [path]`,
-  `clear`, `help`; `help` lists all of them correctly. The bug is narrower: the console's
-  static startup banner (`showConsoleWindow`, "Console ready. Commands: ...") is stale
-  and only names `status lsp reconnect parse [path] clear help`, which is what misled
-  this session into reporting the wrong root cause. Fix: either generate that banner
-  from the same command list `help` uses, or just have it say `Type help for a list of
-  commands`.
+- Live JACK path produced no audio while the offline probe of the same patch
+  was healthy (carried over from the console-banner investigation, 2026-09-24,
+  banner fix itself done): a BassGen → Basilico → System Output patch measured
+  RMS 0.0 on both `transmission:out_1`/`out_2` via `jack_capture` for 3 s while
+  `status` reported playing, but `scripts/probe-project.js` showed BassGen
+  emitting MIDI (144 events/30 windows) and Basilico producing audio
+  (RMS ~0.10–0.22) — so the graph and plugins are fine and the fault is
+  live-JACK-specific. JACK auto-connect had also wired only `out_1`, leaving
+  `out_2` with no destination. `connections`/`diag` surface both directly.
+  Needs a repro on a live session to tell stale auto-connect state from a real
+  routing bug.
 
-  Found while diagnosing a live BassGen → Basilico → System Output patch that produced
-  no audio: `jack_capture` on `transmission:out_1`/`out_2` measured RMS 0.0 on both
-  channels for 3s while `status` reported the runtime playing, but `scripts/probe-
-  project.js` on the same patch saved to disk showed BassGen emitting MIDI
-  (144 events/30 windows) and Basilico producing real audio (RMS ~0.10–0.22 per
-  window) offline — so the graph and plugins are fine; whatever's wrong is specific to
-  the live JACK path. Also found in the same session: JACK auto-connect only wired
-  `transmission:out_1` to `Built-in Audio Analog Stereo:playback_FL`; `out_2` had no
-  destination at all. `connections`/`diag` (once the banner isn't hiding them) surface
-  both of these directly instead of requiring an offline probe and manual `jack_capture`.
-
-- **Done, 2026-09-24.** `UiProjectCodec::decodeUiProject`'s parse failures only ever
-  said `invalid native UI project interchange at line N`, with no indication of which
-  record or field was wrong — hit when opening `projects/temp.ttl` produced exactly
-  that dead end. Rewrote every branch's compound `||` condition into individual checks,
-  each with its own `fail(reason)` message, e.g. `at line 10 (NODE): midiOutputs "X" is
-  not a valid count` instead of just `at line 10`. Verified against a standalone harness
-  linking `UiProjectCodec.cpp` directly: valid interchange still decodes identically
-  (`ok=1`), and a deliberately corrupted field now names itself instead of just the line.
-  `transmission_graph_ui` rebuilds clean in `build-ui-jack-vst3`.
-
-  Still open: the specific `temp.ttl` failure that prompted this wasn't reproduced —
-  `node scripts/native-ui-project.js load projects/temp.ttl` piped through the improved
-  decoder parses cleanly (`ok=1`) both before and after this fix, on the file as it
-  currently sits on disk. So either it was a stale/already-running GTK process (this
-  session found the app not running at all partway through investigating), a `node`
-  resolution difference in the app's subprocess `PATH` vs. this shell's (nvm-managed
-  node here), or a transient race with the file being written. Needs a repro against the
-  freshly rebuilt binary — the new error message should name the exact field if it
-  recurs.
-
-- `projectDefinitionToTurtle` in `src/http/TransmissionHttpClient.js` only serializes node IDs into the `:pipe` list — it drops node types, settings, ports, and connections. The server's `parseNewProject` then fails with "Graph node X type is required". Fix: replace the minimal hand-rolled Turtle with the existing `TransmissionRdf.js` serializer (the function is async, so the caller can await it).
+- `temp.ttl` interchange failure never reproduced (carried over from the
+  `UiProjectCodec` error-message fix, 2026-09-24, fix itself done):
+  `node scripts/native-ui-project.js load projects/temp.ttl` parses cleanly
+  (`ok=1`). Suspects: stale/already-running GTK process, `node` resolution
+  difference in the app's subprocess `PATH` vs. the shell's, or a transient
+  race with the file being written. Needs a repro against the freshly rebuilt
+  binary — the new error message should name the exact field if it recurs.
 
 - JUCE assertion failure in `juce_Messaging_linux.cpp:87` observed when hosting Valis inside Transmission. Likely triggered by a JUCE message thread operation happening off the expected thread. Needs a repro and investigation.
+
+- `native/build-ui` (all-off config) does not build: `Vst3EditorHost.cpp:434`
+  fails with `no declaration matches Vst3EditorHost::open(...)` against
+  `Vst3EditorHost.h:28` (missing trailing `LiveStateCallback` parameter).
+  Pre-existing — verified 2026-09-24 by stashing all work and rebuilding
+  pristine (same single error). Unrelated to any current change; needs whoever
+  owns the editor host to reconcile the header and the implementation, then
+  re-verify the all-off `transmission_graph_ui` build.
 
 ## Live generative DJ via MCP
 
 Claude acts as a DJ via MCP, loading and playing generative patches from
-`projects/patches/` and effects from Valis. The set list vocabulary and a
-runner are now in place; next steps are live parameter control and Valis
-integration.
-
-Done:
-- `vocabs/djset.ttl` — vocabulary for DJ set lists (DJSet, Cue, Transition, ParameterChange)
-- `projects/setlists/rise-to-techno.ttl` — sample set list, 54→160 BPM arc
-- `scripts/dj-runner.js` — autonomous set list runner over the live HTTP API
-- MCP live session confirmed working: dub-reggae-birdsong loaded and playing
+`projects/patches/` and effects from Valis.
 
 Remaining:
-- Live parameter control: describe plugin parameters, apply changes during playback
 - Valis effects integration: load a Valis patch as an effect insert in a DJ chain
 - Crossfade transition implementation in dj-runner.js (requires mixer gain params)
 - xoxolo pattern programming for hardcore-techno-160
@@ -212,94 +117,49 @@ For `transport_play` and audio control to work via MCP from a Claude session:
 
 `:JigdawPlugin` nodes load, run and route (see `docs/jigdaw.md`). Still open:
 
-- ~~No state serialisation~~ **Fixed upstream, 2026-09-24.** `jigdaw::Profile` now parses
-  `jig:asset` (key, resource, `jig:userReplaceable`), `jigdaw::Chain::add` fetches, verifies
-  and loads each one before the slot is used (same as the module itself), and
-  `jigdaw::Module::loadAsset` re-resolves every cached buffer pointer afterwards since a
-  loader may grow the module's linear memory (`native/jigdaw-adapter/{include,src}/jigdaw/
-  {Profile,Module,Chain}.{hpp,cpp}` in the jigdaw repo). Verified: profile parsing against
-  Ferrite's real `#nam`/`#ir` assets, and a synthetic wasm module exercising fetch + integrity
-  check + load + post-`memory.grow` pointer refresh end to end (including a deliberately
-  tampered asset being refused). `jigdaw`'s own `ctest` suite still passes.
-
-  `JigdawProcessor::initialize` (the real playback path — `Chain::add` is a separate call
-  path used only by `jigdaw`'s own tests) had the same gap independently, since it drives
-  `jigdaw::Module` directly rather than through `Chain`; fixed there too, verified with the
-  same synthetic module through `JigdawProcessor` itself (topology reports the asset,
-  `initialize` loads the shipped default, and again with an override path).
-
-  UI, also done, 2026-09-24: `JigdawPluginTopology::assets` (key, `userReplaceable`),
-  `JigdawProcessor::initialize`'s new `assetOverridePaths` parameter (a local file read
-  instead of the fetched default, same `loadAsset` either way), `RuntimeGraphNode::
-  jigdawAssetOverridePaths` and `Node::jigdawAssetOverrides` threading it from the graph to
-  `uiProcessorFactory()`, and a `GtkFileChooserButton` row per `userReplaceable` asset in the
-  generated JigDAW panel (`native_graph_ui_main.cpp`, mirroring `jigdaw/src/ui/Panel.js`'s
-  file `<input>`). Picking a file logs to the console and marks the graph changed; it takes
-  effect on the next compile (Play), the same "control thread, before the module runs" rule
-  `Module::loadAsset` already requires — there is no live hot-swap into an already-running
-  node.
-
-  **wasm3 replaced with WAMR, 2026-09-24 — Ferrite now loads and runs.** wasm3's interpreter
-  had no WebAssembly SIMD support and Ferrite (`jig:wasmFeature jig:Simd128`) needs it; both
-  `Chain::add` and `JigdawProcessor::initialize` failed at the `jig_init` lookup before assets
-  were even reached. Swapped in the jigdaw repo only — `Module.hpp`'s public interface is
-  unchanged, so nothing outside `native/jigdaw-adapter/src/Module.cpp` and the two build
-  scripts (`native/cmake/FindOrFetchWamr.cmake`, replacing `FindOrFetchWasm3.cmake`;
-  `jigdaw-adapter/CMakeLists.txt`) needed to change:
-  - Built as WAMR's fast interpreter with SIMD128 and reference types on, AOT/JIT off — pure
-    bytecode interpretation, the same "no executable pages, nothing platform-specific to
-    debug" property wasm3 was originally chosen for. Reference types (`WAMR_BUILD_REF_TYPES`)
-    turned out to be needed too: Rust's `wasm32-unknown-unknown` target emits that section by
-    default even when a module never uses one, and Ferrite's build does.
-  - A local checkout (`WAMR_ROOT`, default `~/github/wasm-micro-runtime`) rather than
-    `FetchContent`, the way `JIGDAW_ROOT` already works here — WAMR has no shallow-clone-sized
-    release the way wasm3's tag did.
-  - `wasm_runtime_call_wasm_a`'s own source was read to confirm it stays on a fixed 16-cell
-    stack buffer (`argv_buf[16]`) and only allocates above that; every call this ABI makes has
-    at most 2 argument cells, so nothing in the hot path allocates. One real caveat: a thread
-    WAMR did not create (the audio callback thread) must call `wasm_runtime_init_thread_env()`
-    once before its first call in — done lazily, thread_local-guarded, in every `Module`
-    method that calls into wasm, so it is correct regardless of which thread ends up calling
-    first, at the cost of that first call being allowed to allocate (a documented,
-    accepted-in-code compromise; a JACK thread-init callback would remove even that but was
-    not taken on here — see the comment on `ensureThreadRegistered` in `Module.cpp`).
-  - Verified: `jigdaw`'s own `ctest` suite passes (`chain_file` covers real non-SIMD plugins
-    end to end); a standalone `jigdaw::Chain` test against Ferrite's real profile now loads it
-    and, fed an impulse, produces output smeared across every following sample (the amp model
-    and convolution actually engaging, not a dry passthrough); the same confirmed again through
-    `transmission::JigdawProcessor`/`JigdawInspector` directly (topology reports both assets,
-    `initialize` loads the SIMD module and the shipped nam/ir defaults, `process` produces the
-    same non-dry output) — the whole path the original bug report was about, now working.
-    `transmission_jigdaw_processor_test` and the rest of `native/build-jigdaw`'s suite pass;
-    `transmission_graph_ui` builds clean in both JigDAW-enabled and JigDAW-disabled configs.
-
-  Still open:
-  - No persistence: an override path lives only in the running UI's `Node`, not in the saved
-    project (`UiProjectNode`/`UiProjectCodec` TTL, or the MCP `graph_apply_changes` schema),
-    so it is lost on reload. Needs a project-format decision, not just more code.
-  - Not exercised interactively in the GTK app itself in this session (screenshot tooling here
-    cannot reliably capture GTK popups/dialogs); confirmed instead by driving
-    `JigdawProcessor`/`JigdawInspector` directly, against both the synthetic test module and
-    Ferrite's real profile, and by clean builds across every JigDAW-enabled `native/build*`
-    directory.
-  - The `ensureThreadRegistered` one-time-per-thread allocation noted above — a JACK
-    thread-init callback (`jack_set_thread_init_callback`) would close it properly; not taken
-    on since it would need to be threaded into every real-time-ish call site (JACK, offline
-    render, NAPI), not just one.
+- ~~Asset-override persistence~~ **Done, 2026-09-24.** Format decision:
+  overrides persist like `pluginPath` — absolute local paths, with the
+  vocabulary comment stating a project carrying them opens with shipped
+  defaults elsewhere. Per-node `jigdawAssetOverrides: [{key, path}]`,
+  threaded through the whole chain with version 8→9 (both readers still
+  accept 1–9; unknown records still fail, so the bump is the signal):
+  `Graph.js` (validated frozen field), `TransmissionRdf.js` +
+  `:jigdawAssetOverrides`/`:assetKey`/`:assetPath` (`vocabs/project.ttl`,
+  `Vocabulary.js`, `npm run build:vocab`), `native-ui-project.js`
+  (`JIGDAW_ASSET` record, sorted for determinism, duplicate-key + unknown-node
+  rejection), native `UiProjectCodec` (new `UiProjectJigdawAsset` field,
+  encode/decode, same validations), GTK `captureProject`/`applyProject` (map
+  ↔ vector) + `validateProject` (empty key/path rejected), MCP `nodeSchema`
+  (+ `GraphNode` in `public.d.ts`). Covered by RDF round-trip + invalid-shape
+  tests, interchange↔Turtle round-trip + rejection tests,
+  `UiProjectCodecTest` (v9 + round-trip + 3 failure cases, passing), and an
+  MCP `node_add` keeps-overrides case. UI + engine builds clean; vocab site
+  test passes. Removed the "Not yet persisted — TODO.md" comment on `Node`.
+- `ensureThreadRegistered` one-time-per-thread allocation (WAMR threads the
+  audio callback thread didn't create): a JACK thread-init callback
+  (`jack_set_thread_init_callback`) would close it properly; not taken on since
+  it would need threading into every real-time-ish call site (JACK, offline
+  render, NAPI), not just one. Detail was in the removed WAMR write-up.
 - `jigdaw::Chain::process` (in the jigdaw repo, not used here) processes only
   `min(frames, jig_max_frames())` and leaves the rest of the block stale. Transmission
   drives `jigdaw::Module` directly and sub-blocks it instead, but the adapter that ships
   in jigdaw has the bug at any host buffer above 128 frames. Report upstream.
-- `jig:latencyFrames` is read into the profile and then ignored; there is no latency
-  compensation for a JigDAW node.
-- The GTK "Add JigDAW Plugin…" dialog dereferences the IRI on the main thread, so a slow
-  or unreachable https origin freezes the editor for up to the fetch timeout. This matches
-  what the UI already does for VST3 inspection, but that reads a local file and this reads
-  the network. jigdaw's own editor runs the same load on a worker for exactly this reason
-  (`native/jigdaw-adapter/src/dpf/JigdawUI.cpp`); do the same here.
+- ~~`jig:latencyFrames` is read into the profile and then ignored~~ **Done,
+  2026-09-24, surfacing only.** The value now flows everywhere it can without
+  an engine-wide delay-compensation framework (which does not exist — VST3
+  latency is not read either): `jigdaw::Profile::latencyFrames` →
+  `JigdawPluginTopology::latencyFrames` → `transmission_jigdaw_inspect`
+  output, and `jig:latencyFrames` → `profile.latencyFrames` in
+  `readJigdawProfile`, hence in `jigdaw_describe`. Covered by a registry test
+  (128 surfaces, absent defaults 0) and a processor-test topology assert
+  against pulse's real profile. Actual compensation is engine architecture —
+  see Engine features.
 
 ## Engine features
 
+- Plugin delay compensation: no framework exists (VST3
+  `getLatencySamples` unread, JigDAW `latencyFrames` surfaced but
+  uncompensated). Needs an engine-wide design, not a per-plugin fix.
 - Suspend schedule-only instrument processors outside their authored activity
   window while preserving a bounded post-note tail.
 - Add persisted VST3 parameter, bypass, and send automation with bounded
@@ -316,34 +176,10 @@ For `transport_play` and audio control to work via MCP from a Claude session:
 
 ## Plugin menu unification and startup scan — verification remaining
 
-Implemented in `native/src/native_graph_ui_main.cpp`:
-
-- Startup no longer walks the VST3 search path (and, with JigDAW, fetches every
-  configured collection) synchronously before the window appears. Both run on a
-  background thread (`startupScanThreadFunc`) and merge into `view.plugins` via
-  `g_idle_add` once the main loop is pumping. This was the slow-loading cause
-  reported in INBOX.md.
-- Settings menu item and dialog renamed "Plugin Path…" / "Plugin Paths" →
-  "_Plugins…" / "Plugins", and the dialog gained a second text box for JigDAW
-  plugin collection URLs (`docs/jigdaw.md`,
-  `/home/danny/github/jigdaw/docs/plugin-collections.md`), persisted to
-  `config.ttl` as `JIGDAW_COLLECTION` lines and merged into the same plugin
-  list as scanned VST3 bundles (`scanJigdawCollections`,
-  `collectJigdawCollectionEntries`, `parsePluginCollection`).
-- The right-click "Add VST3 Plugin…" / "Add JigDAW Plugin…" context menu items
-  are merged into one "Add Plugin…" entry. Its dialog lists VST3 and JigDAW
-  entries together (JigDAW ones flagged in a hidden list-store column) and
-  keeps an "Add by _IRI…" button for a one-off JigDAW plugin not in any
-  collection (the former free-text dialog, unchanged).
-- The collection parser is a targeted regex extraction of the normative
-  `dcterms:hasPart` / `rdfs:label` shape (not a general RDF parser, consistent
-  with this file's existing ad hoc Turtle handling), verified standalone
-  against `examples/reference-collection.ttl` and `web/collections/jigdaw.ttl`
-  in the jigdaw checkout.
-
-Verified: `transmission_graph_ui` builds clean in both `build-ui-jack-vst3`
-(JigDAW + JACK + VST3 on) and `build-ui` (all off) configs; launched on the
-host X11 session and loaded an existing project instantly.
+Done: background startup scan, "_Plugins…" settings with JigDAW collection
+URLs in `config.ttl`, merged "Add Plugin…" dialog (all in
+`native/src/native_graph_ui_main.cpp`; build-verified, launched once on host
+X11). Details were here; removed 2026-09-24 on cleanup.
 
 Not yet verified — needs a manual pass:
 - Settings > Plugins dialog with a real collection URL entered, confirming the

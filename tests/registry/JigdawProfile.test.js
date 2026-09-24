@@ -29,6 +29,7 @@ const instrument = `
     trn:accepts trn:Midi ;
     trn:produces trn:Audio ;
     trn:requires jig:MidiEvents ;
+    jig:latencyFrames 128 ;
     jig:audioInputs 0 ;
     jig:audioOutputs 1 ;
     jig:outputChannels 2 ;
@@ -133,6 +134,15 @@ describe('readJigdawProfile', () => {
     })
     expect(profile.requiresTransport).toBe(true)
     expect(profile.parameters).toEqual([])
+  })
+
+  it('surfaces the declared processing latency, defaulting to zero', async () => {
+    const pulse = await readJigdawProfile('https://example.org/plugins/pulse/',
+                                          { fetch: serve(instrument) })
+    expect(pulse.latencyFrames).toBe(128)
+    const bassgen = await readJigdawProfile('https://example.org/plugins/bassgen/',
+                                            { fetch: serve(generator) })
+    expect(bassgen.latencyFrames).toBe(0)
   })
 
   it('refuses a module that is private to its JavaScript processor', async () => {

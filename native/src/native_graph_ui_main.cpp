@@ -96,8 +96,8 @@ struct Node {
     double gainDb = 0.0;
     double pan = 0.0;
     // A JigDAW node's jig:userReplaceable assets a person has loaded a
-    // different file into, keyed by the asset's fragment (e.g. "nam"). Not
-    // yet persisted to the project file — TODO.md.
+    // different file into, keyed by the asset's fragment (e.g. "nam").
+    // Persisted to the project file; applied on the next compile (Play).
     std::unordered_map<std::string, std::string> jigdawAssetOverrides;
 };
 
@@ -689,6 +689,61 @@ struct PluginScanJob {
     std::vector<PluginCacheEntry> good;
 };
 
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+// A JigDAW IRI dereference is a network fetch: it must never run on the main
+// thread, or a slow or unreachable origin freezes the editor for up to the
+// fetch timeout. Both Add dialogs destroy synchronously on accept and merge
+// the fetched topology back via the main loop, the same worker/idle shape as
+// the plugin scans.
+struct JigdawFetchJob {
+    GraphView* view = nullptr;
+    GtkWidget* canvas = nullptr;
+    std::string iri;
+    transmission::JigdawPluginTopology topology;
+    std::string error;
+    bool ok = false;
+};
+
+gboolean jigdawFetchCompleteIdle(gpointer data) {
+    auto* job = static_cast<JigdawFetchJob*>(data);
+    if (job->ok) {
+        job->view->jigdawTopologies[job->iri] = job->topology;
+        const auto id = "jigdaw-" + std::to_string(job->view->nextJigdawId++);
+        stopRuntime(*job->view,
+                    "Graph changed — press Play to compile and start audio");
+        job->view->nodes.push_back({
+            id, job->topology.name.empty() ? job->iri : job->topology.name,
+            NodeKind::JigdawPlugin, job->topology.audioInputs, job->topology.audioOutputs,
+            job->topology.midiInputs, job->topology.midiOutputs,
+            job->view->pointerX, job->view->pointerY, job->iri, "", {}, {}});
+        logConsole(*job->view,
+                   "Loaded " + job->topology.name + " (" + job->topology.abi + ")");
+        gtk_widget_queue_draw(job->canvas);
+    } else {
+        setStatus(*job->view, "Unable to load " + job->iri + ": " + job->error, true);
+    }
+    delete job;
+    return G_SOURCE_REMOVE;
+}
+
+void jigdawFetchThreadFunc(JigdawFetchJob* job) {
+    transmission::JigdawPluginTopology topology;
+    std::string error;
+    // JigdawInspector::inspectTopology works on locals (profile, topology)
+    // and per-call network handles, so concurrent inspection is safe.
+    job->ok = transmission::JigdawInspector().inspectTopology(job->iri, topology, error);
+    if (job->ok) job->topology = std::move(topology);
+    else job->error = std::move(error);
+    g_idle_add(jigdawFetchCompleteIdle, job);
+}
+
+void beginJigdawFetch(GraphView& view, GtkWidget* canvas, std::string iri) {
+    setStatus(view, "Loading " + iri + " …", false);
+    auto* job = new JigdawFetchJob{&view, canvas, std::move(iri)};
+    std::thread(jigdawFetchThreadFunc, job).detach();
+}
+#endif
+
 struct PluginScanResult {
     PluginScanJob* job;
     PluginCacheEntry entry;
@@ -878,26 +933,9 @@ void addPluginFromDialog(GtkDialog*, gint response, gpointer data) {
                 g_free(pathStr);
 #if defined(TRANSMISSION_UI_WITH_JIGDAW)
                 if (isJigdaw) {
-                    transmission::JigdawPluginTopology topology;
-                    std::string error;
-                    if (!transmission::JigdawInspector().inspectTopology(path, topology, error)) {
-                        setStatus(*context->view, "Unable to load " + path + ": " + error, true);
-                        gtk_widget_destroy(context->dialog);
-                        delete context;
-                        return;
-                    }
-                    context->view->jigdawTopologies[path] = topology;
-                    const auto id = "jigdaw-" + std::to_string(context->view->nextJigdawId++);
-                    stopRuntime(*context->view,
-                                "Graph changed — press Play to compile and start audio");
-                    context->view->nodes.push_back({
-                        id, topology.name.empty() ? path : topology.name,
-                        NodeKind::JigdawPlugin, topology.audioInputs, topology.audioOutputs,
-                        topology.midiInputs, topology.midiOutputs,
-                        context->view->pointerX, context->view->pointerY, path, "", {}, {}});
-                    logConsole(*context->view,
-                               "Loaded " + topology.name + " (" + topology.abi + ")");
-                    gtk_widget_queue_draw(context->canvas);
+                    // The topology fetch runs on a worker (see beginJigdawFetch);
+                    // the dialog closes now and the node appears on completion.
+                    beginJigdawFetch(*context->view, context->canvas, path);
                     if (context->job) {
                         context->job->cancelled = true;
                         context->job = nullptr;
@@ -1541,27 +1579,10 @@ void addJigdawNodeFromDialog(GtkDialog*, gint response, gpointer data) {
             iri.pop_back();
         const auto start = iri.find_first_not_of(" \t");
         iri = start == std::string::npos ? std::string() : iri.substr(start);
-        transmission::JigdawPluginTopology topology;
-        std::string error;
         if (iri.empty()) {
             setStatus(*context->view, "A JigDAW plugin needs an IRI", true);
-        }
-        else if (!transmission::JigdawInspector().inspectTopology(iri, topology, error)) {
-            setStatus(*context->view, "Unable to load " + iri + ": " + error, true);
-        }
-        else {
-            context->view->jigdawTopologies[iri] = topology;
-            const auto id = "jigdaw-" + std::to_string(context->view->nextJigdawId++);
-            stopRuntime(*context->view,
-                        "Graph changed — press Play to compile and start audio");
-            context->view->nodes.push_back({
-                id, topology.name.empty() ? iri : topology.name,
-                NodeKind::JigdawPlugin, topology.audioInputs, topology.audioOutputs,
-                topology.midiInputs, topology.midiOutputs,
-                context->view->pointerX, context->view->pointerY, iri, "", {}, {}});
-            logConsole(*context->view,
-                       "Loaded " + topology.name + " (" + topology.abi + ")");
-            gtk_widget_queue_draw(context->canvas);
+        } else {
+            beginJigdawFetch(*context->view, context->canvas, iri);
         }
     }
     gtk_widget_destroy(context->dialog);
@@ -2583,7 +2604,7 @@ void showConsoleWindow(GraphView& view) {
         }), nullptr);
 
         gtk_widget_show_all(win);
-        logConsole(view, "Console ready. Commands: status  lsp  reconnect  parse [path]  clear  help");
+        logConsole(view, "Console ready. Commands: status  diag  lsp  connections  peaks  watch  unwatch  reconnect  scan  parse [path]  clear  help");
     } else {
         gtk_window_present(GTK_WINDOW(view.consoleWindow));
     }
@@ -4369,6 +4390,15 @@ transmission::UiProject captureProject(const GraphView& view) {
             target.componentState = state->second.component;
             target.controllerState = state->second.controller;
         }
+        target.jigdawAssetOverrides.reserve(node.jigdawAssetOverrides.size());
+        for (const auto& [key, path] : node.jigdawAssetOverrides)
+            target.jigdawAssetOverrides.push_back({key, path});
+        std::sort(
+            target.jigdawAssetOverrides.begin(),
+            target.jigdawAssetOverrides.end(),
+            [](const auto& left, const auto& right) {
+                return left.key < right.key;
+            });
     }
     project.connections.reserve(view.edges.size());
     for (const auto& edge : view.edges) {
@@ -4424,6 +4454,12 @@ bool validateProject(const transmission::UiProject& project, std::string& error)
         if (node.id.empty() || !nodes.emplace(node.id, &node).second) {
             error = "The project contains an empty or duplicate node identifier";
             return false;
+        }
+        for (const auto& asset : node.jigdawAssetOverrides) {
+            if (asset.key.empty() || asset.path.empty()) {
+                error = "A JigDAW asset override needs both a key and a path";
+                return false;
+            }
         }
     }
     for (const auto& connection : project.connections) {
@@ -4549,12 +4585,15 @@ bool applyProject(GraphView& view, const transmission::UiProject& project,
         const auto kind = static_cast<NodeKind>(static_cast<int>(source.kind));
         const auto label = kind == NodeKind::MidiOutput
             ? midiOutputLabel(source.externalPort) : source.label;
+        std::unordered_map<std::string, std::string> assetOverrides;
+        for (const auto& asset : source.jigdawAssetOverrides)
+            assetOverrides[asset.key] = asset.path;
         nodes.push_back({
             source.id, label, kind,
             source.audioInputs, source.audioOutputs, source.midiInputs, source.midiOutputs,
             source.x, source.y, source.pluginPath, source.externalPort,
             inputLabels[source.id], outputLabels[source.id], source.gainDb,
-            source.pan});
+            source.pan, std::move(assetOverrides)});
     }
     std::vector<Edge> edges;
     edges.reserve(normalized.connections.size());

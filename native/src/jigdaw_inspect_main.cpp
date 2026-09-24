@@ -31,6 +31,7 @@ int main(int argc, char** argv) {
               << "midiInputs=" << topology.midiInputs << "\n"
               << "midiOutputs=" << topology.midiOutputs << "\n"
               << "requiresTransport=" << (topology.requiresTransport ? 1 : 0) << "\n"
+              << "latencyFrames=" << topology.latencyFrames << "\n"
               << "parameterCount=" << topology.parameters.size() << "\n";
     for (std::size_t index = 0; index < topology.parameters.size(); ++index) {
         const auto& parameter = topology.parameters[index];

@@ -5,6 +5,14 @@ import {
   parseSetParameter,
   parseProjectOpen,
   parseProjectSave,
+  parseArrangementUpdate,
+  parseArrangementClipAdd,
+  parseArrangementClipRemove,
+  parseParametersBatch,
+  parseJigdawDescribe,
+  parseCaptureMidi,
+  parseRenderMidi,
+  parseRenderAudio,
   parseServerConfig,
   serializeStatus,
   serializeError,
@@ -143,6 +151,144 @@ describe('parseProjectSave', () => {
     const turtle = `@prefix trn: <${TRN}> . [] a trn:SaveProject .`
     const result = await parseProjectSave(turtle)
     expect(result.filePath).toBeNull()
+  })
+})
+
+describe('arrangement codecs', () => {
+  const clip = {
+    id: 'intro', targetNodeId: 'synth', startBeat: 0, lengthBeats: 4,
+    notes: [{ startBeat: 0, durationBeats: 0.5, pitch: 36, velocity: 100, channel: 9 }]
+  }
+
+  it('parses a partial arrangement update', async () => {
+    const turtle = `
+@prefix trn: <${TRN}> .
+[] a trn:ArrangementUpdate ;
+   trn:expectedRevision 2 ;
+   trn:lengthBeats 16 ;
+   trn:midiClipsJson ${JSON.stringify(JSON.stringify([clip]))} .
+`
+    const result = await parseArrangementUpdate(turtle)
+    expect(result).toEqual({ expectedRevision: 2, lengthBeats: 16, midiClips: [clip] })
+  })
+
+  it('omits absent arrangement update fields', async () => {
+    const turtle = `@prefix trn: <${TRN}> . [] a trn:ArrangementUpdate ; trn:expectedRevision 0 .`
+    await expect(parseArrangementUpdate(turtle)).resolves.toEqual({ expectedRevision: 0 })
+  })
+
+  it('parses clip add and remove', async () => {
+    const add = await parseArrangementClipAdd(`
+@prefix trn: <${TRN}> .
+[] a trn:AddArrangementClip ;
+   trn:expectedRevision 1 ;
+   trn:clipJson ${JSON.stringify(JSON.stringify(clip))} .
+`)
+    expect(add).toEqual({ expectedRevision: 1, clip })
+    const remove = await parseArrangementClipRemove(`
+@prefix trn: <${TRN}> .
+[] a trn:RemoveArrangementClip ;
+   trn:expectedRevision 1 ;
+   trn:clipId "intro" .
+`)
+    expect(remove).toEqual({ expectedRevision: 1, clipId: 'intro' })
+  })
+
+  it('throws ParseError on missing subjects and payloads', async () => {
+    const other = `@prefix trn: <${TRN}> . [] a trn:Other .`
+    await expect(parseArrangementUpdate(other)).rejects.toThrow(ParseError)
+    await expect(parseArrangementClipAdd(other)).rejects.toThrow(ParseError)
+    await expect(parseArrangementClipRemove(other)).rejects.toThrow(ParseError)
+    const noClip = `@prefix trn: <${TRN}> . [] a trn:AddArrangementClip ; trn:expectedRevision 0 .`
+    await expect(parseArrangementClipAdd(noClip)).rejects.toThrow(ParseError)
+    const noId = `@prefix trn: <${TRN}> . [] a trn:RemoveArrangementClip ; trn:expectedRevision 0 .`
+    await expect(parseArrangementClipRemove(noId)).rejects.toThrow(ParseError)
+  })
+})
+
+describe('live control codecs', () => {
+  it('parses a batch parameter set', async () => {
+    const parameters = [{ id: 0, normalizedValue: 0.25 }]
+    const turtle = `
+@prefix trn: <${TRN}> .
+[] a trn:SetParametersBatch ;
+   trn:expectedRevision 1 ;
+   trn:nodeId "synth" ;
+   trn:parametersJson ${JSON.stringify(JSON.stringify(parameters))} ;
+   trn:sampleOffset 64 .
+`
+    await expect(parseParametersBatch(turtle)).resolves.toEqual({
+      expectedRevision: 1, nodeId: 'synth', parameters, sampleOffset: 64
+    })
+  })
+
+  it('parses a JigDAW describe request with a default id', async () => {
+    const turtle = `@prefix trn: <${TRN}> . [] a trn:DescribeJigdawPlugin ; trn:iri "file:///plugins/pulse/" .`
+    await expect(parseJigdawDescribe(turtle)).resolves.toEqual({ iri: 'file:///plugins/pulse/', id: 'jigdaw-1' })
+  })
+
+  it('parses capture and render requests', async () => {
+    const capture = await parseCaptureMidi(`
+@prefix trn: <${TRN}> .
+[] a trn:CaptureProjectMidi ;
+   trn:filePath "capture.mid" ;
+   trn:durationBeats 4 .
+`)
+    expect(capture).toEqual({ filePath: 'capture.mid', durationBeats: 4 })
+    const captureDefault = await parseCaptureMidi(
+      `@prefix trn: <${TRN}> . [] a trn:CaptureProjectMidi ; trn:filePath "c.mid" .`)
+    expect(captureDefault.durationBeats).toBe(64)
+    const render = await parseRenderMidi(
+      `@prefix trn: <${TRN}> . [] a trn:RenderMidi ; trn:filePath "out.mid" .`)
+    expect(render).toEqual({ filePath: 'out.mid' })
+  })
+
+  it('throws ParseError on missing subjects and payloads', async () => {
+    const other = `@prefix trn: <${TRN}> . [] a trn:Other .`
+    await expect(parseParametersBatch(other)).rejects.toThrow(ParseError)
+    await expect(parseJigdawDescribe(other)).rejects.toThrow(ParseError)
+    await expect(parseCaptureMidi(other)).rejects.toThrow(ParseError)
+    await expect(parseRenderMidi(other)).rejects.toThrow(ParseError)
+    const noNode = `@prefix trn: <${TRN}> . [] a trn:SetParametersBatch ; trn:expectedRevision 0 ; trn:parametersJson "[]" .`
+    await expect(parseParametersBatch(noNode)).rejects.toThrow(ParseError)
+    const noParams = `@prefix trn: <${TRN}> . [] a trn:SetParametersBatch ; trn:expectedRevision 0 ; trn:nodeId "n" .`
+    await expect(parseParametersBatch(noParams)).rejects.toThrow(ParseError)
+    const noIri = `@prefix trn: <${TRN}> . [] a trn:DescribeJigdawPlugin .`
+    await expect(parseJigdawDescribe(noIri)).rejects.toThrow(ParseError)
+    const noFile = `@prefix trn: <${TRN}> . [] a trn:CaptureProjectMidi .`
+    await expect(parseCaptureMidi(noFile)).rejects.toThrow(ParseError)
+    const noRenderFile = `@prefix trn: <${TRN}> . [] a trn:RenderMidi .`
+    await expect(parseRenderMidi(noRenderFile)).rejects.toThrow(ParseError)
+  })
+})
+
+describe('parseRenderAudio', () => {
+  it('parses file path with optional render options', async () => {
+    const turtle = `
+@prefix trn: <${TRN}> .
+[] a trn:RenderAudio ;
+   trn:filePath "bounce.wav" ;
+   trn:totalBeats 16 ;
+   trn:tempo 128 ;
+   trn:sampleRate 44100 ;
+   trn:blockSize 512 .
+`
+    await expect(parseRenderAudio(turtle)).resolves.toEqual({
+      filePath: 'bounce.wav', totalBeats: 16, tempo: 128, sampleRate: 44100, blockSize: 512
+    })
+  })
+
+  it('leaves absent options undefined for control defaults', async () => {
+    const turtle = `@prefix trn: <${TRN}> . [] a trn:RenderAudio ; trn:filePath "b.wav" .`
+    await expect(parseRenderAudio(turtle)).resolves.toEqual({
+      filePath: 'b.wav', totalBeats: undefined, tempo: undefined,
+      sampleRate: undefined, blockSize: undefined
+    })
+  })
+
+  it('throws ParseError on missing subject and file path', async () => {
+    await expect(parseRenderAudio(`@prefix trn: <${TRN}> . [] a trn:Other .`)).rejects.toThrow(ParseError)
+    await expect(parseRenderAudio(`@prefix trn: <${TRN}> . [] a trn:RenderAudio .`)).rejects.toThrow(ParseError)
   })
 })
 

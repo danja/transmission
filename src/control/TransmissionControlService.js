@@ -368,6 +368,24 @@ export class TransmissionControlService {
     return writeSmf(target, this.project.arrangement.toJSON(), this.project.transport.toJSON())
   }
 
+  async renderAudio({ filePath, totalBeats, tempo, sampleRate = 48000, blockSize = 1024 }) {
+    this.#requireProject()
+    this.#requireStopped()
+    if (!this.engine) throw new Error('Native engine is required for audio render; start the MCP server with --native-addon')
+    if (typeof filePath !== 'string' || !filePath.toLowerCase().endsWith('.wav')) {
+      throw new Error('renderAudio filePath must end in .wav (the offline renderer writes a WAV container)')
+    }
+    const beats = totalBeats ?? this.project.arrangement.toJSON().lengthBeats
+    if (!Number.isFinite(beats) || beats <= 0) {
+      throw new RangeError('totalBeats must be positive (the arrangement length is 0; pass totalBeats explicitly)')
+    }
+    // The NAPI call blocks the event loop for the whole render.
+    if (beats > 256) throw new RangeError('totalBeats must not exceed 256 (render longer pieces in sections)')
+    const target = this.#allowedPath(filePath)
+    const result = this.engine.renderAudio({ outputPath: target, totalBeats: beats, tempo, sampleRate, blockSize })
+    return { filePath: target, ...result }
+  }
+
   dispose() {
     this.engine?.dispose()
   }
@@ -441,6 +459,10 @@ export function applyGraphOperations(definition, operations) {
         if (!next.nodes.some(node => node.id === operation.nodeId)) throw new Error(`Node does not exist: ${operation.nodeId}`)
         next.nodes = next.nodes.filter(node => node.id !== operation.nodeId)
         next.connections = next.connections.filter(connection => connection.from !== operation.nodeId && connection.to !== operation.nodeId)
+        if (Array.isArray(next.metadata.midiMappings)) {
+          next.metadata.midiMappings = next.metadata.midiMappings
+            .filter(mapping => mapping?.targetNodeId !== operation.nodeId)
+        }
         break
       case 'addConnection':
         next.connections.push(operation.connection)
@@ -451,14 +473,69 @@ export function applyGraphOperations(definition, operations) {
         next.connections.splice(index, 1)
         break
       }
-      case 'setProjectMetadata':
-        next.metadata = { ...next.metadata, ...(operation.metadata ?? {}) }
+      case 'setProjectMetadata': {
+        const merged = { ...next.metadata, ...(operation.metadata ?? {}) }
+        if (merged.midiMappings !== undefined) {
+          if (!Array.isArray(merged.midiMappings)) throw new TypeError('midiMappings must be an array')
+          merged.midiMappings = merged.midiMappings.map(mapping => validateMidiMapping(mapping, next.nodes))
+        }
+        next.metadata = merged
         break
+      }
+      case 'addMidiMapping': {
+        const mapping = validateMidiMapping(operation.mapping, next.nodes)
+        const mappings = Array.isArray(next.metadata.midiMappings) ? [...next.metadata.midiMappings] : []
+        if (mappings.some(existing => midiMappingEquals(existing, mapping))) {
+          throw new Error(`MIDI mapping already exists: channel ${mapping.channel} controller ${mapping.controller} -> ${mapping.targetNodeId} parameter ${mapping.parameterId}`)
+        }
+        mappings.push(mapping)
+        next.metadata = { ...next.metadata, midiMappings: mappings }
+        break
+      }
+      case 'removeMidiMapping': {
+        const mapping = validateMidiMapping(operation.mapping, next.nodes, { requireTargetNode: false })
+        const mappings = Array.isArray(next.metadata.midiMappings) ? [...next.metadata.midiMappings] : []
+        const index = mappings.findIndex(existing => midiMappingEquals(existing, mapping))
+        if (index < 0) throw new Error('MIDI mapping does not exist')
+        mappings.splice(index, 1)
+        next.metadata = { ...next.metadata, midiMappings: mappings }
+        break
+      }
       default:
         throw new Error(`Unsupported graph operation: ${operation.type}`)
     }
   }
   return next
+}
+
+function midiMappingEquals(left, right) {
+  return left?.targetNodeId === right.targetNodeId &&
+    left?.parameterId === right.parameterId &&
+    (left?.channel ?? -1) === right.channel &&
+    left?.controller === right.controller &&
+    (left?.consume ?? true) === right.consume
+}
+
+// Bounds mirror the native interchange decoder (scripts/native-ui-project.js):
+// channel -1 means any channel, otherwise 0–15; controller is a MIDI CC 0–127.
+function validateMidiMapping(mapping, nodes, { requireTargetNode = true } = {}) {
+  if (!mapping || typeof mapping !== 'object') throw new TypeError('MIDI mapping must be an object')
+  const { targetNodeId, parameterId, channel = -1, controller, consume = true } = mapping
+  if (!targetNodeId || typeof targetNodeId !== 'string') throw new TypeError('MIDI mapping targetNodeId is required')
+  if (requireTargetNode && !nodes.some(node => node.id === targetNodeId)) {
+    throw new Error(`MIDI mapping targets unknown node: ${targetNodeId}`)
+  }
+  if (!Number.isInteger(parameterId) || parameterId < 0) {
+    throw new RangeError(`MIDI mapping parameterId must be a non-negative integer: ${parameterId}`)
+  }
+  if (!Number.isInteger(channel) || channel < -1 || channel > 15) {
+    throw new RangeError(`MIDI mapping channel must be -1 (any) or 0–15: ${channel}`)
+  }
+  if (!Number.isInteger(controller) || controller < 0 || controller > 127) {
+    throw new RangeError(`MIDI mapping controller must be 0–127: ${controller}`)
+  }
+  if (typeof consume !== 'boolean') throw new TypeError('MIDI mapping consume must be a boolean')
+  return { targetNodeId, parameterId, channel, controller, consume }
 }
 
 function connectionMatches(left, right) {

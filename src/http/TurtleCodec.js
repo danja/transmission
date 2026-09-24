@@ -106,6 +106,16 @@ function decodeOperation(dataset, opNode) {
     const metadataJson = stringValue(getOne(dataset, opNode, `${TRN}metadataJson`))
     return { type: 'setProjectMetadata', metadata: metadataJson ? JSON.parse(metadataJson) : {} }
   }
+  if (lcType === 'addMidiMapping') {
+    const mappingJson = stringValue(getOne(dataset, opNode, `${TRN}mappingJson`))
+    if (!mappingJson) throw new ParseError('trn:AddMidiMapping requires trn:mappingJson')
+    return { type: 'addMidiMapping', mapping: JSON.parse(mappingJson) }
+  }
+  if (lcType === 'removeMidiMapping') {
+    const mappingJson = stringValue(getOne(dataset, opNode, `${TRN}mappingJson`))
+    if (!mappingJson) throw new ParseError('trn:RemoveMidiMapping requires trn:mappingJson')
+    return { type: 'removeMidiMapping', mapping: JSON.parse(mappingJson) }
+  }
   throw new ParseError(`Unknown operation type: ${type}`)
 }
 
@@ -152,6 +162,99 @@ export async function parseProjectSave(turtleBody) {
   if (!subject) throw new ParseError('Body must contain a trn:SaveProject subject')
   const filePath = stringValue(getOne(dataset, subject, `${TRN}filePath`))
   return { filePath: filePath ?? null }
+}
+
+export async function parseArrangementUpdate(turtleBody) {
+  const dataset = await parseTurtle(turtleBody)
+  const subject = findSubjectOfType(dataset, `${TRN}ArrangementUpdate`)
+  if (!subject) throw new ParseError('Body must contain a trn:ArrangementUpdate subject')
+  const expectedRevision = numericValue(getOne(dataset, subject, `${TRN}expectedRevision`))
+  const lengthBeats = numericValue(getOne(dataset, subject, `${TRN}lengthBeats`))
+  const midiClipsJson = stringValue(getOne(dataset, subject, `${TRN}midiClipsJson`))
+  const gainLanesJson = stringValue(getOne(dataset, subject, `${TRN}gainLanesJson`))
+  return {
+    expectedRevision,
+    ...(lengthBeats !== undefined ? { lengthBeats } : {}),
+    ...(midiClipsJson !== undefined ? { midiClips: JSON.parse(midiClipsJson) } : {}),
+    ...(gainLanesJson !== undefined ? { gainLanes: JSON.parse(gainLanesJson) } : {})
+  }
+}
+
+export async function parseArrangementClipAdd(turtleBody) {
+  const dataset = await parseTurtle(turtleBody)
+  const subject = findSubjectOfType(dataset, `${TRN}AddArrangementClip`)
+  if (!subject) throw new ParseError('Body must contain a trn:AddArrangementClip subject')
+  const expectedRevision = numericValue(getOne(dataset, subject, `${TRN}expectedRevision`))
+  const clipJson = stringValue(getOne(dataset, subject, `${TRN}clipJson`))
+  if (!clipJson) throw new ParseError('trn:AddArrangementClip requires trn:clipJson')
+  return { expectedRevision, clip: JSON.parse(clipJson) }
+}
+
+export async function parseArrangementClipRemove(turtleBody) {
+  const dataset = await parseTurtle(turtleBody)
+  const subject = findSubjectOfType(dataset, `${TRN}RemoveArrangementClip`)
+  if (!subject) throw new ParseError('Body must contain a trn:RemoveArrangementClip subject')
+  const expectedRevision = numericValue(getOne(dataset, subject, `${TRN}expectedRevision`))
+  const clipId = stringValue(getOne(dataset, subject, `${TRN}clipId`))
+  if (!clipId) throw new ParseError('trn:RemoveArrangementClip requires trn:clipId')
+  return { expectedRevision, clipId }
+}
+
+export async function parseParametersBatch(turtleBody) {
+  const dataset = await parseTurtle(turtleBody)
+  const subject = findSubjectOfType(dataset, `${TRN}SetParametersBatch`)
+  if (!subject) throw new ParseError('Body must contain a trn:SetParametersBatch subject')
+  const expectedRevision = numericValue(getOne(dataset, subject, `${TRN}expectedRevision`))
+  const nodeId = stringValue(getOne(dataset, subject, `${TRN}nodeId`))
+  if (!nodeId) throw new ParseError('trn:SetParametersBatch requires trn:nodeId')
+  const parametersJson = stringValue(getOne(dataset, subject, `${TRN}parametersJson`))
+  if (!parametersJson) throw new ParseError('trn:SetParametersBatch requires trn:parametersJson')
+  const sampleOffset = numericValue(getOne(dataset, subject, `${TRN}sampleOffset`)) ?? 0
+  return { expectedRevision, nodeId, parameters: JSON.parse(parametersJson), sampleOffset }
+}
+
+export async function parseJigdawDescribe(turtleBody) {
+  const dataset = await parseTurtle(turtleBody)
+  const subject = findSubjectOfType(dataset, `${TRN}DescribeJigdawPlugin`)
+  if (!subject) throw new ParseError('Body must contain a trn:DescribeJigdawPlugin subject')
+  const iri = stringValue(getOne(dataset, subject, `${TRN}iri`))
+  if (!iri) throw new ParseError('trn:DescribeJigdawPlugin requires trn:iri')
+  const id = stringValue(getOne(dataset, subject, `${TRN}id`)) ?? 'jigdaw-1'
+  return { iri, id }
+}
+
+export async function parseCaptureMidi(turtleBody) {
+  const dataset = await parseTurtle(turtleBody)
+  const subject = findSubjectOfType(dataset, `${TRN}CaptureProjectMidi`)
+  if (!subject) throw new ParseError('Body must contain a trn:CaptureProjectMidi subject')
+  const filePath = stringValue(getOne(dataset, subject, `${TRN}filePath`))
+  if (!filePath) throw new ParseError('trn:CaptureProjectMidi requires trn:filePath')
+  const durationBeats = numericValue(getOne(dataset, subject, `${TRN}durationBeats`)) ?? 64
+  return { filePath, durationBeats }
+}
+
+export async function parseRenderMidi(turtleBody) {
+  const dataset = await parseTurtle(turtleBody)
+  const subject = findSubjectOfType(dataset, `${TRN}RenderMidi`)
+  if (!subject) throw new ParseError('Body must contain a trn:RenderMidi subject')
+  const filePath = stringValue(getOne(dataset, subject, `${TRN}filePath`))
+  if (!filePath) throw new ParseError('trn:RenderMidi requires trn:filePath')
+  return { filePath }
+}
+
+export async function parseRenderAudio(turtleBody) {
+  const dataset = await parseTurtle(turtleBody)
+  const subject = findSubjectOfType(dataset, `${TRN}RenderAudio`)
+  if (!subject) throw new ParseError('Body must contain a trn:RenderAudio subject')
+  const filePath = stringValue(getOne(dataset, subject, `${TRN}filePath`))
+  if (!filePath) throw new ParseError('trn:RenderAudio requires trn:filePath')
+  return {
+    filePath,
+    totalBeats: numericValue(getOne(dataset, subject, `${TRN}totalBeats`)),
+    tempo: numericValue(getOne(dataset, subject, `${TRN}tempo`)),
+    sampleRate: numericValue(getOne(dataset, subject, `${TRN}sampleRate`)),
+    blockSize: numericValue(getOne(dataset, subject, `${TRN}blockSize`))
+  }
 }
 
 export async function parseNewProject(turtleBody) {

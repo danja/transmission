@@ -3,7 +3,8 @@
 // Used by the MCP server when --live connects it to a running transmission-live server.
 
 import { request as httpRequest } from 'node:http'
-import { parseTurtle, graphFromDataset, transportFromDataset } from '../rdf/TransmissionRdf.js'
+import { parseTurtle, graphFromDataset, transportFromDataset, serializeGraph } from '../rdf/TransmissionRdf.js'
+import { Graph } from '../model/Graph.js'
 
 const TRN = 'http://purl.org/stuff/transmissions/'
 
@@ -31,6 +32,58 @@ export class TransmissionHttpClient {
 
   async diagnostics() {
     return this._get('/diagnostics', 'json')
+  }
+
+  async peaks() {
+    return this._get('/peaks', 'json')
+  }
+
+  async getArrangement() {
+    return this._get('/arrangement', 'json')
+  }
+
+  async updateArrangement({ expectedRevision, lengthBeats, midiClips, gainLanes }) {
+    const lines = [
+      `@prefix trn: <${TRN}> .`,
+      '',
+      '[] a trn:ArrangementUpdate ;',
+      `    trn:expectedRevision ${expectedRevision} .`
+    ]
+    if (lengthBeats !== undefined) {
+      lines[lines.length - 1] = lines[lines.length - 1].replace(/ \.$/, ' ;')
+      lines.push(`    trn:lengthBeats ${lengthBeats} .`)
+    }
+    if (midiClips !== undefined) {
+      lines[lines.length - 1] = lines[lines.length - 1].replace(/ \.$/, ' ;')
+      lines.push(`    trn:midiClipsJson ${turtleLiteral(JSON.stringify(midiClips))} .`)
+    }
+    if (gainLanes !== undefined) {
+      lines[lines.length - 1] = lines[lines.length - 1].replace(/ \.$/, ' ;')
+      lines.push(`    trn:gainLanesJson ${turtleLiteral(JSON.stringify(gainLanes))} .`)
+    }
+    return this._post('/arrangement/update', lines.join('\n') + '\n', 'text/turtle')
+  }
+
+  async addArrangementClip({ expectedRevision, clip }) {
+    const turtle = [
+      `@prefix trn: <${TRN}> .`,
+      '',
+      '[] a trn:AddArrangementClip ;',
+      `    trn:expectedRevision ${expectedRevision} ;`,
+      `    trn:clipJson ${turtleLiteral(JSON.stringify(clip))} .`
+    ].join('\n') + '\n'
+    return this._post('/arrangement/clips/add', turtle, 'text/turtle')
+  }
+
+  async removeArrangementClip({ expectedRevision, clipId }) {
+    const turtle = [
+      `@prefix trn: <${TRN}> .`,
+      '',
+      '[] a trn:RemoveArrangementClip ;',
+      `    trn:expectedRevision ${expectedRevision} ;`,
+      `    trn:clipId ${turtleLiteral(clipId)} .`
+    ].join('\n') + '\n'
+    return this._post('/arrangement/clips/remove', turtle, 'text/turtle')
   }
 
   async plugins({ installedOnly = false } = {}) {
@@ -115,6 +168,55 @@ export class TransmissionHttpClient {
     return this._post(`/parameters/${encodeURIComponent(nodeId)}/${parameterId}`, turtle, 'text/turtle')
   }
 
+  async setParameters({ expectedRevision, nodeId, parameters, sampleOffset = 0 }) {
+    const turtle = [
+      `@prefix trn: <${TRN}> .`,
+      '',
+      '[] a trn:SetParametersBatch ;',
+      `    trn:expectedRevision ${expectedRevision} ;`,
+      `    trn:nodeId ${turtleLiteral(nodeId)} ;`,
+      `    trn:parametersJson ${turtleLiteral(JSON.stringify(parameters))} ;`,
+      `    trn:sampleOffset ${sampleOffset} .`
+    ].join('\n') + '\n'
+    return this._post('/parameters/batch', turtle, 'text/turtle')
+  }
+
+  async describeJigdawPlugin(iri, { id = 'jigdaw-1' } = {}) {
+    const turtle = [
+      `@prefix trn: <${TRN}> .`,
+      '',
+      '[] a trn:DescribeJigdawPlugin ;',
+      `    trn:iri ${turtleLiteral(iri)} ;`,
+      `    trn:id ${turtleLiteral(id)} .`
+    ].join('\n') + '\n'
+    return this._post('/plugins/jigdaw/describe', turtle, 'text/turtle')
+  }
+
+  async captureProjectMidi({ filePath, durationBeats = 64 }) {
+    const turtle = [
+      `@prefix trn: <${TRN}> .`,
+      '',
+      '[] a trn:CaptureProjectMidi ;',
+      `    trn:filePath ${turtleLiteral(filePath)} ;`,
+      `    trn:durationBeats ${durationBeats} .`
+    ].join('\n') + '\n'
+    return this._post('/projects/capture-midi', turtle, 'text/turtle')
+  }
+
+  async renderMidi(filePath) {
+    const turtle = actionTurtle('RenderMidi', { filePath })
+    return this._post('/arrangement/render-midi', turtle, 'text/turtle')
+  }
+
+  async renderAudio({ filePath, totalBeats, tempo, sampleRate, blockSize }) {
+    const props = { filePath }
+    if (totalBeats !== undefined) props.totalBeats = totalBeats
+    if (tempo !== undefined) props.tempo = tempo
+    if (sampleRate !== undefined) props.sampleRate = sampleRate
+    if (blockSize !== undefined) props.blockSize = blockSize
+    return this._post('/arrangement/render-audio', actionTurtle('RenderAudio', props), 'text/turtle')
+  }
+
   async scanPlugins() {
     return this._post('/plugins/scan', '', 'text/turtle')
   }
@@ -197,25 +299,27 @@ function encodeOperation(op) {
   if (op.type === 'setProjectMetadata') {
     return `[ a trn:SetProjectMetadata ; trn:metadataJson ${turtleLiteral(JSON.stringify(op.metadata ?? {}))} ]`
   }
+  if (op.type === 'addMidiMapping') {
+    return `[ a trn:AddMidiMapping ; trn:mappingJson ${turtleLiteral(JSON.stringify(op.mapping))} ]`
+  }
+  if (op.type === 'removeMidiMapping') {
+    return `[ a trn:RemoveMidiMapping ; trn:mappingJson ${turtleLiteral(JSON.stringify(op.mapping))} ]`
+  }
   throw new Error(`Unsupported operation type: ${op.type}`)
 }
 
-function projectDefinitionToTurtle(definition) {
-  // For new project, reuse the existing serializer via dynamic import would require async.
-  // Instead, send the definition as trn:NewProject with a JSON payload that the server can parse.
-  // The server's parseNewProject handles trn:Transmission subjects, so embed one here.
-  const id = definition.id ?? `${TRN}main`
-  const nodeIds = (definition.nodes ?? []).map(n => `<${n.id}>`).join(' ')
-  const lines = [
-    `@prefix : <${TRN}> .`,
-    '@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .',
-    '',
-    `<${id}> a :Transmission ;`,
-    `    :pipe ( ${nodeIds} ) .`
-  ]
-  // Minimal encoding — for full fidelity, callers should send a serialized Turtle file.
-  // The MCP layer always has the full project available as Turtle via control.projectTurtle().
-  return lines.join('\n') + '\n'
+export function projectDefinitionToTurtle(definition) {
+  // Serialize with the canonical RDF serializer so node types, settings,
+  // ports, and connections survive the POST /projects/new round trip.
+  // parseNewProject rebuilds via graphFromDataset, which requires typed nodes.
+  const graph = new Graph({
+    id: definition.id ?? `${TRN}main`,
+    label: definition.label ?? '',
+    nodes: definition.nodes ?? [],
+    connections: definition.connections ?? [],
+    metadata: definition.metadata ?? {}
+  })
+  return serializeGraph(graph, definition.transport ?? null, definition.arrangement ?? null)
 }
 
 async function parseTurtleStatus(body) {

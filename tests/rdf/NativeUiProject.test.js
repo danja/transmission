@@ -61,7 +61,7 @@ describe('native UI Turtle project helper', () => {
     expect(turtle).toContain(':controller 19')
 
     const restored = await runHelper('load', filePath)
-    expect(restored).toContain('TRANSMISSION_UI\t8')
+    expect(restored).toContain('TRANSMISSION_UI\t9')
     expect(restored).toContain('TRANSPORT\t132\t8\t1')
     expect(restored).toContain(`NODE\t${hex('drumgen')}`)
     expect(restored).toContain(`EDGE\t${hex('drumgen')}\t${hex('drumkit')}\t1\t0\t0`)
@@ -143,6 +143,54 @@ describe('native UI Turtle project helper', () => {
 
     const restored = await runHelper('load', filePath)
     expect(restored).toContain(`NODE\t${hex('pulse')}\t${hex('Pulse')}\t9\t0\t2\t1\t0\t120\t60\t${hex(iri)}`)
+  }, 15_000)
+
+  it('round trips JigDAW asset overrides through interchange and Turtle', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'transmission-native-ui-'))
+    temporaryDirectories.push(directory)
+    const filePath = join(directory, 'assets.ttl')
+    await writeFile(filePath, [
+      '@prefix : <http://purl.org/stuff/transmissions/> .',
+      '@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .',
+      ':main a :Transmission ;',
+      '    :pipe ( :pulse :system-output ) ;',
+      '    :connections ( [ :from :pulse ; :to :system-output ; :kind "audio" ; :fromPort 0 ; :toPort 0 ] ) .',
+      ':pulse a :JigdawPlugin ;',
+      '    :audioOutputs 2 ; :midiInputs 1 ;',
+      '    :settings [ :pluginIri "https://strandz.it/jigdaw/plugins/pulse/" ] ;',
+      '    :jigdawAssetOverrides ( [ :assetKey "nam" ; :assetPath "/models/amp.nam" ] [ :assetKey "ir" ; :assetPath "/models/cab.wav" ] ) .',
+      ':system-output a :AudioOutput ;',
+      '    :audioInputs 2 .',
+      ''
+    ].join('\n'))
+
+    const interchange = await runHelper('load', filePath)
+    expect(interchange).toContain('TRANSMISSION_UI\t9')
+    expect(interchange).toContain(`JIGDAW_ASSET\t${hex('pulse')}\t${hex('ir')}\t${hex('/models/cab.wav')}`)
+    expect(interchange).toContain(`JIGDAW_ASSET\t${hex('pulse')}\t${hex('nam')}\t${hex('/models/amp.nam')}`)
+
+    await runHelper('save', filePath, interchange)
+    const turtle = await readFile(filePath, 'utf8')
+    expect(turtle).toContain(':jigdawAssetOverrides')
+    expect(turtle).toContain(':assetKey "nam"')
+    expect(turtle).toContain(':assetPath "/models/amp.nam"')
+  }, 15_000)
+
+  it('rejects asset overrides with an empty path', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'transmission-native-ui-'))
+    temporaryDirectories.push(directory)
+    const filePath = join(directory, 'bad-assets.ttl')
+    await writeFile(filePath, [
+      '@prefix : <http://purl.org/stuff/transmissions/> .',
+      '@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .',
+      ':main a :Transmission ;',
+      '    :pipe ( :pulse ) .',
+      ':pulse a :JigdawPlugin ;',
+      '    :jigdawAssetOverrides ( [ :assetKey "nam" ] ) .',
+      ''
+    ].join('\n'))
+
+    await expect(runHelper('load', filePath)).rejects.toThrow()
   }, 15_000)
 
   it('rejects a Turtle file without a Transmission project', async () => {

@@ -22,6 +22,7 @@ export const vocabulary = Object.freeze({
     points: `${TRN}points`, valueDb: `${TRN}valueDb`, shape: `${TRN}shape`,
     audioClipNode: `${TRN}AudioClipNode`, midiClipNode: `${TRN}MidiClipNode`,
     jigdawPlugin: `${TRN}JigdawPlugin`, pluginPath: `${TRN}pluginPath`, pluginIri: `${TRN}pluginIri`,
+    jigdawAssetOverrides: `${TRN}jigdawAssetOverrides`, assetKey: `${TRN}assetKey`, assetPath: `${TRN}assetPath`,
     pluginProfile: `${TRN}PluginProfile`, discoveredPlugin: `${TRN}DiscoveredPlugin`,
     bundleName: `${TRN}bundleName`, vstClassId: `${TRN}vstClassId`, vendor: `${TRN}vendor`,
     role: `${TRN}role`, produces: `${TRN}produces`, accepts: `${TRN}accepts`, requires: `${TRN}requires`,

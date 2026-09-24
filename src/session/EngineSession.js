@@ -98,6 +98,19 @@ export class EngineSession {
     return this.bridge.captureMidi(this.project.compiledGraph, { durationBeats, tempo })
   }
 
+  renderAudio({ outputPath, totalBeats, tempo, sampleRate = 48000, blockSize = 1024 }) {
+    if (this.state !== 'loaded') throw new Error('A compiled project must be loaded and stopped before rendering audio')
+    const transport = this.project.transport.toJSON()
+    return this.bridge.renderAudio(this.project.compiledGraph, {
+      outputPath,
+      totalBeats,
+      tempo: tempo ?? transport.tempoMap?.[0]?.bpm ?? 120,
+      sampleRate,
+      blockSize,
+      arrangement: this.project.arrangement.toJSON()
+    })
+  }
+
   synchronizeTransport() {
     if (!this.engineCreated) throw new Error('A native engine must be created before configuring transport')
     this.#configureTransport()

@@ -44,8 +44,11 @@ int main() {
                           {{12.0, 0.0, true}, {16.0, -120.0, true}}}};
     project.midiMappings = {{"master-gain", 0, -1, 19, true},
                             {"drumgen", 42, 0, 23, false}};
+    // A JigDAW node with local files loaded into user-replaceable assets.
+    project.nodes[project.nodes.size() - 2].jigdawAssetOverrides = {
+        {"ir", "/models/cab.wav"}, {"nam", "/models/amp.nam"}};
     const auto encoded = transmission::encodeUiProject(project);
-    assert(encoded.starts_with("TRANSMISSION_UI\t8\n"));
+    assert(encoded.starts_with("TRANSMISSION_UI\t9\n"));
     transmission::UiProject decoded;
     std::string error;
     assert(transmission::decodeUiProject(encoded, decoded, error));
@@ -78,6 +81,11 @@ int main() {
     assert(jigdaw.pluginPath == "https://strandz.it/jigdaw/plugins/pulse/");
     assert(jigdaw.audioOutputs == 2);
     assert(jigdaw.midiInputs == 1);
+    assert(jigdaw.jigdawAssetOverrides.size() == 2);
+    assert(jigdaw.jigdawAssetOverrides[0].key == "ir");
+    assert(jigdaw.jigdawAssetOverrides[0].path == "/models/cab.wav");
+    assert(jigdaw.jigdawAssetOverrides[1].key == "nam");
+    assert(jigdaw.jigdawAssetOverrides[1].path == "/models/amp.nam");
 
     assert(!transmission::decodeUiProject("not a project\n", decoded, error));
     assert(!transmission::decodeUiProject(
@@ -91,6 +99,22 @@ int main() {
         "TRANSMISSION_UI\t5\n"
         "NODE\t6761696e\t6761696e\t6\t2\t2\t1\t0\t0\t0\t-\n"
         "MIDI_MAP\t6761696e\t0\t16\t19\t1\n"
+        "END\n", decoded, error));
+    assert(!transmission::decodeUiProject(
+        "TRANSMISSION_UI\t9\n"
+        "NODE\t6761696e\t6761696e\t6\t2\t2\t1\t0\t0\t0\t-\n"
+        "JIGDAW_ASSET\t7a7a\t6e616d\t2f78\n"
+        "END\n", decoded, error));
+    assert(!transmission::decodeUiProject(
+        "TRANSMISSION_UI\t9\n"
+        "NODE\t6761696e\t6761696e\t6\t2\t2\t1\t0\t0\t0\t-\n"
+        "JIGDAW_ASSET\t6761696e\t\t2f78\n"
+        "END\n", decoded, error));
+    assert(!transmission::decodeUiProject(
+        "TRANSMISSION_UI\t9\n"
+        "NODE\t6761696e\t6761696e\t6\t2\t2\t1\t0\t0\t0\t-\n"
+        "JIGDAW_ASSET\t6761696e\t6e616d\t2f78\n"
+        "JIGDAW_ASSET\t6761696e\t6e616d\t2f79\n"
         "END\n", decoded, error));
     assert(!transmission::decodeUiProject(
         "TRANSMISSION_UI\t4\n"

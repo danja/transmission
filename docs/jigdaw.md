@@ -154,6 +154,10 @@ retune on a parameter write.
   JigDAW plugin's parameters but not any state it keeps beyond them.
 - No plugin-supplied UI. `jig:ui` is a web page and this host has no JavaScript engine, so
   the panel is generated from the profile rather than fetched.
-- No latency reporting, and no system exclusive: the ABI carries neither.
+- No latency compensation, and no system exclusive. The module ABI carries no
+  latency reporting; the profile's `jig:latencyFrames` is surfaced by
+  inspection (`latencyFrames` in the topology and in `jigdaw_describe`) but
+  nothing compensates it — the engine has no delay-compensation framework at
+  all, so per-plugin compensation would be architecture, not a fix.
 - Integrity is verified against the digest in the profile and there is no way to skip it, so
   a plugin whose module has been rebuilt without its profile being regenerated is refused.

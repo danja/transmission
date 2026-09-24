@@ -1,6 +1,7 @@
 #include "transmission/AudioClipProcessor.h"
 #include "transmission/AudioEngine.h"
 #include "transmission/MidiClipProcessor.h"
+#include "transmission/OfflineAudioRenderer.h"
 #include "transmission/RoutedAudioGraph.h"
 #ifdef TRANSMISSION_NAPI_WITH_JACK
 #include "transmission/JackAudioDevice.h"
@@ -769,10 +770,301 @@ napi_value captureMidi(napi_env env, napi_callback_info info) {
     }
     return result;
 }
+
+transmission::RuntimeNodeKind snapshotKindForType(const std::string& type) {
+    using transmission::RuntimeNodeKind;
+    if (isJigdawNode(type)) return RuntimeNodeKind::JigdawPlugin;
+    if (type == "AudioClipNode" ||
+        type == "http://purl.org/stuff/transmissions/AudioClipNode") return RuntimeNodeKind::AudioClip;
+    if (type == "MidiClipNode" ||
+        type == "http://purl.org/stuff/transmissions/MidiClipNode") return RuntimeNodeKind::MidiClip;
+    if (type == "MidiInput" ||
+        type == "http://purl.org/stuff/transmissions/MidiInput") return RuntimeNodeKind::MidiInput;
+    if (type == "MidiOutput" ||
+        type == "http://purl.org/stuff/transmissions/MidiOutput") return RuntimeNodeKind::MidiOutput;
+    if (type == "AudioInput" || type == "system-input" ||
+        type == "http://purl.org/stuff/transmissions/AudioInput") return RuntimeNodeKind::SystemInput;
+    if (type == "AudioOutput" || type == "system-output" ||
+        type == "http://purl.org/stuff/transmissions/AudioOutput") return RuntimeNodeKind::SystemOutput;
+    return RuntimeNodeKind::Plugin;
+}
+
+// Processor dispatch mirrors uiProcessorFactory() in native_graph_ui_main.cpp:
+// kind selects the processor family, and a Plugin node with a resource path
+// hosts it (VST3/JigDAW/clip) while one without stays a pass-through.
+std::unique_ptr<transmission::AudioProcessor> makeSnapshotProcessor(
+    const transmission::RuntimeGraphNode& node,
+    const transmission::AudioDeviceConfig& config, std::string& error) {
+    using transmission::RuntimeNodeKind;
+    if (node.kind == RuntimeNodeKind::MidiInput || node.kind == RuntimeNodeKind::MidiOutput)
+        return std::make_unique<transmission::MidiEndpointProcessor>();
+    if (node.kind == RuntimeNodeKind::AudioClip) {
+        auto proc = std::make_unique<transmission::AudioClipProcessor>();
+        if (!proc->load(node.pluginPath, config.sampleRate, error)) return nullptr;
+        return proc;
+    }
+    if (node.kind == RuntimeNodeKind::MidiClip) {
+        auto proc = std::make_unique<transmission::MidiClipProcessor>();
+        if (!proc->load(node.pluginPath, error)) return nullptr;
+        return proc;
+    }
+    if (node.kind == RuntimeNodeKind::JigdawPlugin) {
+#ifdef TRANSMISSION_NAPI_WITH_JIGDAW
+        auto processor = std::make_unique<transmission::JigdawProcessor>();
+        if (!processor->initialize(node.pluginPath, config.blockSize,
+                                   config.sampleRate, error,
+                                   node.jigdawAssetOverridePaths))
+            return nullptr;
+        return processor;
+#else
+        error = "JigDAW graph nodes require a JigDAW-enabled N-API build";
+        return nullptr;
+#endif
+    }
+    if (node.kind != RuntimeNodeKind::Plugin || node.pluginPath.empty())
+        return std::make_unique<transmission::PassThroughProcessor>();
+#ifdef TRANSMISSION_NAPI_WITH_VST3
+    auto processor = std::make_unique<transmission::Vst3Processor>();
+    if (!processor->initialize(node.pluginPath, node.audioInputs, node.audioOutputs,
+                               config.blockSize, config.sampleRate, error))
+        return nullptr;
+    return processor;
+#else
+    error = "VST3 graph nodes require a VST3-enabled N-API build";
+    return nullptr;
+#endif
+}
+
+// Offline bounce of a compiled project to a WAV file. Synchronous like
+// captureMidi: rendering runs on the caller's thread (never the audio
+// callback), so long renders block the event loop — the caller bounds
+// totalBeats. No audio device is involved and no engine is required.
+napi_value renderAudio(napi_env env, napi_callback_info info) {
+    napi_value argv[2];
+    std::size_t argc = 2;
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    if (argc < 1) return fail(env, "renderAudio requires a compiled project");
+    napi_value nodes, connections;
+    if (!getArray(env, argv[0], "nodes", nodes) || !getArray(env, argv[0], "connections", connections))
+        return fail(env, "renderAudio: compiled project must contain nodes and connections arrays");
+
+    std::string outputPath;
+    double sampleRate = 48000.0, blockSize = 1024.0, tempo = 120.0, totalBeats = 0.0;
+    double loopStart = 0.0, loopEnd = 0.0;
+    bool loopEnabled = false;
+    const napi_value options = argc >= 2 ? argv[1] : nullptr;
+    if (options != nullptr) {
+        getString(env, options, "outputPath", outputPath);
+        getNumber(env, options, "sampleRate", sampleRate);
+        getNumber(env, options, "blockSize", blockSize);
+        getNumber(env, options, "tempo", tempo);
+        getNumber(env, options, "totalBeats", totalBeats);
+        napi_value loop;
+        if (getObject(env, options, "loop", loop)) {
+            double start = 0.0, end = 0.0;
+            if (getNumber(env, loop, "startBeat", start) && getNumber(env, loop, "endBeat", end) &&
+                start >= 0.0 && end > start) {
+                loopStart = start;
+                loopEnd = end;
+                loopEnabled = true;
+            }
+        }
+    }
+    if (outputPath.empty()) return fail(env, "renderAudio: outputPath is required");
+    if (sampleRate <= 0.0 || blockSize < 1.0 || tempo <= 0.0 || totalBeats <= 0.0)
+        return fail(env, "renderAudio: invalid options");
+
+    transmission::RuntimeGraphSnapshot snapshot;
+    std::uint32_t nodeCount = 0;
+    napi_get_array_length(env, nodes, &nodeCount);
+    for (std::uint32_t index = 0; index < nodeCount; ++index) {
+        napi_value node;
+        napi_get_element(env, nodes, index, &node);
+        std::string id, type;
+        if (!getString(env, node, "id", id)) return fail(env, "renderAudio: node id is required");
+        getString(env, node, "type", type);
+        transmission::RuntimeGraphNode snapshotNode;
+        snapshotNode.id = id;
+        snapshotNode.kind = snapshotKindForType(type);
+        if (snapshotNode.kind == transmission::RuntimeNodeKind::JigdawPlugin) {
+            if (!readSetting(env, node, "pluginIri", snapshotNode.pluginPath))
+                return fail(env, "renderAudio: JigDAW node pluginIri is required");
+        } else {
+            readPluginPath(env, node, snapshotNode.pluginPath);
+        }
+        napi_value ports;
+        double portCount = 0.0;
+        if (getObject(env, node, "ports", ports)) {
+            if (getNumber(env, ports, "audioInputs", portCount) && portCount >= 0.0)
+                snapshotNode.audioInputs = static_cast<std::size_t>(portCount);
+            if (getNumber(env, ports, "audioOutputs", portCount) && portCount >= 0.0)
+                snapshotNode.audioOutputs = static_cast<std::size_t>(portCount);
+        }
+        napi_value paramsArr;
+        bool hasParams = false;
+        if (napi_get_named_property(env, node, "parameters", &paramsArr) == napi_ok)
+            napi_is_array(env, paramsArr, &hasParams);
+        if (hasParams) {
+            std::uint32_t paramCount = 0;
+            napi_get_array_length(env, paramsArr, &paramCount);
+            for (std::uint32_t pi = 0; pi < paramCount; ++pi) {
+                napi_value param;
+                napi_get_element(env, paramsArr, pi, &param);
+                double idValue = 0.0, normValue = 0.0;
+                if (!getNumber(env, param, "id", idValue) || !getNumber(env, param, "normalizedValue", normValue) ||
+                    idValue < 0.0 || normValue < 0.0 || normValue > 1.0)
+                    return fail(env, "renderAudio: invalid node parameter");
+                snapshotNode.parameters.push_back(
+                    {static_cast<std::uint32_t>(idValue), normValue});
+            }
+        }
+        napi_value stateObj;
+        napi_valuetype stateType = napi_undefined;
+        if (napi_get_named_property(env, node, "state", &stateObj) == napi_ok &&
+            napi_typeof(env, stateObj, &stateType) == napi_ok && stateType == napi_object) {
+            std::string componentB64, controllerB64;
+            getString(env, stateObj, "component", componentB64);
+            getString(env, stateObj, "controller", controllerB64);
+            if (!componentB64.empty()) snapshotNode.state.component = decodeBase64(componentB64);
+            if (!controllerB64.empty()) snapshotNode.state.controller = decodeBase64(controllerB64);
+        }
+        snapshot.nodes.push_back(std::move(snapshotNode));
+    }
+
+    const auto noPort = std::numeric_limits<std::size_t>::max();
+    std::uint32_t connectionCount = 0;
+    napi_get_array_length(env, connections, &connectionCount);
+    for (std::uint32_t index = 0; index < connectionCount; ++index) {
+        napi_value connection;
+        napi_get_element(env, connections, index, &connection);
+        std::string kind, from, to;
+        if (!getString(env, connection, "kind", kind) || !getString(env, connection, "from", from) ||
+            !getString(env, connection, "to", to)) return fail(env, "renderAudio: invalid connection");
+        if (kind != "audio" && kind != "midi") return fail(env, "renderAudio: invalid connection");
+        double fromPort = -1.0, toPort = -1.0;
+        getNumber(env, connection, "fromPort", fromPort);
+        getNumber(env, connection, "toPort", toPort);
+        snapshot.connections.push_back({
+            from, to,
+            kind == "audio" ? transmission::RuntimeConnectionKind::Audio
+                            : transmission::RuntimeConnectionKind::Midi,
+            fromPort < 0.0 ? noPort : static_cast<std::size_t>(fromPort),
+            toPort < 0.0 ? noPort : static_cast<std::size_t>(toPort)});
+    }
+
+    if (options != nullptr) {
+        napi_value arrangement, clipsArr;
+        bool hasClips = false;
+        if (getObject(env, options, "arrangement", arrangement) &&
+            napi_get_named_property(env, arrangement, "midiClips", &clipsArr) == napi_ok)
+            napi_is_array(env, clipsArr, &hasClips);
+        if (hasClips) {
+            std::uint32_t clipCount = 0;
+            napi_get_array_length(env, clipsArr, &clipCount);
+            for (std::uint32_t ci = 0; ci < clipCount; ++ci) {
+                napi_value clip;
+                napi_get_element(env, clipsArr, ci, &clip);
+                std::string target;
+                double clipStart = 0.0;
+                napi_value notesArr;
+                bool hasNotes = false;
+                if (!getString(env, clip, "targetNodeId", target) ||
+                    !getNumber(env, clip, "startBeat", clipStart) || clipStart < 0.0 ||
+                    napi_get_named_property(env, clip, "notes", &notesArr) != napi_ok ||
+                    (napi_is_array(env, notesArr, &hasNotes), !hasNotes))
+                    return fail(env, "renderAudio: invalid MIDI clip");
+                std::uint32_t noteCount = 0;
+                napi_get_array_length(env, notesArr, &noteCount);
+                for (std::uint32_t ni = 0; ni < noteCount; ++ni) {
+                    napi_value note;
+                    napi_get_element(env, notesArr, ni, &note);
+                    double start = 0.0, duration = 0.0, pitch = 0.0, velocity = 0.0, channel = 0.0;
+                    if (!getNumber(env, note, "startBeat", start) || start < 0.0 ||
+                        !getNumber(env, note, "durationBeats", duration) || duration <= 0.0 ||
+                        !getNumber(env, note, "pitch", pitch) || pitch < 0.0 || pitch > 127.0 ||
+                        !getNumber(env, note, "velocity", velocity) || velocity < 0.0 || velocity > 127.0)
+                        return fail(env, "renderAudio: invalid MIDI note");
+                    getNumber(env, note, "channel", channel);
+                    if (channel < 0.0 || channel > 15.0) channel = 0.0;
+                    const auto status = static_cast<std::uint8_t>(0x90U | static_cast<std::uint8_t>(channel));
+                    const auto noteOff = static_cast<std::uint8_t>(0x80U | static_cast<std::uint8_t>(channel));
+                    // Same note on/off recipe as runtimeSnapshot() in the GTK editor.
+                    snapshot.scheduledMidiEvents.push_back(
+                        {target, clipStart + start,
+                         {status, static_cast<std::uint8_t>(pitch), static_cast<std::uint8_t>(velocity)}});
+                    snapshot.scheduledMidiEvents.push_back(
+                        {target, clipStart + start + duration, {noteOff, static_cast<std::uint8_t>(pitch), 0}});
+                }
+            }
+        }
+        napi_value metadata, mappingsArr;
+        bool hasMappings = false;
+        if (getObject(env, argv[0], "metadata", metadata) &&
+            napi_get_named_property(env, metadata, "midiMappings", &mappingsArr) == napi_ok)
+            napi_is_array(env, mappingsArr, &hasMappings);
+        if (hasMappings) {
+            std::uint32_t mappingCount = 0;
+            napi_get_array_length(env, mappingsArr, &mappingCount);
+            for (std::uint32_t mi = 0; mi < mappingCount; ++mi) {
+                napi_value mapping;
+                napi_get_element(env, mappingsArr, mi, &mapping);
+                std::string target;
+                double parameterId = -1.0, channel = -1.0, controller = -1.0;
+                bool consume = true;
+                napi_value consumeVal;
+                if (!getString(env, mapping, "targetNodeId", target) ||
+                    !getNumber(env, mapping, "parameterId", parameterId) || parameterId < 0.0 ||
+                    !getNumber(env, mapping, "controller", controller) || controller < 0.0 || controller > 127.0)
+                    return fail(env, "renderAudio: invalid MIDI mapping");
+                getNumber(env, mapping, "channel", channel);
+                if (channel < -1.0 || channel > 15.0) return fail(env, "renderAudio: invalid MIDI mapping");
+                if (napi_get_named_property(env, mapping, "consume", &consumeVal) == napi_ok) {
+                    bool consumeBool = true;
+                    if (napi_get_value_bool(env, consumeVal, &consumeBool) == napi_ok) consume = consumeBool;
+                }
+                snapshot.midiParameterMappings.push_back(
+                    {target, static_cast<std::uint32_t>(parameterId),
+                     static_cast<int>(channel), static_cast<std::uint8_t>(controller), consume});
+            }
+        }
+    }
+
+    transmission::RuntimeProcessorFactory factory = [](const transmission::RuntimeGraphNode& node,
+                                                       const transmission::AudioDeviceConfig& config,
+                                                       std::string& error) {
+        return makeSnapshotProcessor(node, config, error);
+    };
+    transmission::OfflineAudioRenderer renderer(factory);
+    transmission::OfflineRenderOptions renderOptions;
+    renderOptions.outputPath = outputPath;
+    renderOptions.channels = 2;
+    renderOptions.blockSize = static_cast<std::size_t>(blockSize);
+    renderOptions.sampleRate = sampleRate;
+    renderOptions.totalFrames =
+        static_cast<std::uint64_t>(std::ceil(totalBeats * 60.0 * sampleRate / tempo));
+    renderOptions.tempo = tempo;
+    renderOptions.loopStartBeat = loopStart;
+    renderOptions.loopEndBeat = loopEnabled ? loopEnd : totalBeats;
+    renderOptions.loopEnabled = loopEnabled;
+    transmission::OfflineRenderResult renderResult;
+    std::string renderError;
+    if (!renderer.renderWave(snapshot, renderOptions, renderResult, renderError))
+        return fail(env, renderError.empty() ? "renderAudio: offline render failed" : renderError.c_str());
+
+    napi_value result, value;
+    napi_create_object(env, &result);
+    napi_create_string_utf8(env, outputPath.c_str(), outputPath.size(), &value);
+    napi_set_named_property(env, result, "outputPath", value);
+    napi_create_int64(env, static_cast<std::int64_t>(renderResult.framesWritten), &value);
+    napi_set_named_property(env, result, "framesWritten", value);
+    napi_create_double(env, renderResult.peak, &value);
+    napi_set_named_property(env, result, "peak", value);
+    return result;
+}
 } // namespace
 
 NAPI_MODULE_INIT() {
-    const std::array<napi_property_descriptor, 11> properties{{
+    const std::array<napi_property_descriptor, 12> properties{{
         {"createEngine", nullptr, createEngine, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"loadProject", nullptr, loadProject, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"configureTransport", nullptr, configureTransport, nullptr, nullptr, nullptr, napi_default, nullptr},
@@ -784,6 +1076,7 @@ NAPI_MODULE_INIT() {
         {"getPeaks", nullptr, getPeaks, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"disposeEngine", nullptr, disposeEngine, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"captureMidi", nullptr, captureMidi, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"renderAudio", nullptr, renderAudio, nullptr, nullptr, nullptr, napi_default, nullptr},
     }};
     napi_define_properties(env, exports, properties.size(), properties.data());
     return exports;

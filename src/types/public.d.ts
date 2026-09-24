@@ -12,6 +12,7 @@ export interface GraphNode {
   }
   settings?: Record<string, unknown>
   parameters?: Array<{ id: number, normalizedValue: number }>
+  jigdawAssetOverrides?: Array<{ key: string, path: string }>
   state?: { component?: string, controller?: string }
   metadata?: Record<string, unknown>
 }
@@ -74,6 +75,8 @@ export interface NativeBridgeApi {
   setParameter(nodeId: string, parameterId: string, value: number, sampleOffset?: number): unknown
   sendMidi(nodeId: string, event: Record<string, unknown>): unknown
   getDiagnostics(): unknown
+  captureMidi(graph: CompiledGraph, options?: Record<string, unknown>): unknown
+  renderAudio(graph: CompiledGraph, options?: Record<string, unknown>): unknown
   dispose(): void
 }
 
@@ -87,6 +90,16 @@ export interface EngineSessionOptions {
   autoConnect?: boolean
 }
 
+export interface MidiMapping {
+  targetNodeId: string
+  parameterId: number
+  /** MIDI channel, -1 for any channel, otherwise 0–15 */
+  channel: number
+  /** MIDI CC number, 0–127 */
+  controller: number
+  consume: boolean
+}
+
 export type GraphOperation =
   | { type: 'addNode', node: GraphNode }
   | { type: 'updateNode', nodeId: string, changes: Partial<Omit<GraphNode, 'id'>> }
@@ -94,6 +107,8 @@ export type GraphOperation =
   | { type: 'addConnection', connection: GraphConnection }
   | { type: 'removeConnection', connection: GraphConnection }
   | { type: 'setProjectMetadata', metadata: Record<string, unknown> }
+  | { type: 'addMidiMapping', mapping: MidiMapping }
+  | { type: 'removeMidiMapping', mapping: MidiMapping }
 
 export interface TransmissionStatus {
   projectOpen: boolean
@@ -118,6 +133,16 @@ export interface TransmissionControlApi {
   startTransport(): TransmissionStatus
   stopTransport(): TransmissionStatus
   setParameter(input: { expectedRevision: number, nodeId: string, parameterId: number, value: number, sampleOffset?: number }): unknown
+  setParameters(input: { expectedRevision: number, nodeId: string, parameters: Array<{ id: number, normalizedValue: number }>, sampleOffset?: number }): unknown
+  describeJigdawPlugin(iri: string, options?: { id?: string }): Promise<unknown>
+  captureProjectMidi(input: { filePath: string, durationBeats?: number }): Promise<unknown>
+  renderMidi(filePath: string): Promise<unknown>
+  renderAudio(input: { filePath: string, totalBeats?: number, tempo?: number, sampleRate?: number, blockSize?: number }): Promise<unknown>
+  getArrangement(): { revision: number, arrangement: ArrangementDefinition }
+  updateArrangement(input: { expectedRevision: number, lengthBeats?: number, midiClips?: MidiClip[], gainLanes?: GainLane[] }): unknown
+  addArrangementClip(input: { expectedRevision: number, clip: MidiClip }): unknown
+  removeArrangementClip(input: { expectedRevision: number, clipId: string }): unknown
+  peaks(): { peakL: number, peakR: number }
   diagnostics(): unknown
   plugins(options?: { installedOnly?: boolean }): unknown
   searchPlugins(query?: Record<string, unknown>): unknown

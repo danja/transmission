@@ -80,6 +80,8 @@ All graph mutations require stopped audio and the current `expectedRevision`.
 | `node_remove` | Remove a node and all its connections |
 | `connection_add` | Add a single audio or MIDI connection |
 | `connection_remove` | Remove a connection |
+| `midi_mapping_add` | Route one MIDI CC on a channel to a plugin parameter |
+| `midi_mapping_remove` | Remove a MIDI CC to parameter mapping |
 
 ### Transport
 
@@ -99,6 +101,7 @@ All graph mutations require stopped audio and the current `expectedRevision`.
 | `clip_add` | Add a MIDI clip with note events |
 | `clip_remove` | Remove a MIDI clip by id |
 | `arrangement_render_midi` | Write the current arrangement to a Standard MIDI File |
+| `arrangement_render_audio` | Offline-bounce the project to a stereo WAV file (needs native engine) |
 
 ### Plugin discovery
 

@@ -66,6 +66,8 @@ Content type for all requests and responses: `text/turtle`.
 |---|---|
 | `GET /status` | Project revision, dirty flag, transport state, engine state |
 | `GET /graph` | Full graph in Turtle |
+| `GET /arrangement` | Current arrangement (length, MIDI clips, gain lanes) as JSON |
+| `GET /peaks` | Current output peaks `{ peakL, peakR }` as JSON |
 | `GET /plugins` | VST3 catalogue (installed and profiles) |
 | `GET /plugins/:id` | Single plugin with merged discovered + curated knowledge |
 | `GET /diagnostics` | Engine real-time stats |
@@ -81,9 +83,17 @@ All mutations require an `trn:expectedRevision` in the request body to prevent l
 | `POST /transport/stop` | empty or `trn:StopAction` | Stop audio engine |
 | `POST /transport/configure` | `trn:ConfigureTransport` with tempo/loop/position | Set transport parameters |
 | `POST /parameters/:node/:param` | `trn:SetParameter` with `trn:normalizedValue` | Live parameter set |
+| `POST /parameters/batch` | `trn:SetParametersBatch` with `trn:nodeId` + `trn:parametersJson` | Set several parameters atomically |
+| `POST /plugins/jigdaw/describe` | `trn:DescribeJigdawPlugin` with `trn:iri` | Describe a JigDAW plugin from its IRI |
 | `POST /projects/new` | Full graph Turtle | Replace project |
 | `POST /projects/open` | `trn:OpenProject` with `trn:filePath` | Load from disk |
 | `POST /projects/save` | `trn:SaveProject` with `trn:filePath` | Save to disk |
+| `POST /arrangement/update` | `trn:ArrangementUpdate` with optional length/clips/lanes | Replace arrangement fields |
+| `POST /arrangement/clips/add` | `trn:AddArrangementClip` with `trn:clipJson` | Add a MIDI clip |
+| `POST /arrangement/clips/remove` | `trn:RemoveArrangementClip` with `trn:clipId` | Remove a MIDI clip |
+| `POST /arrangement/render-midi` | `trn:RenderMidi` with `trn:filePath` | Write arrangement clips to an SMF |
+| `POST /arrangement/render-audio` | `trn:RenderAudio` with `trn:filePath` + options | Offline-bounce to a stereo WAV (needs native engine) |
+| `POST /projects/capture-midi` | `trn:CaptureProjectMidi` with `trn:filePath` + beats | Capture engine MIDI to an SMF (needs native engine) |
 | `POST /plugins/scan` | empty | Rescan VST3 bundles (async, returns `202`) |
 
 ---
@@ -192,6 +202,14 @@ Create `config.ttl` at the repository root as the startup configuration:
 - `trn:ServerConfig`, `trn:port`, `trn:bindAddress` terms go in `vocabs/actions.ttl`.
 - `transmission-live.js` loads `config.ttl` on startup; command-line flags override individual values.
 - `config.ttl` is gitignored to allow per-machine overrides (a `config.defaults.ttl` is committed instead).
+- Not to be confused with the GTK editor's own `config.ttl` at
+  `~/.config/transmission/config.ttl`: a different file in a different place
+  with a different (tab-separated, ad-hoc) format, owned by the editor. It
+  holds editor/host settings — plugin search paths, JigDAW collection URLs,
+  JACK autostart/startup command, MCP-server toggle — which are deliberately
+  not part of the MCP surface: server operators configure the equivalent
+  concerns with CLI flags (`--plugin-root`, `--jack`, `--project-root`) and
+  this Turtle file instead.
 
 ### Step 4 — Live server entry point
 

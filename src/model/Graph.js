@@ -50,12 +50,22 @@ function freezeNode(node) {
         id: Number(parameter.id),
         normalizedValue: Number(parameter.normalizedValue)
       }))),
+    jigdawAssetOverrides: Object.freeze((node.jigdawAssetOverrides ?? []).map(asset =>
+      freezeJigdawAsset(asset, node.id))),
     state: Object.freeze({
       component: String(node.state?.component ?? ''),
       controller: String(node.state?.controller ?? '')
     }),
     metadata: Object.freeze({ ...(node.metadata ?? {}) })
   })
+}
+
+function freezeJigdawAsset(asset, nodeId) {
+  const key = asset?.key
+  const path = asset?.path
+  if (typeof key !== 'string' || !key) throw new TypeError(`Graph node ${nodeId} asset key is required`)
+  if (typeof path !== 'string' || !path) throw new TypeError(`Graph node ${nodeId} asset path is required`)
+  return Object.freeze({ key, path })
 }
 
 export function createGraph(input) {

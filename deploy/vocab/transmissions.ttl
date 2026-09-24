@@ -245,6 +245,18 @@ trn:pluginIri a owl:DatatypeProperty ; rdfs:domain trn:JigdawPlugin ; rdfs:range
     rdfs:label "plugin IRI" ;
     rdfs:comment "The dereferenceable IRI of a JigDAW plugin. Unlike trn:pluginPath this identifies the plugin rather than a copy of it, so a project carrying one opens on another machine." .
 
+trn:jigdawAssetOverrides a owl:ObjectProperty ; rdfs:domain trn:JigdawPlugin ;
+    rdfs:label "JigDAW asset overrides" ;
+    rdfs:comment "Local files loaded into a JigDAW node's jig:userReplaceable assets, as an rdf:List of nodes carrying trn:assetKey and trn:assetPath. Like trn:pluginPath these name files on this machine, so a project carrying them opens with the shipped defaults elsewhere." .
+
+trn:assetKey a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:label "asset key" ;
+    rdfs:comment "Which user-replaceable asset of a JigDAW plugin an override is for, by the asset's fragment (e.g. \"nam\")." .
+
+trn:assetPath a owl:DatatypeProperty ; rdfs:range xsd:string ;
+    rdfs:label "asset path" ;
+    rdfs:comment "The local file loaded into a JigDAW asset in place of the shipped default." .
+
 trn:audioInputs a owl:DatatypeProperty ; rdfs:range xsd:integer ;
     rdfs:label "audio inputs" ;
     rdfs:comment "How many audio input ports the node has. Read back from the plugin when the project is applied; the declaration is what the file says, not what decides." .

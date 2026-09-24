@@ -12,6 +12,14 @@ import {
   parseProjectOpen,
   parseProjectSave,
   parseNewProject,
+  parseArrangementUpdate,
+  parseArrangementClipAdd,
+  parseArrangementClipRemove,
+  parseParametersBatch,
+  parseJigdawDescribe,
+  parseCaptureMidi,
+  parseRenderMidi,
+  parseRenderAudio,
   ParseError,
   serializeStatus,
   serializeError
@@ -91,6 +99,9 @@ export class TransmissionHttpServer {
     if (path === '/graph') {
       return sendTurtle(res, 200, control.projectTurtle())
     }
+    if (path === '/arrangement') {
+      return sendJson(res, 200, control.getArrangement())
+    }
     if (path === '/diagnostics') {
       return sendJson(res, 200, control.diagnostics())
     }
@@ -127,6 +138,18 @@ export class TransmissionHttpServer {
       const input = await parseChangeSet(body)
       return sendJson(res, 200, control.applyGraphChanges(input))
     }
+    if (path === '/arrangement/update') {
+      const input = await parseArrangementUpdate(body)
+      return sendJson(res, 200, control.updateArrangement(input))
+    }
+    if (path === '/arrangement/clips/add') {
+      const input = await parseArrangementClipAdd(body)
+      return sendJson(res, 200, control.addArrangementClip(input))
+    }
+    if (path === '/arrangement/clips/remove') {
+      const input = await parseArrangementClipRemove(body)
+      return sendJson(res, 200, control.removeArrangementClip(input))
+    }
     if (path === '/transport/play') {
       return sendTurtle(res, 200, serializeStatus(control.startTransport()))
     }
@@ -139,6 +162,10 @@ export class TransmissionHttpServer {
       return sendTurtle(res, 200, serializeStatus(result))
     }
     if (path.startsWith('/parameters/')) {
+      if (path === '/parameters/batch') {
+        const input = await parseParametersBatch(body)
+        return sendJson(res, 200, control.setParameters(input))
+      }
       const parts = path.slice('/parameters/'.length).split('/')
       if (parts.length < 2) return sendJson(res, 400, { error: 'Path must be /parameters/:nodeId/:parameterId' })
       const nodeId = decodeURIComponent(parts[0])
@@ -159,9 +186,25 @@ export class TransmissionHttpServer {
       const { filePath } = await parseProjectSave(body)
       return sendJson(res, 200, await control.saveProject(filePath))
     }
+    if (path === '/projects/capture-midi') {
+      const input = await parseCaptureMidi(body)
+      return sendJson(res, 200, await control.captureProjectMidi(input))
+    }
+    if (path === '/arrangement/render-midi') {
+      const { filePath } = await parseRenderMidi(body)
+      return sendJson(res, 200, await control.renderMidi(filePath))
+    }
+    if (path === '/arrangement/render-audio') {
+      const input = await parseRenderAudio(body)
+      return sendJson(res, 200, await control.renderAudio(input))
+    }
     if (path === '/plugins/scan') {
       const result = await control.scanPlugins()
       return sendJson(res, 202, result)
+    }
+    if (path === '/plugins/jigdaw/describe') {
+      const { iri, id } = await parseJigdawDescribe(body)
+      return sendJson(res, 200, await control.describeJigdawPlugin(iri, { id }))
     }
 
     sendJson(res, 404, { error: 'Not Found' })

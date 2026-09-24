@@ -57,6 +57,7 @@ void describe(const jigdaw::Profile& profile, JigdawPluginTopology& topology) {
     topology.midiInputs = profile.acceptsMidi() ? 1 : 0;
     topology.midiOutputs = profile.producesMidi() ? 1 : 0;
     topology.requiresTransport = profile.requiresTransport();
+    topology.latencyFrames = profile.latencyFrames;
     topology.parameters.clear();
     for (const auto& port : profile.portsByIndex()) {
         JigdawParameterDescriptor descriptor;

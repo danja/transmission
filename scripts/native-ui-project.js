@@ -109,7 +109,7 @@ function decodeProject(text) {
     const invalid = () => { throw new Error(`Invalid native UI project interchange at line ${index + 1}`) }
     if (!header) {
       if (fields.length !== 2 || fields[0] !== 'TRANSMISSION_UI' ||
-          !['1', '2', '3', '4', '5', '6', '7', '8'].includes(fields[1])) invalid()
+          !['1', '2', '3', '4', '5', '6', '7', '8', '9'].includes(fields[1])) invalid()
       header = true
       continue
     }
@@ -234,6 +234,15 @@ function decodeProject(text) {
           mapping.channel < -1 || mapping.channel > 15 ||
           mapping.controller > 127) invalid()
       project.metadata.midiMappings.push(mapping)
+    } else if (fields[0] === 'JIGDAW_ASSET' && fields.length === 4) {
+      const targetNodeId = fullId(hexDecode(fields[1]))
+      const key = hexDecode(fields[2])
+      const path = hexDecode(fields[3])
+      const target = project.nodes.find(node => node.id === targetNodeId)
+      if (!target || !key || !path) invalid()
+      target.jigdawAssetOverrides = target.jigdawAssetOverrides ?? []
+      if (target.jigdawAssetOverrides.some(asset => asset.key === key)) invalid()
+      target.jigdawAssetOverrides.push({ key, path })
     } else {
       invalid()
     }
@@ -246,7 +255,7 @@ function encodeProject(session, profilePaths = new Map()) {
   const graph = session.graph
   const transport = session.transport.toJSON()
   const lines = [
-    'TRANSMISSION_UI\t8',
+    'TRANSMISSION_UI\t9',
     `PROJECT\t${hexEncode(shortId(graph.id))}\t${hexEncode(graph.label)}`,
     `TRANSPORT\t${transport.tempoMap[0]?.bpm ?? 120}\t${(transport.loop?.endBeat ?? 16) / 4}\t${transport.loop?.enabled ? 1 : 0}`
   ]
@@ -307,6 +316,14 @@ function encodeProject(session, profilePaths = new Map()) {
   for (const mapping of graph.metadata.midiMappings ?? []) {
     lines.push(
       `MIDI_MAP\t${hexEncode(shortId(mapping.targetNodeId))}\t${integer(String(mapping.parameterId))}\t${signedInteger(String(mapping.channel))}\t${integer(String(mapping.controller))}\t${mapping.consume === false ? 0 : 1}`)
+  }
+  for (const node of graph.nodes.values()) {
+    const assets = [...(node.jigdawAssetOverrides ?? [])]
+      .sort((left, right) => left.key < right.key ? -1 : left.key > right.key ? 1 : 0)
+    for (const asset of assets) {
+      lines.push(
+        `JIGDAW_ASSET\t${hexEncode(shortId(node.id))}\t${hexEncode(asset.key)}\t${hexEncode(asset.path)}`)
+    }
   }
   const s = graph.metadata.audioSettings
   if (s) {

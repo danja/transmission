@@ -20,4 +20,15 @@ describe('NativeBridge', () => {
     bridge.dispose()
     expect(() => bridge.getDiagnostics()).toThrow('disposed')
   })
+
+  it('forwards offline render calls with graph and options', () => {
+    const calls = []
+    const bridge = new NativeBridge({
+      renderAudio: (...args) => calls.push(args)
+    })
+    const graph = { nodes: [], connections: [] }
+    const options = { outputPath: '/tmp/out.wav', totalBeats: 4 }
+    bridge.renderAudio(graph, options)
+    expect(calls).toEqual([[graph, options]])
+  })
 })

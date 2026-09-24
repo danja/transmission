@@ -34,6 +34,7 @@ describe('Transmission RDF adapter', () => {
           ports: { audioOutputs: 2, midiOutputs: 1 },
           settings: { pluginPath: '/home/test/drumgen.vst3' },
           parameters: [{ id: 42, normalizedValue: 0.75 }],
+          jigdawAssetOverrides: [{ key: 'nam', path: '/home/test/amp.nam' }],
           state: { component: 'AAEC/w==', controller: 'ECA=' },
           metadata: { x: 240, y: 30 }
         },
@@ -73,6 +74,9 @@ describe('Transmission RDF adapter', () => {
     expect(restored.node(`${base}drumgen`).parameters).toEqual([
       { id: 42, normalizedValue: 0.75 }
     ])
+    expect(restored.node(`${base}drumgen`).jigdawAssetOverrides).toEqual([
+      { key: 'nam', path: '/home/test/amp.nam' }
+    ])
     expect(restored.node(`${base}drumgen`).state).toEqual({
       component: 'AAEC/w==', controller: 'ECA='
     })
@@ -81,5 +85,34 @@ describe('Transmission RDF adapter', () => {
     expect(restored.metadata.midiMappings).toEqual(graph.metadata.midiMappings)
     expect(transportFromDataset(dataset, graph.id)).toEqual(transport)
     expect(arrangementFromDataset(dataset, graph.id, graph).toJSON()).toEqual(arrangement.toJSON())
+  })
+
+  it('serializes JigDAW asset overrides and rejects invalid ones', async () => {
+    const base = 'http://purl.org/stuff/transmissions/'
+    const graph = new Graph({
+      id: `${base}main`,
+      nodes: [{ id: `${base}pulse`, type: `${base}JigdawPlugin` }],
+      connections: []
+    })
+    const turtle = serializeGraph(graph, null, null)
+    expect(turtle).not.toContain(':jigdawAssetOverrides')
+    const withAssets = new Graph({
+      id: `${base}main`,
+      nodes: [{
+        id: `${base}pulse`, type: `${base}JigdawPlugin`,
+        jigdawAssetOverrides: [{ key: 'nam', path: '/models/amp.nam' }]
+      }],
+      connections: []
+    })
+    const roundTripped = graphFromDataset(
+      await parseTurtle(serializeGraph(withAssets, null, null)), `${base}main`)
+    expect(roundTripped.node(`${base}pulse`).jigdawAssetOverrides).toEqual([
+      { key: 'nam', path: '/models/amp.nam' }
+    ])
+    expect(() => new Graph({
+      id: `${base}main`,
+      nodes: [{ id: `${base}pulse`, type: `${base}JigdawPlugin`, jigdawAssetOverrides: [{ key: 'nam' }] }],
+      connections: []
+    })).toThrow('asset path is required')
   })
 })

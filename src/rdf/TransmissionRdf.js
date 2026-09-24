@@ -39,6 +39,11 @@ export function graphFromDataset(dataset, transmissionId) {
           id: numeric(first(dataset, parameter, ns.trn.parameterId)),
           normalizedValue: numeric(first(dataset, parameter, ns.trn.normalizedValue))
         })),
+      jigdawAssetOverrides: list(dataset, first(dataset, node, ns.trn.jigdawAssetOverrides))
+        .map(asset => ({
+          key: first(dataset, asset, ns.trn.assetKey)?.value ?? '',
+          path: first(dataset, asset, ns.trn.assetPath)?.value ?? ''
+        })),
       state: {
         component: first(dataset, node, ns.trn.componentState)?.value ?? '',
         controller: first(dataset, node, ns.trn.controllerState)?.value ?? ''
@@ -217,6 +222,11 @@ export function serializeGraph(graph, transport = null, arrangement = null) {
       const parameters = node.parameters.map(parameter =>
         `[ :parameterId ${parameter.id} ; :normalizedValue ${parameter.normalizedValue} ]`)
       lines.push(`    :parameters ( ${parameters.join(' ')} ) ;`)
+    }
+    if (node.jigdawAssetOverrides?.length) {
+      const assets = node.jigdawAssetOverrides.map(asset =>
+        `[ :assetKey ${literal(asset.key)} ; :assetPath ${literal(asset.path)} ]`)
+      lines.push(`    :jigdawAssetOverrides ( ${assets.join(' ')} ) ;`)
     }
     if (node.state?.component)
       lines.push(`    :componentState ${literal(node.state.component)} ;`)

@@ -80,7 +80,7 @@ bool number(std::string_view text, double& result) {
 
 std::string encodeUiProject(const UiProject& project) {
     std::ostringstream output;
-    output << "TRANSMISSION_UI\t8\n";
+    output << "TRANSMISSION_UI\t9\n";
     output << "PROJECT\t" << hexEncode(project.id) << '\t'
            << hexEncode(project.label) << '\n';
     output << "TRANSPORT\t" << project.tempo << '\t' << project.loopBars
@@ -149,6 +149,17 @@ std::string encodeUiProject(const UiProject& project) {
                << mapping.parameterId << '\t' << mapping.channel << '\t'
                << static_cast<unsigned>(mapping.controller) << '\t'
                << (mapping.consume ? 1 : 0) << '\n';
+    for (const auto& node : project.nodes) {
+        auto assets = node.jigdawAssetOverrides;
+        std::sort(assets.begin(), assets.end(),
+                  [](const auto& left, const auto& right) {
+                      return left.key < right.key;
+                  });
+        for (const auto& asset : assets)
+            output << "JIGDAW_ASSET\t" << hexEncode(node.id) << '\t'
+                   << hexEncode(asset.key) << '\t' << hexEncode(asset.path)
+                   << '\n';
+    }
     output << "SETTINGS\t" << project.renderAheadMilliseconds << '\t'
            << project.requestedBufferSize << '\t'
            << project.processingThreads << '\n';
@@ -186,7 +197,8 @@ bool decodeUiProject(const std::string& text, UiProject& project,
             if (values[1] != "1" && values[1] != "2" &&
                 values[1] != "3" && values[1] != "4" &&
                 values[1] != "5" && values[1] != "6" &&
-                values[1] != "7" && values[1] != "8")
+                values[1] != "7" && values[1] != "8" &&
+                values[1] != "9")
                 return fail("unsupported interchange version \"" + std::string(values[1]) + "\"");
             header = true;
             continue;
@@ -416,6 +428,31 @@ bool decodeUiProject(const std::string& text, UiProject& project,
             mapping.controller = static_cast<std::uint8_t>(controller);
             mapping.consume = consume == 1;
             candidate.midiMappings.push_back(mapping);
+        } else if (values[0] == "JIGDAW_ASSET") {
+            UiProjectJigdawAsset asset;
+            std::string nodeId;
+            if (!expectFields(4)) return false;
+            if (!hexDecode(values[1], nodeId)) return fail("node id is not valid hex");
+            if (!hexDecode(values[2], asset.key)) return fail("asset key is not valid hex");
+            if (!hexDecode(values[3], asset.path)) return fail("asset path is not valid hex");
+            if (asset.key.empty()) return fail("asset key must not be empty");
+            if (asset.path.empty()) return fail("asset path must not be empty");
+            const auto target = std::find_if(
+                candidate.nodes.begin(), candidate.nodes.end(),
+                [&](const auto& node) {
+                    return node.id == nodeId;
+                });
+            if (target == candidate.nodes.end())
+                return fail("references a node id that has not been declared yet");
+            const auto duplicate = std::find_if(
+                target->jigdawAssetOverrides.begin(),
+                target->jigdawAssetOverrides.end(),
+                [&](const auto& existing) {
+                    return existing.key == asset.key;
+                });
+            if (duplicate != target->jigdawAssetOverrides.end())
+                return fail("duplicate asset key for the same node");
+            target->jigdawAssetOverrides.push_back(std::move(asset));
         } else if (values[0] == "SETTINGS") {
             if (!expectFields(4)) return false;
             if (!integer(values[1], candidate.renderAheadMilliseconds))

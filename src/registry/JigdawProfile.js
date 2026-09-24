@@ -80,6 +80,10 @@ export async function readJigdawProfile(iri, { fetch: fetchImplementation = fetc
       midiOutputs: produces.includes(`${TRN}Midi`) ? 1 : 0
     },
     requiresTransport: requires.includes(`${TRN}HostTransport`),
+    // Declared processing latency in frames. Surfaced, not compensated:
+    // this engine has no delay-compensation framework (VST3 latency is not
+    // read either), so per-node compensation would be architecture, not a fix.
+    latencyFrames: Math.trunc(number(`${JIG}latencyFrames`, subject, 0)),
     module: moduleNode
       ? {
           location: value(`${JIG}location`, moduleNode)?.value ?? '',

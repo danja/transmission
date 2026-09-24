@@ -14,8 +14,10 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <unordered_map>
 
 namespace transmission {
 namespace {
@@ -95,6 +97,45 @@ bool readLocalFile(const std::string& path, std::vector<std::uint8_t>& bytes,
         return false;
     }
     return true;
+}
+
+/**
+ * What a jig_load_<key> status means, for the one plugin this host actually
+ * knows the answer for.
+ *
+ * docs/module-abi.md says nothing about jig_load_<key> or its status codes —
+ * jigdaw/plugins/ferrite/ferrite-processor.js's own comment on the ABI is
+ * explicit that the numbers are "a convention between this processor and its
+ * own module, not part of the host contract". In the browser, that processor
+ * ships with the plugin and tells the host what a code means; this native
+ * host has no such thing for any plugin, so it cannot do that in general.
+ *
+ * This table exists only to give Ferrite's own two assets ("nam", "ir") the
+ * same message quality ferrite-processor.js's own `ASSETS[key].failures`
+ * gives the browser host, since Ferrite is, as of writing, the only plugin
+ * in this codebase whose jig:asset is jig:userReplaceable at all. It keys on
+ * the asset name alone rather than the plugin's IRI: correct today because
+ * nothing else defines a "nam" or "ir" asset, and worth revisiting — probably
+ * by keying on the IRI instead — if a second plugin ever does.
+ */
+const char* knownAssetFailureReason(const std::string& key, std::int32_t status) {
+    static const std::unordered_map<std::string, std::unordered_map<std::int32_t, const char*>>
+        table = {
+            {"nam", {
+                {-1, "is not UTF-8 text"},
+                {-2, "is not a .nam model this plugin can read"},
+                {-3, "could not be built"},
+            }},
+            {"ir", {
+                {-1, "is not a WAV file this plugin can read: PCM 16, 24 or 32 bit, or 32 bit float"},
+                {-2, "is silent"},
+                {-3, "is longer than 131072 samples (2.7 seconds at 48 kHz)"},
+            }},
+        };
+    const auto assetTable = table.find(key);
+    if (assetTable == table.end()) return nullptr;
+    const auto reason = assetTable->second.find(status);
+    return reason == assetTable->second.end() ? nullptr : reason->second;
 }
 
 } // namespace
@@ -214,8 +255,12 @@ bool JigdawProcessor::initialize(const std::string& pluginIri, std::size_t block
             }
             bytes = std::move(fetched.bytes);
         }
-        if (auto assetError = impl.module.loadAsset(asset.key, bytes); !assetError.empty()) {
-            error = impl.profile.label + ": \"" + asset.key + "\": " + assetError;
+        std::int32_t status = 0;
+        if (auto assetError = impl.module.loadAsset(asset.key, bytes, &status); !assetError.empty()) {
+            const auto* reason = knownAssetFailureReason(asset.key, status);
+            error = reason != nullptr
+                ? impl.profile.label + ": \"" + asset.key + "\" " + reason
+                : impl.profile.label + ": " + assetError;
             return false;
         }
     }

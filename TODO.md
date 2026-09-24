@@ -51,6 +51,25 @@ Right now we can load the generative plugins from Downspout into transmission bu
 
 ## Bugs
 
+- GTK console (`View > Show Console`, `Ctrl+\``) only implements `status`, `lsp`,
+  `reconnect`, `parse [path]`, `clear`, `help` — it's missing `connections`, `peaks`,
+  and `diag`, which `CLAUDE.md`'s "No audio from a project" runbook and the console's
+  own documented command set assume exist. Add them (mirrors what `GET /diagnostics`,
+  `GET /peaks`, and `GET /jack-ports` expose over the live-server HTTP API in
+  `docs/mcp-live.md`, but needs to work from the local/non-live-server code path too,
+  since that's what's active whenever `liveServerAvailable` is false).
+
+  Found while diagnosing a live BassGen → Basilico → System Output patch that produced
+  no audio: `jack_capture` on `transmission:out_1`/`out_2` measured RMS 0.0 on both
+  channels for 3s while `status` reported the runtime playing, but `scripts/probe-
+  project.js` on the same patch saved to disk showed BassGen emitting MIDI
+  (144 events/30 windows) and Basilico producing real audio (RMS ~0.10–0.22 per
+  window) offline — so the graph and plugins are fine; whatever's wrong is specific to
+  the live JACK path. Also found in the same session: JACK auto-connect only wired
+  `transmission:out_1` to `Built-in Audio Analog Stereo:playback_FL`; `out_2` had no
+  destination at all. A working `connections`/`diag` command would have surfaced both
+  of these directly instead of requiring an offline probe and manual `jack_capture`.
+
 - `projectDefinitionToTurtle` in `src/http/TransmissionHttpClient.js` only serializes node IDs into the `:pipe` list — it drops node types, settings, ports, and connections. The server's `parseNewProject` then fails with "Graph node X type is required". Fix: replace the minimal hand-rolled Turtle with the existing `TransmissionRdf.js` serializer (the function is async, so the caller can await it).
 
 - JUCE assertion failure in `juce_Messaging_linux.cpp:87` observed when hosting Valis inside Transmission. Likely triggered by a JUCE message thread operation happening off the expected thread. Needs a repro and investigation.

@@ -93,9 +93,80 @@ For `transport_play` and audio control to work via MCP from a Claude session:
 
 `:JigdawPlugin` nodes load, run and route (see `docs/jigdaw.md`). Still open:
 
-- No state serialisation: `jig:Abi1` and `jig:Abi2` carry none, so a project restores a
-  JigDAW plugin's parameters but not anything it keeps beyond them. Needs a profile
-  statement or a processor message upstream in jigdaw before a host can do anything.
+- ~~No state serialisation~~ **Fixed upstream, 2026-09-24.** `jigdaw::Profile` now parses
+  `jig:asset` (key, resource, `jig:userReplaceable`), `jigdaw::Chain::add` fetches, verifies
+  and loads each one before the slot is used (same as the module itself), and
+  `jigdaw::Module::loadAsset` re-resolves every cached buffer pointer afterwards since a
+  loader may grow the module's linear memory (`native/jigdaw-adapter/{include,src}/jigdaw/
+  {Profile,Module,Chain}.{hpp,cpp}` in the jigdaw repo). Verified: profile parsing against
+  Ferrite's real `#nam`/`#ir` assets, and a synthetic wasm module exercising fetch + integrity
+  check + load + post-`memory.grow` pointer refresh end to end (including a deliberately
+  tampered asset being refused). `jigdaw`'s own `ctest` suite still passes.
+
+  `JigdawProcessor::initialize` (the real playback path — `Chain::add` is a separate call
+  path used only by `jigdaw`'s own tests) had the same gap independently, since it drives
+  `jigdaw::Module` directly rather than through `Chain`; fixed there too, verified with the
+  same synthetic module through `JigdawProcessor` itself (topology reports the asset,
+  `initialize` loads the shipped default, and again with an override path).
+
+  UI, also done, 2026-09-24: `JigdawPluginTopology::assets` (key, `userReplaceable`),
+  `JigdawProcessor::initialize`'s new `assetOverridePaths` parameter (a local file read
+  instead of the fetched default, same `loadAsset` either way), `RuntimeGraphNode::
+  jigdawAssetOverridePaths` and `Node::jigdawAssetOverrides` threading it from the graph to
+  `uiProcessorFactory()`, and a `GtkFileChooserButton` row per `userReplaceable` asset in the
+  generated JigDAW panel (`native_graph_ui_main.cpp`, mirroring `jigdaw/src/ui/Panel.js`'s
+  file `<input>`). Picking a file logs to the console and marks the graph changed; it takes
+  effect on the next compile (Play), the same "control thread, before the module runs" rule
+  `Module::loadAsset` already requires — there is no live hot-swap into an already-running
+  node.
+
+  **wasm3 replaced with WAMR, 2026-09-24 — Ferrite now loads and runs.** wasm3's interpreter
+  had no WebAssembly SIMD support and Ferrite (`jig:wasmFeature jig:Simd128`) needs it; both
+  `Chain::add` and `JigdawProcessor::initialize` failed at the `jig_init` lookup before assets
+  were even reached. Swapped in the jigdaw repo only — `Module.hpp`'s public interface is
+  unchanged, so nothing outside `native/jigdaw-adapter/src/Module.cpp` and the two build
+  scripts (`native/cmake/FindOrFetchWamr.cmake`, replacing `FindOrFetchWasm3.cmake`;
+  `jigdaw-adapter/CMakeLists.txt`) needed to change:
+  - Built as WAMR's fast interpreter with SIMD128 and reference types on, AOT/JIT off — pure
+    bytecode interpretation, the same "no executable pages, nothing platform-specific to
+    debug" property wasm3 was originally chosen for. Reference types (`WAMR_BUILD_REF_TYPES`)
+    turned out to be needed too: Rust's `wasm32-unknown-unknown` target emits that section by
+    default even when a module never uses one, and Ferrite's build does.
+  - A local checkout (`WAMR_ROOT`, default `~/github/wasm-micro-runtime`) rather than
+    `FetchContent`, the way `JIGDAW_ROOT` already works here — WAMR has no shallow-clone-sized
+    release the way wasm3's tag did.
+  - `wasm_runtime_call_wasm_a`'s own source was read to confirm it stays on a fixed 16-cell
+    stack buffer (`argv_buf[16]`) and only allocates above that; every call this ABI makes has
+    at most 2 argument cells, so nothing in the hot path allocates. One real caveat: a thread
+    WAMR did not create (the audio callback thread) must call `wasm_runtime_init_thread_env()`
+    once before its first call in — done lazily, thread_local-guarded, in every `Module`
+    method that calls into wasm, so it is correct regardless of which thread ends up calling
+    first, at the cost of that first call being allowed to allocate (a documented,
+    accepted-in-code compromise; a JACK thread-init callback would remove even that but was
+    not taken on here — see the comment on `ensureThreadRegistered` in `Module.cpp`).
+  - Verified: `jigdaw`'s own `ctest` suite passes (`chain_file` covers real non-SIMD plugins
+    end to end); a standalone `jigdaw::Chain` test against Ferrite's real profile now loads it
+    and, fed an impulse, produces output smeared across every following sample (the amp model
+    and convolution actually engaging, not a dry passthrough); the same confirmed again through
+    `transmission::JigdawProcessor`/`JigdawInspector` directly (topology reports both assets,
+    `initialize` loads the SIMD module and the shipped nam/ir defaults, `process` produces the
+    same non-dry output) — the whole path the original bug report was about, now working.
+    `transmission_jigdaw_processor_test` and the rest of `native/build-jigdaw`'s suite pass;
+    `transmission_graph_ui` builds clean in both JigDAW-enabled and JigDAW-disabled configs.
+
+  Still open:
+  - No persistence: an override path lives only in the running UI's `Node`, not in the saved
+    project (`UiProjectNode`/`UiProjectCodec` TTL, or the MCP `graph_apply_changes` schema),
+    so it is lost on reload. Needs a project-format decision, not just more code.
+  - Not exercised interactively in the GTK app itself in this session (screenshot tooling here
+    cannot reliably capture GTK popups/dialogs); confirmed instead by driving
+    `JigdawProcessor`/`JigdawInspector` directly, against both the synthetic test module and
+    Ferrite's real profile, and by clean builds across every JigDAW-enabled `native/build*`
+    directory.
+  - The `ensureThreadRegistered` one-time-per-thread allocation noted above — a JACK
+    thread-init callback (`jack_set_thread_init_callback`) would close it properly; not taken
+    on since it would need to be threaded into every real-time-ish call site (JACK, offline
+    render, NAPI), not just one.
 - `jigdaw::Chain::process` (in the jigdaw repo, not used here) processes only
   `min(frames, jig_max_frames())` and leaves the rest of the block stale. Transmission
   drives `jigdaw::Module` directly and sub-blocks it instead, but the adapter that ships
@@ -123,6 +194,48 @@ For `transport_play` and audio control to work via MCP from a Claude session:
 - SSE push (`GET /events`): server endpoint implemented — emits `{revision, generation, filePath}`
   on every state change. GTK still polls; connecting GTK to SSE requires adding a streaming
   CURL handler in `native_graph_ui_main.cpp` to replace the 500 ms `/status` poll.
+
+## Plugin menu unification and startup scan — verification remaining
+
+Implemented in `native/src/native_graph_ui_main.cpp`:
+
+- Startup no longer walks the VST3 search path (and, with JigDAW, fetches every
+  configured collection) synchronously before the window appears. Both run on a
+  background thread (`startupScanThreadFunc`) and merge into `view.plugins` via
+  `g_idle_add` once the main loop is pumping. This was the slow-loading cause
+  reported in INBOX.md.
+- Settings menu item and dialog renamed "Plugin Path…" / "Plugin Paths" →
+  "_Plugins…" / "Plugins", and the dialog gained a second text box for JigDAW
+  plugin collection URLs (`docs/jigdaw.md`,
+  `/home/danny/github/jigdaw/docs/plugin-collections.md`), persisted to
+  `config.ttl` as `JIGDAW_COLLECTION` lines and merged into the same plugin
+  list as scanned VST3 bundles (`scanJigdawCollections`,
+  `collectJigdawCollectionEntries`, `parsePluginCollection`).
+- The right-click "Add VST3 Plugin…" / "Add JigDAW Plugin…" context menu items
+  are merged into one "Add Plugin…" entry. Its dialog lists VST3 and JigDAW
+  entries together (JigDAW ones flagged in a hidden list-store column) and
+  keeps an "Add by _IRI…" button for a one-off JigDAW plugin not in any
+  collection (the former free-text dialog, unchanged).
+- The collection parser is a targeted regex extraction of the normative
+  `dcterms:hasPart` / `rdfs:label` shape (not a general RDF parser, consistent
+  with this file's existing ad hoc Turtle handling), verified standalone
+  against `examples/reference-collection.ttl` and `web/collections/jigdaw.ttl`
+  in the jigdaw checkout.
+
+Verified: `transmission_graph_ui` builds clean in both `build-ui-jack-vst3`
+(JigDAW + JACK + VST3 on) and `build-ui` (all off) configs; launched on the
+host X11 session and loaded an existing project instantly.
+
+Not yet verified — needs a manual pass:
+- Settings > Plugins dialog with a real collection URL entered, confirming the
+  fetched entries appear in the unified Add Plugin list and round-trip through
+  `config.ttl`.
+- The merged "Add Plugin…" context-menu dialog end to end (select a VST3 row,
+  select a JigDAW row, use "Add by IRI…"), interactively in the GTK UI — the
+  X11 screenshot workflow in this environment could not reliably capture GTK
+  menu popups (they render in separate override-redirect windows that
+  `import -window <id>` does not capture), so this needs a human or a
+  different capture approach.
 
 ## Recurring — check periodically
 

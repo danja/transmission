@@ -15,6 +15,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstring>
+#include <fstream>
 
 namespace transmission {
 namespace {
@@ -70,6 +71,30 @@ void describe(const jigdaw::Profile& profile, JigdawPluginTopology& topology) {
             descriptor.scalePoints.push_back({point.label, point.value});
         topology.parameters.push_back(std::move(descriptor));
     }
+    topology.assets.clear();
+    for (const auto& asset : profile.assets)
+        topology.assets.push_back({asset.key, asset.userReplaceable});
+}
+
+/**
+ * A local file, read whole. Used only for a `jig:userReplaceable` asset a
+ * person chose through the UI — never for the module or the profile itself,
+ * which are always fetched and verified against `jig:integrity` from the
+ * IRI the plugin actually names.
+ */
+bool readLocalFile(const std::string& path, std::vector<std::uint8_t>& bytes,
+                   std::string& error) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        error = "could not read " + path;
+        return false;
+    }
+    bytes.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    if (!file.eof() && file.fail()) {
+        error = "could not read " + path;
+        return false;
+    }
+    return true;
 }
 
 } // namespace
@@ -128,7 +153,8 @@ bool JigdawInspector::inspectTopology(const std::string& pluginIri,
 }
 
 bool JigdawProcessor::initialize(const std::string& pluginIri, std::size_t blockSize,
-                                 double sampleRate, std::string& error) {
+                                 double sampleRate, std::string& error,
+                                 const std::unordered_map<std::string, std::string>& assetOverridePaths) {
     if (pluginIri.empty() || blockSize == 0 || sampleRate <= 0.0) {
         error = "JigDAW plugin IRI, block size and sample rate must be valid";
         return false;
@@ -161,6 +187,38 @@ bool JigdawProcessor::initialize(const std::string& pluginIri, std::size_t block
 
     error = impl.module.load(wasm.bytes, impl.profile, sampleRate);
     if (!error.empty()) return false;
+
+    // docs/for-hosts.md: every jig:asset is fetched and verified exactly like
+    // the module, and loaded before the plugin sees real audio. An override
+    // path (a jig:userReplaceable asset a person chose) is read from disk
+    // instead of fetched, but still runs through the same loadAsset() the
+    // shipped default does — nothing downstream can tell the two apart.
+    for (const auto& asset : impl.profile.assets) {
+        std::vector<std::uint8_t> bytes;
+        const auto override = assetOverridePaths.find(asset.key);
+        if (override != assetOverridePaths.end()) {
+            if (!readLocalFile(override->second, bytes, error)) {
+                error = impl.profile.label + ": \"" + asset.key + "\": " + error;
+                return false;
+            }
+        } else {
+            const auto fetched = jigdaw::fetchUrl(asset.resource.location);
+            if (!fetched.ok) {
+                error = impl.profile.label + ": could not fetch \"" + asset.key + "\": " + fetched.error;
+                return false;
+            }
+            if (auto bad = jigdaw::verifyIntegrity(fetched.bytes, asset.resource.integrity);
+                !bad.empty()) {
+                error = impl.profile.label + ": \"" + asset.key + "\": " + bad;
+                return false;
+            }
+            bytes = std::move(fetched.bytes);
+        }
+        if (auto assetError = impl.module.loadAsset(asset.key, bytes); !assetError.empty()) {
+            error = impl.profile.label + ": \"" + asset.key + "\": " + assetError;
+            return false;
+        }
+    }
 
     impl.maxFrames = impl.module.maxFrames();
     if (impl.maxFrames == 0) {

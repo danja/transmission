@@ -19,6 +19,7 @@ extern "C" { int XInitThreads(); }
 #include "transmission/UiProjectCodec.h"
 #if defined(TRANSMISSION_UI_WITH_JIGDAW)
 #include "transmission/JigdawProcessor.h"
+#include "jigdaw/Fetch.hpp"
 #endif
 #include "transmission/Vst3EditorHost.h"
 #include "transmission/Vst3Inspector.h"
@@ -58,6 +59,7 @@ namespace {
 constexpr double nodeWidth = 190.0;
 constexpr double minimumNodeHeight = 70.0;
 constexpr double portSpacing = 18.0;
+constexpr gint kAddByIriResponse = 2;
 constexpr std::int32_t vst3CanAutomateFlag = 1 << 0;
 
 // Mirrors UiProjectNodeKind and RuntimeNodeKind by value; the three are cast
@@ -72,6 +74,9 @@ struct PluginCacheEntry {
     std::string name;
     std::string vendor;
     std::string category;
+    // path holds a plugin IRI rather than a filesystem path for a JigDAW entry
+    // read from a plugin collection (docs/jigdaw.md, plugin-collections.md).
+    bool isJigdaw = false;
 };
 
 struct Node {
@@ -90,6 +95,10 @@ struct Node {
     std::vector<std::string> audioOutputLabels;
     double gainDb = 0.0;
     double pan = 0.0;
+    // A JigDAW node's jig:userReplaceable assets a person has loaded a
+    // different file into, keyed by the asset's fragment (e.g. "nam"). Not
+    // yet persisted to the project file — TODO.md.
+    std::unordered_map<std::string, std::string> jigdawAssetOverrides;
 };
 
 enum class PortKind { Audio, Midi };
@@ -123,6 +132,11 @@ struct GraphView {
     double pointerY = 0.0;
     std::vector<PluginCacheEntry> plugins;
     std::string pluginSearchPath{"~/"};
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+    // Collection documents (docs/jigdaw.md, plugin-collections.md) whose
+    // members are merged into `plugins` alongside the scanned VST3 bundles.
+    std::vector<std::string> jigdawCollectionUrls;
+#endif
     std::unordered_map<
         std::string, std::unordered_map<std::uint32_t, double>> parameterValues;
     std::unordered_map<std::string, transmission::ProcessorState> pluginStates;
@@ -290,6 +304,9 @@ struct NodeMenuContext {
 bool runProjectHelper(const GraphView& view, const char* command,
                       const std::string& path, const std::string& input,
                       std::string& output, std::string& error);
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+void showJigdawDialog(GtkWidget* canvas, GraphView& view);
+#endif
 
 void logConsole(GraphView& view, const std::string& message) {
     if (!view.consoleTextView) return;
@@ -354,7 +371,8 @@ transmission::RuntimeProcessorFactory uiProcessorFactory() {
 #if defined(TRANSMISSION_UI_WITH_JIGDAW)
             auto processor = std::make_unique<transmission::JigdawProcessor>();
             if (!processor->initialize(node.pluginPath, config.blockSize,
-                                       config.sampleRate, error))
+                                       config.sampleRate, error,
+                                       node.jigdawAssetOverridePaths))
                 return nullptr;
             return processor;
 #else
@@ -431,6 +449,7 @@ transmission::RuntimeGraphSnapshot runtimeSnapshot(const GraphView& view) {
             node.audioInputs, node.audioOutputs, {}, {}, 0.0, {}});
         snapshot.nodes.back().gainDb = node.gainDb;
         snapshot.nodes.back().pan = node.pan;
+        snapshot.nodes.back().jigdawAssetOverridePaths = node.jigdawAssetOverrides;
         const auto gainLane = std::find_if(
             view.gainLanes.begin(), view.gainLanes.end(),
             [&](const auto& lane) { return lane.targetNodeId == node.id; });
@@ -687,7 +706,8 @@ gboolean pluginScanResultIdle(gpointer data) {
                 0, result->entry.name.c_str(),
                 1, result->entry.vendor.c_str(),
                 2, result->entry.category.c_str(),
-                3, result->entry.path.c_str(), -1);
+                3, result->entry.path.c_str(),
+                4, FALSE, -1);
             job->good.push_back(result->entry);
         }
         const int done = result->index + 1;
@@ -702,6 +722,8 @@ gboolean pluginScanResultIdle(gpointer data) {
 gboolean pluginScanCompleteIdle(gpointer data) {
     auto* job = static_cast<PluginScanJob*>(data);
     if (!job->cancelled.load()) {
+        for (auto& p : job->view->plugins)
+            if (p.isJigdaw) job->good.push_back(std::move(p));
         const int n = static_cast<int>(job->good.size());
         gtk_label_set_text(job->statusLabel,
             (std::to_string(n) + " plugin(s) found").c_str());
@@ -756,6 +778,8 @@ gboolean consoleScanLogIdle(gpointer data) {
 
 gboolean consoleScanCompleteIdle(gpointer data) {
     auto* ev = static_cast<ConsoleScanComplete*>(data);
+    for (auto& p : ev->view->plugins)
+        if (p.isJigdaw) ev->good.push_back(std::move(p));
     std::sort(ev->good.begin(), ev->good.end(), [](const auto& a, const auto& b) {
         if (a.category != b.category) return a.category < b.category;
         return a.name < b.name;
@@ -823,16 +847,62 @@ void pluginSelectionChanged(GtkTreeSelection* sel, gpointer data) {
 
 void addPluginFromDialog(GtkDialog*, gint response, gpointer data) {
     auto* context = static_cast<PluginDialogContext*>(data);
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+    if (response == kAddByIriResponse) {
+        if (context->job) {
+            context->job->cancelled = true;
+            context->job = nullptr;
+        }
+        gtk_widget_destroy(context->dialog);
+        showJigdawDialog(context->canvas, *context->view);
+        delete context;
+        return;
+    }
+#endif
     if (response == GTK_RESPONSE_ACCEPT) {
         GtkTreeModel* model = nullptr;
         GtkTreeIter iter;
         if (gtk_tree_selection_get_selected(
                 gtk_tree_view_get_selection(context->treeView), &model, &iter)) {
             gchar* pathStr = nullptr;
-            gtk_tree_model_get(model, &iter, 3, &pathStr, -1);
+            gboolean isJigdaw = FALSE;
+            gtk_tree_model_get(model, &iter, 3, &pathStr, 4, &isJigdaw, -1);
             if (pathStr) {
                 const std::string path(pathStr);
                 g_free(pathStr);
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+                if (isJigdaw) {
+                    transmission::JigdawPluginTopology topology;
+                    std::string error;
+                    if (!transmission::JigdawInspector().inspectTopology(path, topology, error)) {
+                        setStatus(*context->view, "Unable to load " + path + ": " + error, true);
+                        gtk_widget_destroy(context->dialog);
+                        delete context;
+                        return;
+                    }
+                    context->view->jigdawTopologies[path] = topology;
+                    const auto id = "jigdaw-" + std::to_string(context->view->nextJigdawId++);
+                    stopRuntime(*context->view,
+                                "Graph changed — press Play to compile and start audio");
+                    context->view->nodes.push_back({
+                        id, topology.name.empty() ? path : topology.name,
+                        NodeKind::JigdawPlugin, topology.audioInputs, topology.audioOutputs,
+                        topology.midiInputs, topology.midiOutputs,
+                        context->view->pointerX, context->view->pointerY, path, "", {}, {}});
+                    logConsole(*context->view,
+                               "Loaded " + topology.name + " (" + topology.abi + ")");
+                    gtk_widget_queue_draw(context->canvas);
+                    if (context->job) {
+                        context->job->cancelled = true;
+                        context->job = nullptr;
+                    }
+                    gtk_widget_destroy(context->dialog);
+                    delete context;
+                    return;
+                }
+#else
+                (void)isJigdaw;
+#endif
                 const auto stem = std::filesystem::path(path).stem().string();
                 const auto id = "plugin-" + std::to_string(context->view->nextPluginId++);
                 transmission::Vst3PluginTopology topology;
@@ -872,9 +942,13 @@ void addPluginFromDialog(GtkDialog*, gint response, gpointer data) {
 
 void showPluginDialog(GtkWidget* canvas, GraphView& view) {
     auto* dialog = gtk_dialog_new_with_buttons(
-        "Add VST3 Plugin", GTK_WINDOW(gtk_widget_get_toplevel(canvas)),
+        "Add Plugin", GTK_WINDOW(gtk_widget_get_toplevel(canvas)),
         static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
-        "_Cancel", GTK_RESPONSE_CANCEL, "_Add", GTK_RESPONSE_ACCEPT, nullptr);
+        "_Cancel", GTK_RESPONSE_CANCEL,
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+        "Add by _IRI…", kAddByIriResponse,
+#endif
+        "_Add", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 580, 420);
     auto* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
     gtk_container_set_border_width(GTK_CONTAINER(content), 12);
@@ -885,20 +959,24 @@ void showPluginDialog(GtkWidget* canvas, GraphView& view) {
         "Search by name, vendor, or category…");
     gtk_box_pack_start(GTK_BOX(content), searchEntry, FALSE, FALSE, 0);
 
-    enum { COL_NAME, COL_VENDOR, COL_CATEGORY, COL_PATH };
-    auto* store = gtk_list_store_new(4,
-        G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
+    enum { COL_NAME, COL_VENDOR, COL_CATEGORY, COL_PATH, COL_JIGDAW };
+    auto* store = gtk_list_store_new(5,
+        G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_BOOLEAN);
 
+    // VST3 entries need a background binary inspection for vendor/category
+    // (below); JigDAW entries carry that from their collection document
+    // already, so they are always listed immediately.
     const bool needsScan = std::any_of(view.plugins.begin(), view.plugins.end(),
-        [](const auto& p) { return p.vendor.empty() && p.category.empty(); });
+        [](const auto& p) { return !p.isJigdaw && p.vendor.empty() && p.category.empty(); });
 
-    if (!needsScan) {
-        for (const auto& plugin : view.plugins) {
+    for (const auto& plugin : view.plugins) {
+        if (plugin.isJigdaw || !needsScan) {
             GtkTreeIter it;
             gtk_list_store_append(store, &it);
             gtk_list_store_set(store, &it,
                 COL_NAME, plugin.name.c_str(), COL_VENDOR, plugin.vendor.c_str(),
-                COL_CATEGORY, plugin.category.c_str(), COL_PATH, plugin.path.c_str(), -1);
+                COL_CATEGORY, plugin.category.c_str(), COL_PATH, plugin.path.c_str(),
+                COL_JIGDAW, plugin.isJigdaw ? TRUE : FALSE, -1);
         }
     }
 
@@ -952,10 +1030,11 @@ void showPluginDialog(GtkWidget* canvas, GraphView& view) {
         job = new PluginScanJob{};
         job->view = &view;
         job->binaryPath = view.inspectBinaryPath;
-        job->toScan = view.plugins;
+        for (const auto& p : view.plugins)
+            if (!p.isJigdaw) job->toScan.push_back(p);
         job->store = GTK_LIST_STORE(g_object_ref(store));
         job->statusLabel = GTK_LABEL(statusLabel);
-        job->total = static_cast<int>(view.plugins.size());
+        job->total = static_cast<int>(job->toScan.size());
         std::thread(pluginScanThreadFunc, job).detach();
     }
     g_object_unref(store);
@@ -1537,6 +1616,32 @@ struct JigdawParameterDialogContext {
     std::vector<JigdawParameterWidget> widgets;
 };
 
+// One file picker per jig:userReplaceable asset, the native-host counterpart
+// to the <input type=file> the browser panel draws (jigdaw/src/ui/Panel.js).
+// A choice here only takes effect the next time the graph compiles — the
+// same "control thread, before the module runs" discipline Module::loadAsset
+// requires everywhere else — so it is stored on the node and left for
+// uiProcessorFactory() to pass to JigdawProcessor::initialize().
+struct JigdawAssetChooserContext {
+    GraphView* view = nullptr;
+    std::size_t node = 0;
+    std::string key;
+};
+
+void jigdawAssetFileSet(GtkFileChooserButton* chooser, gpointer data) {
+    auto* context = static_cast<JigdawAssetChooserContext*>(data);
+    auto& view = *context->view;
+    if (context->node >= view.nodes.size()) return;
+    gchar* path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(chooser));
+    if (!path) return;
+    auto& node = view.nodes[context->node];
+    node.jigdawAssetOverrides[context->key] = path;
+    logConsole(view, "\"" + context->key + "\" for " + node.label + " set to " + path +
+                      " — press Play to load it");
+    g_free(path);
+    stopRuntime(view, "Graph changed — press Play to compile and start audio");
+}
+
 double jigdawWidgetValue(const transmission::JigdawParameterDescriptor& parameter,
                          GtkWidget* widget) {
     if (parameter.toggled)
@@ -1692,6 +1797,39 @@ void showJigdawParameterDialog(GtkWidget* canvas, GraphView& view,
         context->widgets.push_back({index, widget});
     }
 
+    // One file picker per jig:userReplaceable asset, after the parameters:
+    // loading a different model or impulse response is a rarer action than
+    // turning a knob, and the panel reads top to bottom in the order a person
+    // is most likely to want it (the same ordering jigdaw/src/ui/Panel.js
+    // uses in the browser).
+    const auto& overrides = node.jigdawAssetOverrides;
+    for (const auto& asset : topology.assets) {
+        if (!asset.userReplaceable) continue;
+
+        auto* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        auto* label = gtk_label_new(asset.key.c_str());
+        gtk_widget_set_halign(label, GTK_ALIGN_START);
+        gtk_widget_set_size_request(label, 100, -1);
+        gtk_box_pack_start(GTK_BOX(row), label, FALSE, FALSE, 0);
+
+        auto* chooser = gtk_file_chooser_button_new(
+            ("Choose a file for " + asset.key).c_str(), GTK_FILE_CHOOSER_ACTION_OPEN);
+        const auto existing = overrides.find(asset.key);
+        if (existing != overrides.end())
+            gtk_file_chooser_set_filename(GTK_FILE_CHOOSER(chooser), existing->second.c_str());
+        gtk_widget_set_hexpand(chooser, TRUE);
+        gtk_box_pack_start(GTK_BOX(row), chooser, TRUE, TRUE, 0);
+        gtk_box_pack_start(GTK_BOX(list), row, FALSE, FALSE, 0);
+
+        auto* chooserContext = new JigdawAssetChooserContext{&view, nodeIndex, asset.key};
+        g_signal_connect_data(
+            chooser, "file-set", G_CALLBACK(jigdawAssetFileSet), chooserContext,
+            [](gpointer data, GClosure*) {
+                delete static_cast<JigdawAssetChooserContext*>(data);
+            },
+            static_cast<GConnectFlags>(0));
+    }
+
     g_signal_connect(dialog, "response",
                      G_CALLBACK(editJigdawParametersFromDialog), context);
     gtk_widget_show_all(dialog);
@@ -1702,13 +1840,6 @@ void addPluginActivated(GtkMenuItem*, gpointer data) {
     auto* context = static_cast<AddNodeMenuContext*>(data);
     showPluginDialog(context->canvas, *context->view);
 }
-
-#if defined(TRANSMISSION_UI_WITH_JIGDAW)
-void addJigdawActivated(GtkMenuItem*, gpointer data) {
-    auto* context = static_cast<AddNodeMenuContext*>(data);
-    showJigdawDialog(context->canvas, *context->view);
-}
-#endif
 
 void addGainActivated(GtkMenuItem*, gpointer data) {
     auto* context = static_cast<AddNodeMenuContext*>(data);
@@ -1794,19 +1925,13 @@ void addMidiClipActivated(GtkMenuItem*, gpointer data) {
 void showAddNodeMenu(GtkWidget* canvas, GraphView& view,
                      GdkEventButton* event) {
     auto* menu = gtk_menu_new();
-    auto* plugin = gtk_menu_item_new_with_label("Add VST3 Plugin…");
-#if defined(TRANSMISSION_UI_WITH_JIGDAW)
-    auto* jigdaw = gtk_menu_item_new_with_label("Add JigDAW Plugin…");
-#endif
+    auto* plugin = gtk_menu_item_new_with_label("Add Plugin…");
     auto* gain = gtk_menu_item_new_with_label("Add Gain / Pan");
     auto* midiInput = gtk_menu_item_new_with_label("Add MIDI Input…");
     auto* midiOutput = gtk_menu_item_new_with_label("Add MIDI Output…");
     auto* audioClip = gtk_menu_item_new_with_label("Add Audio Clip…");
     auto* midiClip = gtk_menu_item_new_with_label("Add MIDI Clip…");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), plugin);
-#if defined(TRANSMISSION_UI_WITH_JIGDAW)
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), jigdaw);
-#endif
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), gain);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), midiInput);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), midiOutput);
@@ -1814,9 +1939,6 @@ void showAddNodeMenu(GtkWidget* canvas, GraphView& view,
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), midiClip);
     auto* context = new AddNodeMenuContext{&view, canvas};
     g_signal_connect(plugin, "activate", G_CALLBACK(addPluginActivated), context);
-#if defined(TRANSMISSION_UI_WITH_JIGDAW)
-    g_signal_connect(jigdaw, "activate", G_CALLBACK(addJigdawActivated), context);
-#endif
     g_signal_connect(gain, "activate", G_CALLBACK(addGainActivated), context);
     g_signal_connect(midiInput, "activate", G_CALLBACK(addMidiInputActivated), context);
     g_signal_connect(midiOutput, "activate", G_CALLBACK(addMidiOutputActivated), context);
@@ -2241,6 +2363,7 @@ gboolean connectionWatchTick(gpointer data) {
 }
 
 std::size_t scanPlugins(GraphView&);
+std::size_t rescanAllPlugins(GraphView&);
 
 void consoleCommandActivated(GtkEntry* entry, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
@@ -2354,11 +2477,14 @@ void consoleCommandActivated(GtkEntry* entry, gpointer data) {
                 logConsole(view, "JACK ports reconnected");
         }
     } else if (cmd == "scan") {
-        logConsole(view, "Scanning plugin paths...");
-        scanPlugins(view);
+        logConsole(view, "Scanning plugin paths and JigDAW collections...");
+        rescanAllPlugins(view);
         const int total = static_cast<int>(view.plugins.size());
         logConsole(view, std::to_string(total) + " bundle(s) found. Inspecting in background...");
-        auto* job = new ConsoleScanJob{&view, view.inspectBinaryPath, view.plugins};
+        std::vector<PluginCacheEntry> toInspect;
+        for (const auto& p : view.plugins)
+            if (!p.isJigdaw) toInspect.push_back(p);
+        auto* job = new ConsoleScanJob{&view, view.inspectBinaryPath, std::move(toInspect)};
         std::thread(consoleScanThreadFunc, job).detach();
     } else if (cmd.starts_with("parse")) {
         const std::string arg = cmd.size() > 5 ? cmd.substr(6) : "";
@@ -2582,6 +2708,12 @@ void loadConfig(GraphView& view) {
             paths += line.substr(12);
             continue;
         }
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+        if (line.rfind("JIGDAW_COLLECTION\t", 0) == 0) {
+            view.jigdawCollectionUrls.push_back(line.substr(18));
+            continue;
+        }
+#endif
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
         if (line == "MCP_SERVER\ton") {
             mcpServerEnabled = true;
@@ -2620,6 +2752,10 @@ void saveConfig(const GraphView& view) {
     std::string line;
     while (std::getline(ss, line))
         if (!line.empty()) f << "PLUGIN_PATH\t" << line << '\n';
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+    for (const auto& url : view.jigdawCollectionUrls)
+        if (!url.empty()) f << "JIGDAW_COLLECTION\t" << url << '\n';
+#endif
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
     f << "MCP_SERVER\t" << (view.mcpServerEnabled ? "on" : "off") << '\n';
 #endif
@@ -2627,9 +2763,12 @@ void saveConfig(const GraphView& view) {
     f << "JACK_START_CMD\t" << view.jackStartCommand << '\n';
 }
 
-std::size_t scanPlugins(GraphView& view) {
-    view.plugins.clear();
-    std::istringstream ss(view.pluginSearchPath);
+// Pure filesystem walk, safe to run off the GTK main thread — the whole
+// reason `scanPlugins` used to be slow is that it walked every configured
+// directory tree synchronously on startup, before the window could appear.
+std::vector<PluginCacheEntry> collectVst3Candidates(const std::string& searchPath) {
+    std::vector<PluginCacheEntry> found;
+    std::istringstream ss(searchPath);
     std::string searchLine;
     std::error_code ec;
     while (std::getline(ss, searchLine)) {
@@ -2642,27 +2781,200 @@ std::size_t scanPlugins(GraphView& view) {
         while (it != end) {
             if (it->is_directory(ec) && it->path().extension() == ".vst3") {
                 const auto& p = it->path();
-                view.plugins.push_back({p.string(), p.stem().string(), "", ""});
+                found.push_back({p.string(), p.stem().string(), "", ""});
                 it.disable_recursion_pending();
             }
             it.increment(ec);
         }
     }
-    std::sort(view.plugins.begin(), view.plugins.end(),
+    return found;
+}
+
+void sortAndDedupePlugins(std::vector<PluginCacheEntry>& plugins) {
+    std::sort(plugins.begin(), plugins.end(),
         [](const auto& a, const auto& b) { return a.path < b.path; });
-    view.plugins.erase(
-        std::unique(view.plugins.begin(), view.plugins.end(),
+    plugins.erase(
+        std::unique(plugins.begin(), plugins.end(),
             [](const auto& a, const auto& b) { return a.path == b.path; }),
+        plugins.end());
+}
+
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+// Collapses "." and ".." path segments the way URL resolution does (RFC 3986
+// section 5.2.4), so a collection served next to its plugins names them as
+// `<../plugins/pulse/>` and still requests a clean path.
+std::string collapseDotSegments(const std::string& path) {
+    std::vector<std::string> segments;
+    std::size_t start = 0;
+    while (start <= path.size()) {
+        const auto slash = path.find('/', start);
+        const auto segment = path.substr(start, slash == std::string::npos
+            ? std::string::npos : slash - start);
+        if (segment == "..") {
+            if (!segments.empty()) segments.pop_back();
+        } else if (segment != ".") {
+            segments.push_back(segment);
+        }
+        if (slash == std::string::npos) break;
+        start = slash + 1;
+    }
+    std::string result;
+    for (std::size_t i = 0; i < segments.size(); ++i) {
+        if (i) result += '/';
+        result += segments[i];
+    }
+    return result;
+}
+
+// A bare directory-relative member IRI resolves against the collection
+// document's own URL (plugin-collections.md section 1.1).
+std::string resolveCollectionMemberIri(const std::string& base, const std::string& ref) {
+    if (ref.rfind("http://", 0) == 0 || ref.rfind("https://", 0) == 0 ||
+        ref.rfind("file://", 0) == 0)
+        return ref;
+    const auto schemeEnd = base.find("://");
+    const auto pathStart = schemeEnd == std::string::npos ? 0
+        : base.find('/', schemeEnd + 3);
+    if (pathStart == std::string::npos) return base + "/" + ref;
+    const auto origin = base.substr(0, pathStart);
+    const auto slash = base.rfind('/');
+    const auto baseDir = slash == std::string::npos || slash < pathStart
+        ? std::string("/") : base.substr(pathStart, slash - pathStart + 1);
+    return origin + collapseDotSegments(baseDir + ref);
+}
+
+// Reads the normative subset of a plugin collection document
+// (plugin-collections.md section 1, jigdaw repo): the `dcterms:hasPart` list
+// on the collection subject, and each member's `rdfs:label`. This is a
+// targeted extraction over the documented Turtle shape, not a general RDF
+// parser — the same ad hoc style this file already uses for `text/turtle`
+// elsewhere (see parseRevisionFromTurtle and neighbours).
+std::vector<PluginCacheEntry> parsePluginCollection(const std::string& turtle,
+                                                     const std::string& collectionUrl) {
+    std::vector<PluginCacheEntry> members;
+    const auto partsPos = turtle.find("dcterms:hasPart");
+    if (partsPos == std::string::npos) return members;
+    // The statement-terminating '.' has to be found outside any `<...>` IRI —
+    // a bare hostname like `example.org` inside one would otherwise be
+    // mistaken for the end of the dcterms:hasPart statement.
+    std::size_t stop = std::string::npos;
+    bool inIri = false;
+    for (std::size_t i = partsPos; i < turtle.size(); ++i) {
+        const char c = turtle[i];
+        if (c == '<') inIri = true;
+        else if (c == '>') inIri = false;
+        else if (c == '.' && !inIri) { stop = i; break; }
+    }
+    const std::string block = turtle.substr(
+        partsPos, stop == std::string::npos ? std::string::npos : stop - partsPos);
+    std::size_t pos = 0;
+    while (true) {
+        const auto open = block.find('<', pos);
+        if (open == std::string::npos) break;
+        const auto close = block.find('>', open);
+        if (close == std::string::npos) break;
+        const auto raw = block.substr(open + 1, close - open - 1);
+        const auto iri = resolveCollectionMemberIri(collectionUrl, raw);
+        pos = close + 1;
+        std::string label;
+        for (const auto& candidate : {iri, raw}) {
+            const auto labelKey = "<" + candidate + "> rdfs:label \"";
+            const auto labelPos = turtle.find(labelKey);
+            if (labelPos == std::string::npos) continue;
+            const auto start = labelPos + labelKey.size();
+            const auto end = turtle.find('"', start);
+            if (end != std::string::npos) label = turtle.substr(start, end - start);
+            break;
+        }
+        members.push_back({iri, label.empty() ? iri : label, "", "JigDAW", true});
+    }
+    return members;
+}
+
+std::vector<PluginCacheEntry> collectJigdawCollectionEntries(
+    const std::vector<std::string>& urls) {
+    std::vector<PluginCacheEntry> entries;
+    for (const auto& url : urls) {
+        if (url.empty()) continue;
+        const auto response = jigdaw::fetchUrl(url, "text/turtle");
+        if (!response.ok) continue;
+        auto members = parsePluginCollection(response.body, url);
+        entries.insert(entries.end(), members.begin(), members.end());
+    }
+    return entries;
+}
+
+// Re-reads every configured collection, replacing whatever JigDAW entries
+// `view.plugins` already carried; the scanned VST3 entries are untouched.
+void scanJigdawCollections(GraphView& view) {
+    auto fresh = collectJigdawCollectionEntries(view.jigdawCollectionUrls);
+    view.plugins.erase(
+        std::remove_if(view.plugins.begin(), view.plugins.end(),
+            [](const auto& p) { return p.isJigdaw; }),
         view.plugins.end());
+    view.plugins.insert(view.plugins.end(),
+        std::make_move_iterator(fresh.begin()), std::make_move_iterator(fresh.end()));
+    sortAndDedupePlugins(view.plugins);
+}
+#endif
+
+std::size_t scanPlugins(GraphView& view) {
+    // Only the VST3 directory scan is redone here; any JigDAW collection
+    // entries already in view.plugins are kept as-is.
+    std::vector<PluginCacheEntry> jigdaw;
+    for (auto& p : view.plugins)
+        if (p.isJigdaw) jigdaw.push_back(std::move(p));
+    view.plugins = collectVst3Candidates(view.pluginSearchPath);
+    view.plugins.insert(view.plugins.end(),
+        std::make_move_iterator(jigdaw.begin()), std::make_move_iterator(jigdaw.end()));
+    sortAndDedupePlugins(view.plugins);
     return view.plugins.size();
 }
 
+std::size_t rescanAllPlugins(GraphView& view) {
+    scanPlugins(view);
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+    scanJigdawCollections(view);
+#endif
+    return view.plugins.size();
+}
 
-void pluginPathActivated(GtkMenuItem*, gpointer data) {
+struct StartupScanResult {
+    GraphView* view;
+    std::vector<PluginCacheEntry> found;
+};
+
+gboolean startupScanCompleteIdle(gpointer data) {
+    auto* result = static_cast<StartupScanResult*>(data);
+    sortAndDedupePlugins(result->found);
+    result->view->plugins = std::move(result->found);
+    delete result;
+    return G_SOURCE_REMOVE;
+}
+
+// The startup scan used to run on the GTK main thread before the window was
+// even created, so a large plugin directory tree (or a slow collection
+// fetch) delayed the whole application appearing. Both are pure I/O over
+// copies of the config, so they run here and hand the result back via
+// g_idle_add once the main loop is already pumping.
+void startupScanThreadFunc(GraphView* view, std::string searchPath,
+                           std::vector<std::string> collectionUrls) {
+    auto* result = new StartupScanResult{view, collectVst3Candidates(searchPath)};
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+    auto jigdaw = collectJigdawCollectionEntries(collectionUrls);
+    result->found.insert(result->found.end(),
+        std::make_move_iterator(jigdaw.begin()), std::make_move_iterator(jigdaw.end()));
+#else
+    (void)collectionUrls;
+#endif
+    g_idle_add(startupScanCompleteIdle, result);
+}
+
+void pluginsSettingsActivated(GtkMenuItem*, gpointer data) {
     auto& view = *static_cast<GraphView*>(data);
     constexpr gint kRescan = 1;
     auto* dialog = gtk_dialog_new_with_buttons(
-        "Plugin Paths", GTK_WINDOW(view.window),
+        "Plugins", GTK_WINDOW(view.window),
         static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
         "_Cancel", GTK_RESPONSE_CANCEL,
         "_Rescan", kRescan,
@@ -2676,7 +2988,7 @@ void pluginPathActivated(GtkMenuItem*, gpointer data) {
     gtk_box_pack_start(GTK_BOX(content), label, FALSE, FALSE, 0);
     auto* textView = gtk_text_view_new();
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(textView), TRUE);
-    gtk_widget_set_size_request(textView, 480, 120);
+    gtk_widget_set_size_request(textView, 480, 100);
     auto* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(textView));
     gtk_text_buffer_set_text(buffer, view.pluginSearchPath.c_str(), -1);
     auto* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
@@ -2685,16 +2997,42 @@ void pluginPathActivated(GtkMenuItem*, gpointer data) {
     gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(scrolled), GTK_SHADOW_IN);
     gtk_container_add(GTK_CONTAINER(scrolled), textView);
     gtk_box_pack_start(GTK_BOX(content), scrolled, TRUE, TRUE, 0);
+
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+    auto* collectionsLabel = gtk_label_new(
+        "JigDAW plugin collections to load (one URL per line):");
+    gtk_label_set_xalign(GTK_LABEL(collectionsLabel), 0.0F);
+    gtk_box_pack_start(GTK_BOX(content), collectionsLabel, FALSE, FALSE, 0);
+    auto* collectionsView = gtk_text_view_new();
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(collectionsView), TRUE);
+    gtk_widget_set_size_request(collectionsView, 480, 60);
+    auto* collectionsBuffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(collectionsView));
+    {
+        std::string joined;
+        for (const auto& url : view.jigdawCollectionUrls) {
+            if (!joined.empty()) joined += '\n';
+            joined += url;
+        }
+        gtk_text_buffer_set_text(collectionsBuffer, joined.c_str(), -1);
+    }
+    auto* collectionsScrolled = gtk_scrolled_window_new(nullptr, nullptr);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(collectionsScrolled),
+        GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(collectionsScrolled), GTK_SHADOW_IN);
+    gtk_container_add(GTK_CONTAINER(collectionsScrolled), collectionsView);
+    gtk_box_pack_start(GTK_BOX(content), collectionsScrolled, TRUE, TRUE, 0);
+#endif
+
     auto* countLabel = gtk_label_new(
         (std::to_string(view.plugins.size()) + " plugin(s) found").c_str());
     gtk_label_set_xalign(GTK_LABEL(countLabel), 0.0F);
     gtk_box_pack_start(GTK_BOX(content), countLabel, FALSE, FALSE, 0);
     gtk_widget_show_all(dialog);
 
-    auto getTextPaths = [&]() -> std::string {
+    auto getTextContents = [](GtkTextBuffer* b) -> std::string {
         GtkTextIter start, end;
-        gtk_text_buffer_get_bounds(buffer, &start, &end);
-        gchar* text = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
+        gtk_text_buffer_get_bounds(b, &start, &end);
+        gchar* text = gtk_text_buffer_get_text(b, &start, &end, FALSE);
         std::string result(text);
         g_free(text);
         return result;
@@ -2703,8 +3041,17 @@ void pluginPathActivated(GtkMenuItem*, gpointer data) {
     while (true) {
         const gint response = gtk_dialog_run(GTK_DIALOG(dialog));
         if (response == GTK_RESPONSE_ACCEPT || response == kRescan) {
-            view.pluginSearchPath = getTextPaths();
-            const std::size_t found = scanPlugins(view);
+            view.pluginSearchPath = getTextContents(buffer);
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+            view.jigdawCollectionUrls.clear();
+            {
+                std::istringstream ss(getTextContents(collectionsBuffer));
+                std::string url;
+                while (std::getline(ss, url))
+                    if (!url.empty()) view.jigdawCollectionUrls.push_back(url);
+            }
+#endif
+            const std::size_t found = rescanAllPlugins(view);
             gtk_label_set_text(GTK_LABEL(countLabel),
                 (std::to_string(found) + " plugin(s) found").c_str());
             if (response == GTK_RESPONSE_ACCEPT) {
@@ -5215,7 +5562,16 @@ void activate(GtkApplication* application, gpointer) {
         sleep(2);
         view->jackConnections = std::make_unique<transmission::JackConnectionManager>();
     }
-    scanPlugins(*view);
+    // Off the main thread: a large plugin search path or a slow collection
+    // fetch must not delay the window appearing. Results merge into
+    // view->plugins via g_idle_add once the main loop is running.
+    std::thread(startupScanThreadFunc, view, view->pluginSearchPath,
+#if defined(TRANSMISSION_UI_WITH_JIGDAW)
+                view->jigdawCollectionUrls
+#else
+                std::vector<std::string>{}
+#endif
+                ).detach();
     GtkWidget* window = gtk_application_window_new(application);
     gtk_window_set_title(GTK_WINDOW(window), "Transmission — Graph");
     gtk_window_set_default_size(GTK_WINDOW(window), 900, 520);
@@ -5262,7 +5618,7 @@ void activate(GtkApplication* application, gpointer) {
     auto* jackStartupItem =
         gtk_menu_item_new_with_mnemonic("_JACK Startup…");
     auto* pluginPathItem =
-        gtk_menu_item_new_with_mnemonic("Plugin _Path…");
+        gtk_menu_item_new_with_mnemonic("_Plugins…");
     gtk_menu_shell_append(
         GTK_MENU_SHELL(settingsMenu), audioSettingsItem);
 #if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
@@ -5419,7 +5775,7 @@ void activate(GtkApplication* application, gpointer) {
     g_signal_connect(jackStartupItem, "activate",
                      G_CALLBACK(jackStartupSettingsActivated), view);
     g_signal_connect(pluginPathItem, "activate",
-                     G_CALLBACK(pluginPathActivated), view);
+                     G_CALLBACK(pluginsSettingsActivated), view);
     g_signal_connect(showConsoleItem, "activate",
                      G_CALLBACK(showConsoleActivated), view);
     g_signal_connect(autolayoutItem, "activate",

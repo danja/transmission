@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace transmission {
@@ -37,6 +38,16 @@ struct JigdawParameterDescriptor {
 };
 
 /**
+ * A `jig:asset` the profile names — a file the module loads at start-up and,
+ * when `userReplaceable`, one a person may load a different one into (Ferrite's
+ * neural amp model and cabinet impulse response are one of these each).
+ */
+struct JigdawAssetDescriptor {
+    std::string key;    ///< the asset node's IRI fragment, e.g. "nam"
+    bool userReplaceable = false;
+};
+
+/**
  * What a host observes about a JigDAW plugin once its profile has been read:
  * discovered facts in the sense docs/plugin-profiles.md gives the word, even
  * though a profile is curated, because a profile can name a module this host
@@ -54,6 +65,7 @@ struct JigdawPluginTopology {
     std::size_t midiOutputs = 0;
     bool requiresTransport = false;
     std::vector<JigdawParameterDescriptor> parameters;
+    std::vector<JigdawAssetDescriptor> assets;
 };
 
 /**
@@ -87,9 +99,16 @@ public:
     JigdawProcessor(const JigdawProcessor&) = delete;
     JigdawProcessor& operator=(const JigdawProcessor&) = delete;
 
-    /** Dereference the IRI, verify and load the module. Control thread only. */
+    /**
+     * Dereference the IRI, verify and load the module, then fetch, verify and
+     * load every `jig:asset` it declares — the shipped default, unless
+     * `assetOverridePaths` names a local file for that key (a `jig:asset` the
+     * profile marked `jig:userReplaceable`, chosen by a person instead of
+     * fetched). Control thread only.
+     */
     bool initialize(const std::string& pluginIri, std::size_t blockSize,
-                    double sampleRate, std::string& error);
+                    double sampleRate, std::string& error,
+                    const std::unordered_map<std::string, std::string>& assetOverridePaths = {});
 
     bool ready() const noexcept override;
     const std::string& pluginName() const noexcept;

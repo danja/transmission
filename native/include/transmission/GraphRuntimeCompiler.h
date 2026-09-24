@@ -8,6 +8,7 @@
 #include <memory>
 #include <limits>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace transmission {
@@ -38,6 +39,9 @@ struct RuntimeGraphNode {
     double gainDb = 0.0;
     std::vector<GainEnvelopePoint> gainEnvelope;
     double pan = 0.0;
+    /// A JigDAW node's jig:userReplaceable assets a person loaded a different
+    /// file into, keyed by the asset's fragment. Empty for every other kind.
+    std::unordered_map<std::string, std::string> jigdawAssetOverridePaths;
 };
 
 struct RuntimeGraphConnection {

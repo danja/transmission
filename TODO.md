@@ -1,5 +1,34 @@
 # TODO
 
+## MCP parity with the GTK UI
+
+From INBOX.md: "ensure the MCP support is up-to-date with the facilities offered by
+the UI." First-pass audit (2026-09-24) comparing `src/mcp/TransmissionMcpServer.js`'s
+32 tools against the GTK UI's feature set. Node/connection creation itself is generic
+enough (`type`/`settings` are free-form in `node_add`/`graph_apply_changes`, not a
+closed enum) to already cover Gain, AudioClip, MidiClip, and JigdawPlugin node kinds.
+Two concrete gaps found so far:
+
+- MIDI CC → parameter mappings (the GTK "MIDI Mapping" dialog on a node, `jig:` and
+  VST3 parameters both) exist only in the GTK UI and the RDF file format
+  (`src/rdf/TransmissionRdf.js`, `src/rdf/Vocabulary.js`) — `src/model/Graph.js`, the
+  live in-memory model every MCP tool operates on, has no concept of them at all. A
+  project saved from the GTK UI keeps its mappings on its own reload, but `project_open`
+  over MCP silently drops them on the way into `Graph`, and no tool can read or write
+  one. Needs: mappings carried in `Graph`'s model and `toJSON()`, a schema addition to
+  `TransmissionMcpServer.js` (probably `midi_mapping_add` / `midi_mapping_remove`,
+  mirroring `clip_add`/`clip_remove`, plus surfacing existing ones from `project_get`
+  or `arrangement_get`).
+- No MCP equivalent of File → Render (`Ctrl+Shift+R`, `OfflineAudioRenderer` in
+  `native_graph_ui_main.cpp`) — bouncing the arrangement to an audio file.
+  `arrangement_render_midi` only captures MIDI events to a `.mid`, not audio to a
+  `.wav`. Would need a control-service method driving `OfflineAudioRenderer` (or the
+  Node-side offline path it mirrors) plus a tool wrapping it.
+
+Not yet audited: parity for Settings (JACK startup command, plugin search paths,
+JigDAW collection URLs — arguably editor/host config rather than MCP's concern),
+system input/output JACK port connection strings, and node port-label metadata.
+
 ## The trn: namespace is deployed
 
 **Done, 2026-09-18.** `http://purl.org/stuff/transmissions/` resolves. It had always returned
@@ -41,6 +70,17 @@ namespace of their own and rewriting every committed project file, which changes
 saved project says. See `docs/namespace.md`.
 
 
+## Fixed from INBOX.md
+
+**Done, 2026-09-24.** Sorting the "Add Plugin…" dialog by clicking a column header
+crashed the console with `Gtk-CRITICAL **: gtk_tree_sortable_has_default_sort_func:
+assertion 'GTK_IS_TREE_SORTABLE (sortable)' failed`. Cause: the dialog's `GtkTreeView`
+was attached directly to the `GtkTreeModelFilter` (for the search box), which does not
+implement `GtkTreeSortable` — clicking a column header made GTK try to sort that model
+anyway. Fixed by inserting the standard GTK3 `store -> filter -> GtkTreeModelSort ->
+view` stack and moving the default sort-column call from the (list-store-only) sortable
+to the new sort model. `transmission_graph_ui` rebuilds clean.
+
 ## Feature : scopes
 
 Add built-in modules Oscilloscope & Spectrum analyzer, loaded like the Output built-ins as required. They should display while running in the main window, like the level meters in the output built-in.
@@ -50,6 +90,44 @@ Add built-in modules Oscilloscope & Spectrum analyzer, loaded like the Output bu
 Right now we can load the generative plugins from Downspout into transmission but they all carry the default parameters. In the agent-as-DJ scenario, the agent should be able to modify the parameters over MCP. It would be inconveient to add a MCP server to every plugin, but maybe a common midi interface that is loaded as a plugin or built-in might allow this kind of control?
 
 ## Bugs
+
+- **Done, 2026-09-24.** File > New didn't clear the *live server's* project state,
+  even though it correctly reset the GTK canvas: `newProjectActivated` called
+  `applyProject(view, defaultProject(), error)` (which does fully reset the local
+  model — nodes, edges, parameters, plugin states, ID counters, etc.) but, unlike
+  `openProjectActivated`/`saveProject`, never called `syncToLiveServer`. So with the
+  live server running (MCP enabled), Play/MCP tools kept operating on whatever project
+  the live server had loaded before New — the canvas looked reset, the engine wasn't.
+  `syncToLiveServer` needs a file path to `POST /projects/open` with, and New has no
+  saved file yet, so fixed by writing the fresh default project to a scratch `.ttl`
+  (via the same `native-ui-project.js save` helper `saveProject` uses), syncing that,
+  then deleting the scratch file — without touching `view.filePath` or recent files,
+  so New still behaves as "untitled" locally. `transmission_graph_ui` rebuilds clean.
+
+  Not fixed here, same underlying gap: `TransmissionHttpClient.js`'s `newProject()` /
+  `projectDefinitionToTurtle` (the MCP-side `project_new` tool's HTTP client) is the
+  pre-existing separate bug below — it only serializes node IDs, so the server's
+  `parseNewProject` rejects it. Unrelated code path from the GTK fix above (GTK talks
+  raw Turtle over libcurl directly, not through this JS client), but worth fixing
+  together since both are "the new-project path doesn't actually take" in different
+  parts of the app.
+
+- Plugin-scan duplicate entries reported ("every time the VSTs are scanned on disk a
+  duplicate entry for each is added"), on a different machine than the one most of this
+  session's other fixes were tested on — not reproduced here. Audited every write path
+  into `view.plugins` (`scanPlugins`, `scanJigdawCollections`, `startupScanCompleteIdle`,
+  `pluginScanCompleteIdle`, the "Add Plugin…" dialog's own scan, the console `scan`
+  command): all sort-and-dedupe by exact bundle `path` via `sortAndDedupePlugins` except
+  `consoleScanCompleteIdle`, which rebuilt `view.plugins` and re-sorted by
+  category/name without deduping — safe today only because its inputs were already
+  deduped upstream. Hardened it to call `sortAndDedupePlugins` like every other
+  completion path (2026-09-24), but this wasn't confirmed to be the actual cause of
+  what was reported, since a plain path-string comparison should already have caught a
+  same-string duplicate in every path I traced. Needs a repro on the machine that saw
+  it: does `view.pluginSearchPath` (Settings > Plugins) contain two directory lines
+  that are textually different but resolve to the same files (symlink, `~` vs. `$HOME`,
+  a mounted duplicate), which `sortAndDedupePlugins`'s exact-string dedupe wouldn't
+  catch either?
 
 - ~~GTK console missing `connections`/`peaks`/`diag`~~ **Not actually missing** —
   `consoleCommandActivated` in `native_graph_ui_main.cpp` implements `status`, `diag`,

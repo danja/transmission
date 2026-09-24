@@ -228,6 +228,7 @@ struct GraphView {
 };
 
 struct PluginScanJob;
+void sortAndDedupePlugins(std::vector<PluginCacheEntry>& plugins);
 
 struct PluginDialogContext {
     GraphView* view = nullptr;
@@ -780,11 +781,16 @@ gboolean consoleScanCompleteIdle(gpointer data) {
     auto* ev = static_cast<ConsoleScanComplete*>(data);
     for (auto& p : ev->view->plugins)
         if (p.isJigdaw) ev->good.push_back(std::move(p));
-    std::sort(ev->good.begin(), ev->good.end(), [](const auto& a, const auto& b) {
-        if (a.category != b.category) return a.category < b.category;
-        return a.name < b.name;
-    });
+    // Every other scan completion path (scanPlugins, scanJigdawCollections,
+    // startupScanCompleteIdle, pluginScanCompleteIdle) rebuilds view.plugins
+    // through sortAndDedupePlugins; this one didn't, relying on its inputs
+    // already being duplicate-free upstream. Match the others rather than
+    // lean on that invariant holding forever. The "Add Plugin…" dialog's own
+    // GtkTreeSortable re-sorts by category for display, so path order here
+    // (what sortAndDedupePlugins produces) doesn't need to match category
+    // order the way the old std::sort call did.
     ev->view->plugins = std::move(ev->good);
+    sortAndDedupePlugins(ev->view->plugins);
     logConsole(*ev->view, "Scan complete: " + std::to_string(ev->nOk) + " OK, " +
         std::to_string(ev->nFail) + " failed (excluded)");
     delete ev;
@@ -980,15 +986,25 @@ void showPluginDialog(GtkWidget* canvas, GraphView& view) {
         }
     }
 
-    gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store),
-        COL_CATEGORY, GTK_SORT_ASCENDING);
-
     auto* filter = gtk_tree_model_filter_new(GTK_TREE_MODEL(store), nullptr);
     gtk_tree_model_filter_set_visible_func(GTK_TREE_MODEL_FILTER(filter),
         pluginVisibleFunc, searchEntry, nullptr);
     g_signal_connect(searchEntry, "changed", G_CALLBACK(pluginSearchChanged), filter);
 
-    auto* treeView = gtk_tree_view_new_with_model(filter);
+    // GtkTreeModelFilter does not implement GtkTreeSortable, so clicking a
+    // column header while the view's model was `filter` directly made GTK
+    // try to sort it anyway and fail an internal
+    // gtk_tree_sortable_has_default_sort_func() assertion (GTK-CRITICAL,
+    // reported in INBOX.md). The standard GTK3 stack for filter + clickable
+    // column sort is store -> filter -> GtkTreeModelSort -> view; the sort
+    // model is what gtk_tree_view_column_set_sort_column_id below actually
+    // drives.
+    auto* sortModel = gtk_tree_model_sort_new_with_model(filter);
+    gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(sortModel),
+        COL_CATEGORY, GTK_SORT_ASCENDING);
+
+    auto* treeView = gtk_tree_view_new_with_model(sortModel);
+    g_object_unref(sortModel);
     g_object_unref(filter);
     gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(treeView), TRUE);
     gtk_tree_view_set_enable_search(GTK_TREE_VIEW(treeView), FALSE);
@@ -4833,6 +4849,32 @@ void newProjectActivated(GtkMenuItem*, gpointer data) {
     view.filePath.clear();
     view.lastSavedSnapshot.clear();
     updateWindowTitle(view);
+#if defined(TRANSMISSION_UI_WITH_LIVE_SERVER)
+    // The live server holds its own authoritative project state (docs/mcp-
+    // live.md) independent of the GTK canvas. Without pushing the reset
+    // project to it here, Play/MCP tools kept running whatever project the
+    // live server had loaded before File > New, even though the canvas had
+    // already reset to the empty default — "New doesn't clear the old
+    // configuration". There is no saved file to point /projects/open at yet,
+    // so write the fresh project to a scratch file just long enough to sync
+    // it, the same way saveProject() does for a real save.
+    if (view.liveServerAvailable) {
+        gchar* tmpPath = nullptr;
+        GError* tmpError = nullptr;
+        const auto descriptor =
+            g_file_open_tmp("transmission-new-XXXXXX.ttl", &tmpPath, &tmpError);
+        if (descriptor >= 0) {
+            close(descriptor);
+            const auto snapshot = transmission::encodeUiProject(captureProject(view));
+            std::string output, helperError;
+            if (runProjectHelper(view, "save", tmpPath, snapshot, output, helperError))
+                syncToLiveServer(view, tmpPath);
+            g_unlink(tmpPath);
+        }
+        g_clear_error(&tmpError);
+        g_free(tmpPath);
+    }
+#endif
 }
 
 void openProjectActivated(GtkMenuItem*, gpointer data) {

@@ -63,14 +63,17 @@ bool integer(std::string_view text, T& result) {
     return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size();
 }
 
+// std::stod parses via the process's current C locale (LC_NUMERIC), which
+// GTK's gtk_init() sets from the environment — under a locale that uses ','
+// as the decimal separator (e.g. it_IT), "189.355" would parse as "189" and
+// leave ".355" unconsumed. std::from_chars for floating point is always
+// locale-independent ('.' only), matching how encodeUiProject's stream
+// output is written (the classic "C" locale, unaffected by setlocale), so
+// round-tripping stays symmetric regardless of the process's locale.
 bool number(std::string_view text, double& result) {
-    try {
-        std::size_t parsed = 0;
-        result = std::stod(std::string(text), &parsed);
-        return parsed == text.size() && std::isfinite(result);
-    } catch (...) {
-        return false;
-    }
+    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), result);
+    return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size() &&
+           std::isfinite(result);
 }
 
 } // namespace
@@ -164,41 +167,57 @@ bool decodeUiProject(const std::string& text, UiProject& project,
     while (std::getline(input, line)) {
         ++lineNumber;
         const auto values = fields(line);
-        const auto fail = [&] {
+        const auto fail = [&](std::string_view reason) {
             error = "invalid native UI project interchange at line " +
-                    std::to_string(lineNumber);
+                    std::to_string(lineNumber) +
+                    (values.empty() ? "" : " (" + std::string(values[0]) + ")") +
+                    ": " + std::string(reason);
+            return false;
+        };
+        const auto expectFields = [&](std::size_t expected) {
+            if (values.size() == expected) return true;
+            fail("expected " + std::to_string(expected) + " tab-separated fields, got " +
+                 std::to_string(values.size()));
             return false;
         };
         if (!header) {
-            if (values.size() != 2 || values[0] != "TRANSMISSION_UI" ||
-                (values[1] != "1" && values[1] != "2" &&
-                 values[1] != "3" && values[1] != "4" &&
-                 values[1] != "5" && values[1] != "6" &&
-                 values[1] != "7" && values[1] != "8")) return fail();
+            if (values.size() != 2 || values[0] != "TRANSMISSION_UI")
+                return fail("expected a \"TRANSMISSION_UI\\t<version>\" header line");
+            if (values[1] != "1" && values[1] != "2" &&
+                values[1] != "3" && values[1] != "4" &&
+                values[1] != "5" && values[1] != "6" &&
+                values[1] != "7" && values[1] != "8")
+                return fail("unsupported interchange version \"" + std::string(values[1]) + "\"");
             header = true;
             continue;
         }
-        if (values.empty()) return fail();
+        if (values.empty()) return fail("empty record");
         if (values[0] == "END") {
-            if (values.size() != 1) return fail();
+            if (values.size() != 1) return fail("END takes no fields");
             ended = true;
             break;
         }
         if (values[0] == "PROJECT") {
-            if (values.size() != 3 || !hexDecode(values[1], candidate.id) ||
-                !hexDecode(values[2], candidate.label)) return fail();
+            if (!expectFields(3)) return false;
+            if (!hexDecode(values[1], candidate.id)) return fail("id is not valid hex");
+            if (!hexDecode(values[2], candidate.label)) return fail("label is not valid hex");
         } else if (values[0] == "TRANSPORT") {
             int enabled = 0;
-            if (values.size() != 4 || !number(values[1], candidate.tempo) ||
-                !number(values[2], candidate.loopBars) ||
-                !integer(values[3], enabled) || (enabled != 0 && enabled != 1) ||
-                candidate.tempo <= 0.0 || candidate.loopBars <= 0.0) return fail();
+            if (!expectFields(4)) return false;
+            if (!number(values[1], candidate.tempo)) return fail("tempo is not a number");
+            if (!number(values[2], candidate.loopBars)) return fail("loopBars is not a number");
+            if (!integer(values[3], enabled) || (enabled != 0 && enabled != 1))
+                return fail("loopEnabled must be 0 or 1");
+            if (candidate.tempo <= 0.0) return fail("tempo must be positive");
+            if (candidate.loopBars <= 0.0) return fail("loopBars must be positive");
             candidate.loopEnabled = enabled == 1;
         } else if (values[0] == "INPUT" || values[0] == "OUTPUT") {
             std::size_t index = 0;
             std::string connection;
-            if (values.size() != 3 || !integer(values[1], index) || index >= 2 ||
-                !hexDecode(values[2], connection)) return fail();
+            if (!expectFields(3)) return false;
+            if (!integer(values[1], index) || index >= 2)
+                return fail("index must be 0 or 1");
+            if (!hexDecode(values[2], connection)) return fail("port name is not valid hex");
             auto& connections = values[0] == "INPUT"
                 ? candidate.systemInputConnections
                 : candidate.systemOutputConnections;
@@ -207,16 +226,25 @@ bool decodeUiProject(const std::string& text, UiProject& project,
             UiProjectNode node;
             int kind = 0;
             std::string resource;
-            if (values.size() != 11 || !hexDecode(values[1], node.id) ||
-                !hexDecode(values[2], node.label) || !integer(values[3], kind) ||
-                kind < 0 || kind > static_cast<int>(UiProjectNodeKind::JigdawPlugin) ||
-                !integer(values[4], node.audioInputs) ||
-                !integer(values[5], node.audioOutputs) ||
-                !integer(values[6], node.midiInputs) ||
-                !integer(values[7], node.midiOutputs) ||
-                !number(values[8], node.x) || !number(values[9], node.y) ||
-                !hexDecode(values[10], resource) || node.id.empty())
-                return fail();
+            if (!expectFields(11)) return false;
+            if (!hexDecode(values[1], node.id)) return fail("id is not valid hex");
+            if (node.id.empty()) return fail("id must not be empty");
+            if (!hexDecode(values[2], node.label)) return fail("label is not valid hex");
+            if (!integer(values[3], kind))
+                return fail("kind \"" + std::string(values[3]) + "\" is not an integer");
+            if (kind < 0 || kind > static_cast<int>(UiProjectNodeKind::JigdawPlugin))
+                return fail("kind " + std::to_string(kind) + " is out of range");
+            if (!integer(values[4], node.audioInputs))
+                return fail("audioInputs \"" + std::string(values[4]) + "\" is not a valid count");
+            if (!integer(values[5], node.audioOutputs))
+                return fail("audioOutputs \"" + std::string(values[5]) + "\" is not a valid count");
+            if (!integer(values[6], node.midiInputs))
+                return fail("midiInputs \"" + std::string(values[6]) + "\" is not a valid count");
+            if (!integer(values[7], node.midiOutputs))
+                return fail("midiOutputs \"" + std::string(values[7]) + "\" is not a valid count");
+            if (!number(values[8], node.x)) return fail("x is not a number");
+            if (!number(values[9], node.y)) return fail("y is not a number");
+            if (!hexDecode(values[10], resource)) return fail("resource is not valid hex");
             node.kind = static_cast<UiProjectNodeKind>(kind);
             if (node.kind == UiProjectNodeKind::MidiInput ||
                 node.kind == UiProjectNodeKind::MidiOutput)
@@ -228,141 +256,176 @@ bool decodeUiProject(const std::string& text, UiProject& project,
             std::string nodeId;
             std::uint32_t parameterId = 0;
             double normalizedValue = 0.0;
-            if (values.size() != 4 || !hexDecode(values[1], nodeId) ||
-                !integer(values[2], parameterId) ||
-                !number(values[3], normalizedValue) ||
-                normalizedValue < 0.0 || normalizedValue > 1.0)
-                return fail();
+            if (!expectFields(4)) return false;
+            if (!hexDecode(values[1], nodeId)) return fail("node id is not valid hex");
+            if (!integer(values[2], parameterId)) return fail("parameterId is not an integer");
+            if (!number(values[3], normalizedValue)) return fail("normalizedValue is not a number");
+            if (normalizedValue < 0.0 || normalizedValue > 1.0)
+                return fail("normalizedValue must be between 0 and 1");
             const auto node = std::find_if(
                 candidate.nodes.begin(), candidate.nodes.end(),
                 [&nodeId](const auto& current) {
                     return current.id == nodeId;
                 });
-            if (node == candidate.nodes.end()) return fail();
+            if (node == candidate.nodes.end())
+                return fail("references a node id that has not been declared yet");
             node->parameters.push_back({parameterId, normalizedValue});
         } else if (values[0] == "STATE") {
             std::string nodeId;
             std::string component;
             std::string controller;
-            if (values.size() != 4 || !hexDecode(values[1], nodeId) ||
-                !hexDecode(values[2], component) ||
-                !hexDecode(values[3], controller))
-                return fail();
+            if (!expectFields(4)) return false;
+            if (!hexDecode(values[1], nodeId)) return fail("node id is not valid hex");
+            if (!hexDecode(values[2], component)) return fail("component state is not valid hex");
+            if (!hexDecode(values[3], controller)) return fail("controller state is not valid hex");
             const auto node = std::find_if(
                 candidate.nodes.begin(), candidate.nodes.end(),
                 [&nodeId](const auto& current) {
                     return current.id == nodeId;
                 });
-            if (node == candidate.nodes.end()) return fail();
+            if (node == candidate.nodes.end())
+                return fail("references a node id that has not been declared yet");
             node->componentState.assign(component.begin(), component.end());
             node->controllerState.assign(controller.begin(), controller.end());
         } else if (values[0] == "NODE_GAIN") {
             std::string nodeId;
             double gainDb = 0.0;
             double pan = 0.0;
-            if ((values.size() != 3 && values.size() != 4) ||
-                !hexDecode(values[1], nodeId) ||
-                !number(values[2], gainDb) ||
-                (values.size() == 4 && !number(values[3], pan)) ||
-                gainDb < GainProcessor::minimumGainDb ||
-                gainDb > GainProcessor::maximumGainDb ||
-                pan < -1.0 || pan > 1.0)
-                return fail();
+            if (values.size() != 3 && values.size() != 4)
+                return fail("expected 3 or 4 tab-separated fields, got " +
+                            std::to_string(values.size()));
+            if (!hexDecode(values[1], nodeId)) return fail("node id is not valid hex");
+            if (!number(values[2], gainDb)) return fail("gainDb is not a number");
+            if (values.size() == 4 && !number(values[3], pan)) return fail("pan is not a number");
+            if (gainDb < GainProcessor::minimumGainDb || gainDb > GainProcessor::maximumGainDb)
+                return fail("gainDb is out of range");
+            if (pan < -1.0 || pan > 1.0) return fail("pan must be between -1 and 1");
             const auto node = std::find_if(candidate.nodes.begin(), candidate.nodes.end(),
                 [&](const auto& current) { return current.id == nodeId; });
-            if (node == candidate.nodes.end() || node->kind != UiProjectNodeKind::Gain)
-                return fail();
+            if (node == candidate.nodes.end())
+                return fail("references a node id that has not been declared yet");
+            if (node->kind != UiProjectNodeKind::Gain)
+                return fail("references a node that is not a Gain node");
             node->gainDb = gainDb;
             node->pan = pan;
         } else if (values[0] == "EDGE") {
             UiProjectConnection connection;
             int kind = 0;
-            if (values.size() != 6 || !hexDecode(values[1], connection.from) ||
-                !hexDecode(values[2], connection.to) || !integer(values[3], kind) ||
-                kind < 0 || kind > static_cast<int>(UiProjectConnectionKind::Midi) ||
-                !integer(values[4], connection.fromPort) ||
-                !integer(values[5], connection.toPort) ||
-                connection.from.empty() || connection.to.empty()) return fail();
+            if (!expectFields(6)) return false;
+            if (!hexDecode(values[1], connection.from)) return fail("from is not valid hex");
+            if (!hexDecode(values[2], connection.to)) return fail("to is not valid hex");
+            if (connection.from.empty()) return fail("from must not be empty");
+            if (connection.to.empty()) return fail("to must not be empty");
+            if (!integer(values[3], kind)) return fail("kind is not an integer");
+            if (kind < 0 || kind > static_cast<int>(UiProjectConnectionKind::Midi))
+                return fail("kind " + std::to_string(kind) + " is out of range");
+            if (!integer(values[4], connection.fromPort)) return fail("fromPort is not a valid index");
+            if (!integer(values[5], connection.toPort)) return fail("toPort is not a valid index");
             connection.kind = static_cast<UiProjectConnectionKind>(kind);
             candidate.connections.push_back(std::move(connection));
         } else if (values[0] == "ARRANGEMENT") {
-            if (values.size() != 2 || !number(values[1], candidate.arrangementLengthBeats) ||
-                candidate.arrangementLengthBeats < 0.0) return fail();
+            if (!expectFields(2)) return false;
+            if (!number(values[1], candidate.arrangementLengthBeats))
+                return fail("arrangementLengthBeats is not a number");
+            if (candidate.arrangementLengthBeats < 0.0)
+                return fail("arrangementLengthBeats must not be negative");
         } else if (values[0] == "CLIP") {
             UiProjectMidiClip clip;
-            if (values.size() != 5 || !hexDecode(values[1], clip.id) ||
-                !hexDecode(values[2], clip.targetNodeId) ||
-                !number(values[3], clip.startBeat) || !number(values[4], clip.lengthBeats) ||
-                clip.id.empty() || clip.targetNodeId.empty() || clip.startBeat < 0.0 ||
-                clip.lengthBeats <= 0.0) return fail();
+            if (!expectFields(5)) return false;
+            if (!hexDecode(values[1], clip.id)) return fail("id is not valid hex");
+            if (clip.id.empty()) return fail("id must not be empty");
+            if (!hexDecode(values[2], clip.targetNodeId)) return fail("targetNodeId is not valid hex");
+            if (clip.targetNodeId.empty()) return fail("targetNodeId must not be empty");
+            if (!number(values[3], clip.startBeat)) return fail("startBeat is not a number");
+            if (clip.startBeat < 0.0) return fail("startBeat must not be negative");
+            if (!number(values[4], clip.lengthBeats)) return fail("lengthBeats is not a number");
+            if (clip.lengthBeats <= 0.0) return fail("lengthBeats must be positive");
             candidate.midiClips.push_back(std::move(clip));
         } else if (values[0] == "NOTE") {
             std::string clipId;
             UiProjectMidiNote note;
             unsigned pitch = 0, velocity = 0, channel = 0;
-            if (values.size() != 7 || !hexDecode(values[1], clipId) ||
-                !number(values[2], note.startBeat) || !number(values[3], note.durationBeats) ||
-                !integer(values[4], pitch) || !integer(values[5], velocity) ||
-                !integer(values[6], channel) || note.startBeat < 0.0 ||
-                note.durationBeats <= 0.0 || pitch > 127 || velocity == 0 ||
-                velocity > 127 || channel > 15) return fail();
+            if (!expectFields(7)) return false;
+            if (!hexDecode(values[1], clipId)) return fail("clip id is not valid hex");
+            if (!number(values[2], note.startBeat)) return fail("startBeat is not a number");
+            if (!number(values[3], note.durationBeats)) return fail("durationBeats is not a number");
+            if (!integer(values[4], pitch)) return fail("pitch is not an integer");
+            if (!integer(values[5], velocity)) return fail("velocity is not an integer");
+            if (!integer(values[6], channel)) return fail("channel is not an integer");
+            if (note.startBeat < 0.0) return fail("startBeat must not be negative");
+            if (note.durationBeats <= 0.0) return fail("durationBeats must be positive");
+            if (pitch > 127) return fail("pitch must be 0-127");
+            if (velocity == 0 || velocity > 127) return fail("velocity must be 1-127");
+            if (channel > 15) return fail("channel must be 0-15");
             const auto clip = std::find_if(candidate.midiClips.begin(), candidate.midiClips.end(),
                 [&](const auto& current) { return current.id == clipId; });
-            if (clip == candidate.midiClips.end() ||
-                note.startBeat + note.durationBeats > clip->lengthBeats) return fail();
+            if (clip == candidate.midiClips.end())
+                return fail("references a clip id that has not been declared yet");
+            if (note.startBeat + note.durationBeats > clip->lengthBeats)
+                return fail("note extends past the end of its clip");
             note.pitch = static_cast<std::uint8_t>(pitch);
             note.velocity = static_cast<std::uint8_t>(velocity);
             note.channel = static_cast<std::uint8_t>(channel);
             clip->notes.push_back(note);
         } else if (values[0] == "GAIN_LANE") {
             UiProjectGainLane lane;
-            if (values.size() != 2 || !hexDecode(values[1], lane.targetNodeId) ||
-                lane.targetNodeId.empty()) return fail();
+            if (!expectFields(2)) return false;
+            if (!hexDecode(values[1], lane.targetNodeId)) return fail("targetNodeId is not valid hex");
+            if (lane.targetNodeId.empty()) return fail("targetNodeId must not be empty");
             candidate.gainLanes.push_back(std::move(lane));
         } else if (values[0] == "GAIN_POINT") {
             std::string nodeId;
             GainEnvelopePoint point;
             int linear = 0;
-            if (values.size() != 5 || !hexDecode(values[1], nodeId) ||
-                !number(values[2], point.beat) || !number(values[3], point.valueDb) ||
-                !integer(values[4], linear) || point.beat < 0.0 ||
-                (linear != 0 && linear != 1)) return fail();
+            if (!expectFields(5)) return false;
+            if (!hexDecode(values[1], nodeId)) return fail("node id is not valid hex");
+            if (!number(values[2], point.beat)) return fail("beat is not a number");
+            if (!number(values[3], point.valueDb)) return fail("valueDb is not a number");
+            if (!integer(values[4], linear) || (linear != 0 && linear != 1))
+                return fail("linear must be 0 or 1");
+            if (point.beat < 0.0) return fail("beat must not be negative");
             const auto lane = std::find_if(candidate.gainLanes.begin(), candidate.gainLanes.end(),
                 [&](const auto& current) { return current.targetNodeId == nodeId; });
-            if (lane == candidate.gainLanes.end() ||
-                (!lane->points.empty() && point.beat <= lane->points.back().beat)) return fail();
+            if (lane == candidate.gainLanes.end())
+                return fail("references a gain lane that has not been declared yet");
+            if (!lane->points.empty() && point.beat <= lane->points.back().beat)
+                return fail("points must be strictly increasing in beat");
             point.linear = linear == 1;
             lane->points.push_back(point);
         } else if (values[0] == "MIDI_MAP") {
             UiProjectMidiParameterMapping mapping;
             unsigned controller = 0;
             int consume = 0;
-            if (values.size() != 6 ||
-                !hexDecode(values[1], mapping.targetNodeId) ||
-                !integer(values[2], mapping.parameterId) ||
-                !integer(values[3], mapping.channel) ||
-                !integer(values[4], controller) ||
-                !integer(values[5], consume) ||
-                mapping.targetNodeId.empty() || mapping.channel < -1 ||
-                mapping.channel > 15 || controller > 127 ||
-                (consume != 0 && consume != 1))
-                return fail();
+            if (!expectFields(6)) return false;
+            if (!hexDecode(values[1], mapping.targetNodeId)) return fail("targetNodeId is not valid hex");
+            if (mapping.targetNodeId.empty()) return fail("targetNodeId must not be empty");
+            if (!integer(values[2], mapping.parameterId)) return fail("parameterId is not an integer");
+            if (!integer(values[3], mapping.channel)) return fail("channel is not an integer");
+            if (mapping.channel < -1 || mapping.channel > 15) return fail("channel must be -1 to 15");
+            if (!integer(values[4], controller)) return fail("controller is not an integer");
+            if (controller > 127) return fail("controller must be 0-127");
+            if (!integer(values[5], consume) || (consume != 0 && consume != 1))
+                return fail("consume must be 0 or 1");
             const auto target = std::find_if(
                 candidate.nodes.begin(), candidate.nodes.end(),
                 [&](const auto& node) {
                     return node.id == mapping.targetNodeId;
                 });
-            if (target == candidate.nodes.end()) return fail();
+            if (target == candidate.nodes.end())
+                return fail("references a node id that has not been declared yet");
             mapping.controller = static_cast<std::uint8_t>(controller);
             mapping.consume = consume == 1;
             candidate.midiMappings.push_back(mapping);
         } else if (values[0] == "SETTINGS") {
-            if (values.size() != 4 ||
-                !integer(values[1], candidate.renderAheadMilliseconds) ||
-                !integer(values[2], candidate.requestedBufferSize) ||
-                !integer(values[3], candidate.processingThreads)) return fail();
+            if (!expectFields(4)) return false;
+            if (!integer(values[1], candidate.renderAheadMilliseconds))
+                return fail("renderAheadMilliseconds is not a valid count");
+            if (!integer(values[2], candidate.requestedBufferSize))
+                return fail("requestedBufferSize is not a valid count");
+            if (!integer(values[3], candidate.processingThreads))
+                return fail("processingThreads is not a valid count");
         } else {
-            return fail();
+            return fail("unrecognised record type \"" + std::string(values[0]) + "\"");
         }
     }
     if (!header || !ended || candidate.nodes.empty()) {

@@ -51,13 +51,15 @@ Right now we can load the generative plugins from Downspout into transmission bu
 
 ## Bugs
 
-- GTK console (`View > Show Console`, `Ctrl+\``) only implements `status`, `lsp`,
-  `reconnect`, `parse [path]`, `clear`, `help` — it's missing `connections`, `peaks`,
-  and `diag`, which `CLAUDE.md`'s "No audio from a project" runbook and the console's
-  own documented command set assume exist. Add them (mirrors what `GET /diagnostics`,
-  `GET /peaks`, and `GET /jack-ports` expose over the live-server HTTP API in
-  `docs/mcp-live.md`, but needs to work from the local/non-live-server code path too,
-  since that's what's active whenever `liveServerAvailable` is false).
+- ~~GTK console missing `connections`/`peaks`/`diag`~~ **Not actually missing** —
+  `consoleCommandActivated` in `native_graph_ui_main.cpp` implements `status`, `diag`,
+  `lsp`, `connections`, `peaks`, `watch`, `unwatch`, `reconnect`, `scan`, `parse [path]`,
+  `clear`, `help`; `help` lists all of them correctly. The bug is narrower: the console's
+  static startup banner (`showConsoleWindow`, "Console ready. Commands: ...") is stale
+  and only names `status lsp reconnect parse [path] clear help`, which is what misled
+  this session into reporting the wrong root cause. Fix: either generate that banner
+  from the same command list `help` uses, or just have it say `Type help for a list of
+  commands`.
 
   Found while diagnosing a live BassGen → Basilico → System Output patch that produced
   no audio: `jack_capture` on `transmission:out_1`/`out_2` measured RMS 0.0 on both
@@ -67,8 +69,28 @@ Right now we can load the generative plugins from Downspout into transmission bu
   window) offline — so the graph and plugins are fine; whatever's wrong is specific to
   the live JACK path. Also found in the same session: JACK auto-connect only wired
   `transmission:out_1` to `Built-in Audio Analog Stereo:playback_FL`; `out_2` had no
-  destination at all. A working `connections`/`diag` command would have surfaced both
-  of these directly instead of requiring an offline probe and manual `jack_capture`.
+  destination at all. `connections`/`diag` (once the banner isn't hiding them) surface
+  both of these directly instead of requiring an offline probe and manual `jack_capture`.
+
+- **Done, 2026-09-24.** `UiProjectCodec::decodeUiProject`'s parse failures only ever
+  said `invalid native UI project interchange at line N`, with no indication of which
+  record or field was wrong — hit when opening `projects/temp.ttl` produced exactly
+  that dead end. Rewrote every branch's compound `||` condition into individual checks,
+  each with its own `fail(reason)` message, e.g. `at line 10 (NODE): midiOutputs "X" is
+  not a valid count` instead of just `at line 10`. Verified against a standalone harness
+  linking `UiProjectCodec.cpp` directly: valid interchange still decodes identically
+  (`ok=1`), and a deliberately corrupted field now names itself instead of just the line.
+  `transmission_graph_ui` rebuilds clean in `build-ui-jack-vst3`.
+
+  Still open: the specific `temp.ttl` failure that prompted this wasn't reproduced —
+  `node scripts/native-ui-project.js load projects/temp.ttl` piped through the improved
+  decoder parses cleanly (`ok=1`) both before and after this fix, on the file as it
+  currently sits on disk. So either it was a stale/already-running GTK process (this
+  session found the app not running at all partway through investigating), a `node`
+  resolution difference in the app's subprocess `PATH` vs. this shell's (nvm-managed
+  node here), or a transient race with the file being written. Needs a repro against the
+  freshly rebuilt binary — the new error message should name the exact field if it
+  recurs.
 
 - `projectDefinitionToTurtle` in `src/http/TransmissionHttpClient.js` only serializes node IDs into the `:pipe` list — it drops node types, settings, ports, and connections. The server's `parseNewProject` then fails with "Graph node X type is required". Fix: replace the minimal hand-rolled Turtle with the existing `TransmissionRdf.js` serializer (the function is async, so the caller can await it).
 

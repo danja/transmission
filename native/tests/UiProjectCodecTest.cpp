@@ -1,6 +1,7 @@
 #include "transmission/UiProjectCodec.h"
 
 #include <cassert>
+#include <clocale>
 
 int main() {
     transmission::UiProject project;
@@ -100,5 +101,24 @@ int main() {
         "TRANSMISSION_UI\t1\n"
         "NODE\t6e\t6e\t3\t0\t2\t0\t0\t0\t0\t2f702e76737433\n"
         "END\n", decoded, error));
+
+    // number() must parse '.'-decimal fields regardless of the process's C
+    // locale: gtk_init() calls setlocale(LC_ALL, "") on startup, and under a
+    // locale that uses ',' as the decimal separator (e.g. it_IT), a naive
+    // std::stod parse of "189.355" reads only "189" and leaves ".355"
+    // unconsumed. Skip if the locale isn't installed on this machine rather
+    // than fail the whole suite over an environment gap.
+    if (std::setlocale(LC_NUMERIC, "it_IT.UTF-8")) {
+        transmission::UiProject localeProject;
+        std::string localeError;
+        const bool ok = transmission::decodeUiProject(
+            "TRANSMISSION_UI\t8\n"
+            "NODE\t6e\t6e\t3\t0\t2\t0\t0\t189.355\t282.211\t2f702e76737433\n"
+            "END\n", localeProject, localeError);
+        assert(ok);
+        assert(localeProject.nodes[0].x == 189.355);
+        assert(localeProject.nodes[0].y == 282.211);
+        std::setlocale(LC_NUMERIC, "C");
+    }
     return 0;
 }

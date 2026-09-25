@@ -200,6 +200,26 @@ export async function parseArrangementClipRemove(turtleBody) {
   return { expectedRevision, clipId }
 }
 
+export async function parseFreezeGenerator(turtleBody) {
+  const dataset = await parseTurtle(turtleBody)
+  const subject = findSubjectOfType(dataset, `${TRN}FreezeGenerator`)
+  if (!subject) throw new ParseError('Body must contain a trn:FreezeGenerator subject')
+  const expectedRevision = numericValue(getOne(dataset, subject, `${TRN}expectedRevision`))
+  const sourceNodeId = stringValue(getOne(dataset, subject, `${TRN}sourceNodeId`))
+  if (!sourceNodeId) throw new ParseError('trn:FreezeGenerator requires trn:sourceNodeId')
+  const targetNodeId = stringValue(getOne(dataset, subject, `${TRN}targetNodeId`))
+  if (!targetNodeId) throw new ParseError('trn:FreezeGenerator requires trn:targetNodeId')
+  return {
+    expectedRevision,
+    sourceNodeId,
+    targetNodeId,
+    clipId: stringValue(getOne(dataset, subject, `${TRN}clipId`)),
+    startBeat: numericValue(getOne(dataset, subject, `${TRN}startBeat`)),
+    lengthBeats: numericValue(getOne(dataset, subject, `${TRN}lengthBeats`)),
+    durationBeats: numericValue(getOne(dataset, subject, `${TRN}durationBeats`))
+  }
+}
+
 export async function parseParametersBatch(turtleBody) {
   const dataset = await parseTurtle(turtleBody)
   const subject = findSubjectOfType(dataset, `${TRN}SetParametersBatch`)

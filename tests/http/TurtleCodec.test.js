@@ -8,6 +8,7 @@ import {
   parseArrangementUpdate,
   parseArrangementClipAdd,
   parseArrangementClipRemove,
+  parseFreezeGenerator,
   parseParametersBatch,
   parseJigdawDescribe,
   parseCaptureMidi,
@@ -289,6 +290,39 @@ describe('parseRenderAudio', () => {
   it('throws ParseError on missing subject and file path', async () => {
     await expect(parseRenderAudio(`@prefix trn: <${TRN}> . [] a trn:Other .`)).rejects.toThrow(ParseError)
     await expect(parseRenderAudio(`@prefix trn: <${TRN}> . [] a trn:RenderAudio .`)).rejects.toThrow(ParseError)
+  })
+})
+
+describe('parseFreezeGenerator', () => {
+  it('parses full and partial freeze requests', async () => {
+    const full = await parseFreezeGenerator(`
+@prefix trn: <${TRN}> .
+[] a trn:FreezeGenerator ;
+   trn:expectedRevision 2 ;
+   trn:sourceNodeId "gen" ;
+   trn:targetNodeId "syn" ;
+   trn:clipId "frozen" ;
+   trn:startBeat 4 ;
+   trn:lengthBeats 16 ;
+   trn:durationBeats 16 .
+`)
+    expect(full).toEqual({
+      expectedRevision: 2, sourceNodeId: 'gen', targetNodeId: 'syn',
+      clipId: 'frozen', startBeat: 4, lengthBeats: 16, durationBeats: 16
+    })
+    const partial = await parseFreezeGenerator(
+      `@prefix trn: <${TRN}> . [] a trn:FreezeGenerator ; trn:sourceNodeId "g" ; trn:targetNodeId "s" .`)
+    expect(partial).toMatchObject({ sourceNodeId: 'g', targetNodeId: 's' })
+    expect(partial.clipId).toBeUndefined()
+  })
+
+  it('throws ParseError on missing subject and node ids', async () => {
+    const other = `@prefix trn: <${TRN}> . [] a trn:Other .`
+    await expect(parseFreezeGenerator(other)).rejects.toThrow(ParseError)
+    const noSource = `@prefix trn: <${TRN}> . [] a trn:FreezeGenerator ; trn:targetNodeId "s" .`
+    await expect(parseFreezeGenerator(noSource)).rejects.toThrow(ParseError)
+    const noTarget = `@prefix trn: <${TRN}> . [] a trn:FreezeGenerator ; trn:sourceNodeId "g" .`
+    await expect(parseFreezeGenerator(noTarget)).rejects.toThrow(ParseError)
   })
 })
 

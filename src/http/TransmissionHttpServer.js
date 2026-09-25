@@ -15,6 +15,7 @@ import {
   parseArrangementUpdate,
   parseArrangementClipAdd,
   parseArrangementClipRemove,
+  parseFreezeGenerator,
   parseParametersBatch,
   parseJigdawDescribe,
   parseCaptureMidi,
@@ -149,6 +150,11 @@ export class TransmissionHttpServer {
     if (path === '/arrangement/clips/remove') {
       const input = await parseArrangementClipRemove(body)
       return sendJson(res, 200, control.removeArrangementClip(input))
+    }
+    if (path === '/arrangement/clips/freeze') {
+      const input = await parseFreezeGenerator(body)
+      const defined = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined))
+      return sendJson(res, 200, control.freezeGenerator(defined))
     }
     if (path === '/transport/play') {
       return sendTurtle(res, 200, serializeStatus(control.startTransport()))

@@ -100,6 +100,7 @@ All graph mutations require stopped audio and the current `expectedRevision`.
 | `arrangement_update` | Replace arrangement length, MIDI clips, and gain lanes |
 | `clip_add` | Add a MIDI clip with note events |
 | `clip_remove` | Remove a MIDI clip by id |
+| `clip_freeze` | Capture a generator to a MIDI clip (needs native engine) |
 | `arrangement_render_midi` | Write the current arrangement to a Standard MIDI File |
 | `arrangement_render_audio` | Offline-bounce the project to a stereo WAV file (needs native engine) |
 

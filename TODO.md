@@ -129,18 +129,17 @@ For `transport_play` and audio control to work via MCP from a Claude session:
 - Plugin delay compensation: no framework exists (VST3
   `getLatencySamples` unread, JigDAW `latencyFrames` surfaced but
   uncompensated). Needs an engine-wide design, not a per-plugin fix.
-- ~~Persisted parameter automation with sample-offset delivery~~ **Done,
-  2026-09-24, offsets only.** `sampleOffset` was already carried
-  control → engine → bridge but dropped at the NAPI boundary; it now
-  threads `AudioEngine` → `RoutedAudioGraph` (rejected when beyond the
-  prepared block) → VST3 `inputParameterChanges` points, with Gain/JigDAW
-  applying at block start / on change as before. Verified headless against
-  a real VST3 (offsets 5/1023 accepted at 1024-frame blocks, 1024+/garbage
-  rejected). Bypass and send automation remain open — no bypass or send
-  concept exists anywhere yet.
-- Suspend schedule-only instrument processors outside their authored activity
-  window while preserving a bounded post-note tail.
-- Add a deterministic capture/freeze path for MIDI generator output.
+- ~~Freeze generator output back into arrangement clips~~ **Done, 2026-09-25.**
+  `clip_freeze` composes the existing pieces: `engine.captureMidi` →
+  note on/off pairing (`freezeClipFromEvents`: velocity-zero offs, stray-off
+  and other-node filtering, overlap keeps first, open notes extend to the
+  clip end, past-end durations clamped) → `addArrangementClip` validation.
+  Source must name a graph node, target is validated by the arrangement
+  model, duplicates rejected. Covered without native code (stubbed capture)
+  plus a live-HTTP round trip. Determinism caveat stands: frozen output is
+  only as deterministic as the generator.
+- Bypass and send automation: no bypass or send concept exists anywhere
+  (verified 2026-09-24) — needs model + engine design, not just plumbing.
 
 ## MCP Live — Phase 3
 

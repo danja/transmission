@@ -142,6 +142,7 @@ export interface TransmissionControlApi {
   updateArrangement(input: { expectedRevision: number, lengthBeats?: number, midiClips?: MidiClip[], gainLanes?: GainLane[] }): unknown
   addArrangementClip(input: { expectedRevision: number, clip: MidiClip }): unknown
   removeArrangementClip(input: { expectedRevision: number, clipId: string }): unknown
+  freezeGenerator(input: { expectedRevision: number, sourceNodeId: string, targetNodeId: string, clipId?: string, startBeat?: number, lengthBeats?: number, durationBeats?: number }): unknown
   peaks(): { peakL: number, peakR: number }
   diagnostics(): unknown
   plugins(options?: { installedOnly?: boolean }): unknown

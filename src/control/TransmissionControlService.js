@@ -272,6 +272,34 @@ export class TransmissionControlService {
     return { revision: this.project.revision, arrangement: this.project.arrangement.toJSON() }
   }
 
+  freezeGenerator({ expectedRevision, sourceNodeId, targetNodeId, clipId, startBeat = 0, lengthBeats, durationBeats }) {
+    this.#requireProject()
+    this.#requireStopped()
+    if (!this.engine) throw new Error('Native engine is required to freeze a generator; start the MCP server with --native-addon')
+    this.#checkRevision(expectedRevision)
+    if (!sourceNodeId || typeof sourceNodeId !== 'string') throw new TypeError('freezeGenerator sourceNodeId is required')
+    if (!this.project.graph.node(sourceNodeId)) throw new Error(`Freeze source does not exist: ${sourceNodeId}`)
+    const arrangement = this.project.arrangement.toJSON()
+    const beats = durationBeats ?? arrangement.lengthBeats
+    if (!Number.isFinite(beats) || beats <= 0) {
+      throw new RangeError('freezeGenerator durationBeats must be positive (the arrangement length is 0; pass durationBeats explicitly)')
+    }
+    const events = this.engine.captureMidi(beats)
+    const clip = freezeClipFromEvents(events, {
+      sourceNodeId,
+      targetNodeId,
+      clipId: clipId ?? `freeze-${sourceNodeId}-${startBeat}`,
+      startBeat,
+      lengthBeats: lengthBeats ?? beats
+    })
+    this.project.updateArrangement(current => {
+      if (current.midiClips.some(c => c.id === clip.id))
+        throw new Error(`MIDI clip already exists: ${clip.id}`)
+      return { ...current, midiClips: [...current.midiClips, clip] }
+    })
+    return { revision: this.project.revision, arrangement: this.project.arrangement.toJSON(), clip }
+  }
+
   diagnostics() {
     let native = null
     if (this.engine) native = this.engine.diagnostics()
@@ -536,6 +564,54 @@ function validateMidiMapping(mapping, nodes, { requireTargetNode = true } = {}) 
   }
   if (typeof consume !== 'boolean') throw new TypeError('MIDI mapping consume must be a boolean')
   return { targetNodeId, parameterId, channel, controller, consume }
+}
+
+/**
+ * Pair captured note on/off events into an arrangement MIDI clip.
+ * Same-timestamp on/off pairs are dropped (clips require positive
+ * durations); overlapping re-ons keep the first; stray offs are dropped;
+ * notes still open at the clip end extend to it; non-note events are
+ * ignored. Events are expected from engine.captureMidi().
+ */
+export function freezeClipFromEvents(events, { sourceNodeId, targetNodeId, clipId, startBeat = 0, lengthBeats }) {
+  if (!targetNodeId || typeof targetNodeId !== 'string') throw new TypeError('freezeGenerator targetNodeId is required')
+  const isOn = status => status === 0x90
+  const sorted = [...(events ?? [])]
+    .filter(event => event?.nodeId === sourceNodeId)
+    .map(event => ({
+      beat: Number(event.beatPosition),
+      kind: Number(event.status) & 0xf0,
+      channel: Number(event.status) & 0x0f,
+      pitch: Number(event.data1),
+      velocity: Number(event.data2)
+    }))
+    .filter(event => Number.isFinite(event.beat) && event.beat >= startBeat)
+    .sort((a, b) => a.beat - b.beat || (isOn(a.kind) && a.velocity > 0 ? 0 : 1) - (isOn(b.kind) && b.velocity > 0 ? 0 : 1))
+  const notes = []
+  const open = new Map()
+  for (const event of sorted) {
+    const key = `${event.channel}:${event.pitch}`
+    const rel = event.beat - startBeat
+    if (event.kind === 0x90 && event.velocity > 0) {
+      if (!open.has(key)) open.set(key, { beat: rel, velocity: event.velocity })
+    } else if (event.kind === 0x80 || event.kind === 0x90) {
+      const on = open.get(key)
+      if (!on) continue
+      open.delete(key)
+      const end = Math.min(event.beat - startBeat, lengthBeats)
+      if (end > on.beat) {
+        notes.push({ startBeat: on.beat, durationBeats: end - on.beat, pitch: event.pitch, velocity: on.velocity, channel: event.channel })
+      }
+    }
+  }
+  for (const [key, on] of open) {
+    const [channel, pitch] = key.split(':').map(Number)
+    if (lengthBeats > on.beat) {
+      notes.push({ startBeat: on.beat, durationBeats: lengthBeats - on.beat, pitch, velocity: on.velocity, channel })
+    }
+  }
+  notes.sort((a, b) => a.startBeat - b.startBeat || a.pitch - b.pitch)
+  return { id: clipId, targetNodeId, startBeat, lengthBeats, notes }
 }
 
 function connectionMatches(left, right) {

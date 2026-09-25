@@ -86,6 +86,24 @@ export class TransmissionHttpClient {
     return this._post('/arrangement/clips/remove', turtle, 'text/turtle')
   }
 
+  async freezeGenerator({ expectedRevision, sourceNodeId, targetNodeId, clipId, startBeat, lengthBeats, durationBeats }) {
+    const lines = [
+      `@prefix trn: <${TRN}> .`,
+      '',
+      '[] a trn:FreezeGenerator ;',
+      `    trn:expectedRevision ${expectedRevision} ;`,
+      `    trn:sourceNodeId ${turtleLiteral(sourceNodeId)} ;`,
+      `    trn:targetNodeId ${turtleLiteral(targetNodeId)} .`
+    ]
+    const optional = { clipId, startBeat, lengthBeats, durationBeats }
+    for (const [key, value] of Object.entries(optional)) {
+      if (value === undefined) continue
+      lines[lines.length - 1] = lines[lines.length - 1].replace(/ \.$/, ' ;')
+      lines.push(`    trn:${key} ${typeof value === 'number' ? value : turtleLiteral(value)} .`)
+    }
+    return this._post('/arrangement/clips/freeze', lines.join('\n') + '\n', 'text/turtle')
+  }
+
   async plugins({ installedOnly = false } = {}) {
     return this._get(`/plugins${installedOnly ? '?installedOnly=true' : ''}`, 'json')
   }

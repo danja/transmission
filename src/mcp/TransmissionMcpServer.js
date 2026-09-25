@@ -446,6 +446,21 @@ function registerTools(server, control) {
     annotations: mutatingIdempotent
   }, async input => result(await control.removeArrangementClip(input)))
 
+  server.registerTool('clip_freeze', {
+    title: 'Freeze a generator to a MIDI clip',
+    description: 'Run the native engine headless, capture one node MIDI output, pair note on/off events, and store the result as an arrangement MIDI clip on a target instrument. durationBeats defaults to the arrangement length. Requires the native engine (--native-addon). Audio must be stopped before calling.',
+    inputSchema: {
+      expectedRevision: z.coerce.number().int().nonnegative(),
+      sourceNodeId: z.string().min(1),
+      targetNodeId: z.string().min(1),
+      clipId: z.string().min(1).optional(),
+      startBeat: z.coerce.number().nonnegative().default(0),
+      lengthBeats: z.coerce.number().positive().optional(),
+      durationBeats: z.coerce.number().positive().optional()
+    },
+    annotations: mutatingIdempotent
+  }, async input => result(await control.freezeGenerator(input)))
+
   server.registerTool('project_capture_midi', {
     title: 'Capture project MIDI to file',
     description: 'Run the native engine for a given number of beats, intercept MIDI output from every node, and write a single multi-track SMF. One track per source node, named after the node label. Requires the native engine (--native-addon). Audio must be stopped before calling.',

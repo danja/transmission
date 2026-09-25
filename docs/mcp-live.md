@@ -91,6 +91,7 @@ All mutations require an `trn:expectedRevision` in the request body to prevent l
 | `POST /arrangement/update` | `trn:ArrangementUpdate` with optional length/clips/lanes | Replace arrangement fields |
 | `POST /arrangement/clips/add` | `trn:AddArrangementClip` with `trn:clipJson` | Add a MIDI clip |
 | `POST /arrangement/clips/remove` | `trn:RemoveArrangementClip` with `trn:clipId` | Remove a MIDI clip |
+| `POST /arrangement/clips/freeze` | `trn:FreezeGenerator` with source/target node ids | Capture a generator to a MIDI clip (needs native engine) |
 | `POST /arrangement/render-midi` | `trn:RenderMidi` with `trn:filePath` | Write arrangement clips to an SMF |
 | `POST /arrangement/render-audio` | `trn:RenderAudio` with `trn:filePath` + options | Offline-bounce to a stereo WAV (needs native engine) |
 | `POST /projects/capture-midi` | `trn:CaptureProjectMidi` with `trn:filePath` + beats | Capture engine MIDI to an SMF (needs native engine) |

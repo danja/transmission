@@ -308,7 +308,7 @@ bool JigdawProcessor::setParameter(std::uint32_t parameterId, double normalizedV
         error = "unknown JigDAW parameter index: " + std::to_string(parameterId);
         return false;
     }
-    if (!enqueueParameter(parameterId, normalizedValue)) {
+    if (!enqueueParameter(parameterId, normalizedValue, 0)) {
         error = "JigDAW parameter queue is full";
         return false;
     }
@@ -316,7 +316,8 @@ bool JigdawProcessor::setParameter(std::uint32_t parameterId, double normalizedV
 }
 
 bool JigdawProcessor::enqueueParameter(std::uint32_t parameterId,
-                                       double normalizedValue) noexcept {
+                                       double normalizedValue,
+                                       std::uint32_t /*sampleOffset*/) noexcept {
     if (!ready() || normalizedValue < 0.0 || normalizedValue > 1.0) return false;
     for (std::size_t index = 0; index < Impl::maxPendingParameters; ++index) {
         std::uint8_t available = 0;

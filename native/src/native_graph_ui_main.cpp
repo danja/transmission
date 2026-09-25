@@ -5,7 +5,11 @@
 
 // Forward-declare only — including <X11/Xlib.h> pollutes the translation unit
 // with macros (None, Bool, Status, Window) that break GTK/GLib code.
+// Only needed (and only linked) with VST3: plugin editors call X11 from
+// their own threads.
+#ifdef TRANSMISSION_UI_WITH_VST3
 extern "C" { int XInitThreads(); }
+#endif
 #include "transmission/AudioClipProcessor.h"
 #include "transmission/AudioProcessor.h"
 #include "transmission/GraphRuntimeController.h"
@@ -5904,7 +5908,9 @@ void activate(GtkApplication* application, gpointer) {
 } // namespace
 
 int main(int argc, char** argv) {
+#ifdef TRANSMISSION_UI_WITH_VST3
     XInitThreads();  // Required before any X11 calls; plugins call X11 from their own threads.
+#endif
     auto* application = gtk_application_new("org.transmission.Graph", G_APPLICATION_DEFAULT_FLAGS);
     g_signal_connect(application, "activate", G_CALLBACK(activate), nullptr);
     const int status = g_application_run(G_APPLICATION(application), argc, argv);

@@ -1,5 +1,42 @@
 # Mistakes
 
+## napi_get_named_property on a possibly-undefined receiver leaks a V8 TypeError
+
+**What happened:** `loadProject` on a compiled graph without top-level
+`metadata` threw `TypeError: Cannot convert undefined or null to object`
+with no message, instead of loading cleanly or failing with a named error.
+Bisected to `readStringArray`'s `napi_get_named_property(env, argv[0],
+"metadata", &meta)` followed by a read on `meta`: when the property is
+absent V8 throws on the undefined receiver, and that pending exception slips
+past every `!= napi_ok` status check to surface at the call boundary.
+
+**Fix:** typeof-guard the receiver first (`napi_typeof` + object check, the
+same shape as the file's own `getObject()`), in `native/src/napi_bridge.cpp`.
+
+**Prevention:** Any NAPI read chain that touches a value which can be
+undefined/null (optional object, array element, `argv[i]` past `argc`) must
+typeof-check before the next property access. Status checks alone do not
+catch a V8-thrown TypeError — it is already pending by the time the status
+is read.
+
+## Interchange version bump — rebuilt the tests but not every consumer binary
+
+**What happened:** After bumping the interchange writer to v9 (with all
+readers in source accepting 1–9), `scripts/probe-project.js` failed with
+"invalid native UI project interchange at line 1" — the prebuilt
+`transmission_vst3_project_probe` binary still embedded the v8-only codec.
+
+**Root cause:** The existing version-bump entry covers reader+writer in
+source, but native helper binaries (`*_probe`, `*_inspect`, the UI itself)
+bake the codec in at build time. A format change is not done when the
+source is consistent; it is done when every shipped binary is rebuilt.
+Rebuilding the probe fixed it immediately.
+
+**Prevention:** A version bump ends with rebuilding all native targets that
+link the codec and re-running one end-to-end probe, not just the unit
+harness. `grep -rl UiProjectCodec native/src/*_main.cpp` lists the
+consumers to rebuild.
+
 ## edit tool — newString dropping the trailing newline glues two lines
 
 **What happened:** Four times across sessions, an `edit` whose `newString`

@@ -17,9 +17,11 @@ public:
     }
 
     bool enqueueParameter(std::uint32_t parameterId,
-                          double normalizedValue) noexcept override {
+                          double normalizedValue,
+                          std::uint32_t sampleOffset) noexcept override {
         lastId = parameterId;
         lastValue = normalizedValue;
+        lastOffset = sampleOffset;
         return true;
     }
 
@@ -31,6 +33,7 @@ public:
 
     std::uint32_t lastId = 0;
     double lastValue = 0.0;
+    std::uint32_t lastOffset = 0;
 };
 
 } // namespace

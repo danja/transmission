@@ -47,8 +47,9 @@ void GraphRuntimeController::stop() noexcept { engine_.stop(); }
 bool GraphRuntimeController::setParameter(const std::string& nodeId,
                                           std::uint32_t parameterId,
                                           double normalizedValue,
-                                          std::string& error) {
-    return engine_.setParameter(nodeId, parameterId, normalizedValue, error);
+                                          std::string& error,
+                                          std::uint32_t sampleOffset) {
+    return engine_.setParameter(nodeId, parameterId, normalizedValue, sampleOffset, error);
 }
 
 bool GraphRuntimeController::setPluginState(const std::string& nodeId,

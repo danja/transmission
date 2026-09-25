@@ -139,7 +139,7 @@ int main() {
 
         // Gain is jig:paramIndex 4, declared 0..1. Normalised zero is silence,
         // and it takes effect without the graph being rebuilt.
-        assert(processor.enqueueParameter(4, 0.0));
+        assert(processor.enqueueParameter(4, 0.0, 0));
         const auto muted =
             render(processor, 2, 512, 8, 120.0, true, {noteOn(0, 64, 100)});
         assert(muted.peak < sounding.peak);

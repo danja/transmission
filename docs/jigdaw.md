@@ -109,6 +109,16 @@ A parameter's `id` is its declared `jig:paramIndex`, never its position in the d
 normalised value is mapped onto the port's declared range, and a port that is `lv2:toggled`
 or an enumeration is rounded to the nearest named value rather than left between two.
 
+## Asset overrides
+
+A file picked in the panel for a `jig:userReplaceable` asset is stored per node as
+`jigdawAssetOverrides: [{key, path}]` — in the project Turtle
+(`:jigdawAssetOverrides` of `:assetKey`/`:assetPath` nodes), in the
+`JIGDAW_ASSET` interchange record (v9+), and over MCP on the node itself. Like
+`trn:pluginPath` these are absolute local paths: a project carrying them opens
+with the shipped defaults on any other machine. They take effect on the next
+compile (Play); there is no live hot-swap into a running node.
+
 ## The transport
 
 A plugin that declares `trn:requires trn:HostTransport` gets the 64-byte block filled in

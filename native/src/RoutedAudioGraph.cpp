@@ -160,11 +160,16 @@ bool RoutedAudioGraph::setParameter(const std::string& nodeId, std::uint32_t par
 }
 
 bool RoutedAudioGraph::enqueueParameter(const std::string& nodeId, std::uint32_t parameterId,
-                                        double normalizedValue) noexcept {
+                                        double normalizedValue, std::uint32_t sampleOffset) noexcept {
     auto node = std::find_if(nodes_.begin(), nodes_.end(),
                              [&nodeId](const auto& candidate) { return candidate.id == nodeId; });
-    return node != nodes_.end() &&
-           node->processor->enqueueParameter(parameterId, normalizedValue);
+    if (node == nodes_.end()) return false;
+    // Bounded delivery: the offset must land inside the block the graph is
+    // prepared for, which is also the block the next process call renders
+    // (processWithMidi rejects any other size). Anything beyond it is a
+    // caller error, not something to clamp silently.
+    if (preparedFrames_ != 0 && sampleOffset >= preparedFrames_) return false;
+    return node->processor->enqueueParameter(parameterId, normalizedValue, sampleOffset);
 }
 
 bool RoutedAudioGraph::setScheduledMidiEvents(
@@ -425,7 +430,7 @@ void RoutedAudioGraph::processNode(std::size_t index) noexcept {
                         mapping.controller != controller)
                         continue;
                     if (node.processor->enqueueParameter(
-                            mapping.parameterId, value)) {
+                            mapping.parameterId, value, 0)) {
                         applied = true;
                         consume = consume || mapping.consume;
                     }

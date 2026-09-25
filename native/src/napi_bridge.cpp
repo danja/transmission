@@ -26,9 +26,23 @@
 #include <vector>
 
 namespace {
-std::unique_ptr<transmission::AudioEngine> engine;
+// Process-global singletons, intentionally leaked: the slots below are never
+// destroyed by static teardown. Hosted plugin binaries crash when their
+// module exit runs during exit handlers (too much of the process is already
+// gone), on every exit path that skips orderly teardown — including abrupt
+// ones like an uncaught JS exception, where the env cleanup hook never runs.
+// teardownNativeState() (cleanup hook) and disposeEngine() destroy the
+// pointees while the process is fully alive; abrupt exits leak them to the
+// OS instead, which reclaims the mappings without running module exit.
+std::unique_ptr<transmission::AudioEngine>& nativeEngine() {
+    static auto* slot = new std::unique_ptr<transmission::AudioEngine>();
+    return *slot;
+}
 #ifdef TRANSMISSION_NAPI_WITH_JACK
-std::unique_ptr<transmission::JackAudioDevice> jackDevice;
+std::unique_ptr<transmission::JackAudioDevice>& nativeJackDevice() {
+    static auto* slot = new std::unique_ptr<transmission::JackAudioDevice>();
+    return *slot;
+}
 #endif
 std::size_t engineChannels = 2;
 std::size_t engineFrames = 1024;
@@ -46,11 +60,11 @@ napi_value fail(napi_env env, const char* message) {
 }
 
 transmission::AudioEngine* requireEngine(napi_env env) {
-    if (!engine) {
+    if (!nativeEngine()) {
         fail(env, "Transmission engine has not been created");
         return nullptr;
     }
-    return engine.get();
+    return nativeEngine().get();
 }
 
 bool getNumber(napi_env env, napi_value object, const char* name, double& value) {
@@ -156,21 +170,21 @@ napi_value createEngine(napi_env env, napi_callback_info info) {
         if (getNumber(env, argv[0], "blockSize", value) && value > 0) engineFrames = static_cast<std::size_t>(value);
         if (getNumber(env, argv[0], "sampleRate", value) && value > 0) engineSampleRate = value;
     }
-    engine = std::make_unique<transmission::AudioEngine>();
-    engine->setSampleRate(engineSampleRate);
+    nativeEngine() = std::make_unique<transmission::AudioEngine>();
+    nativeEngine()->setSampleRate(engineSampleRate);
 #ifdef TRANSMISSION_NAPI_WITH_JACK
     std::string deviceName;
     if (argc > 0 && getString(env, argv[0], "device", deviceName) && deviceName == "jack") {
-        jackDevice = std::make_unique<transmission::JackAudioDevice>();
+        nativeJackDevice() = std::make_unique<transmission::JackAudioDevice>();
         transmission::AudioDeviceConfig config;
         config.channels = engineChannels;
         config.blockSize = engineFrames;
         config.sampleRate = engineSampleRate;
         getBoolean(env, argv[0], "autoConnect", config.autoConnect);
-        if (!engine->configureDevice(*jackDevice, config)) {
-            const auto message = jackDevice->lastError();
-            jackDevice.reset();
-            engine.reset();
+        if (!nativeEngine()->configureDevice(*nativeJackDevice(), config)) {
+            const auto message = nativeJackDevice()->lastError();
+            nativeJackDevice().reset();
+            nativeEngine().reset();
             return fail(env, message.empty() ? "Unable to configure JACK device" : message.c_str());
         }
     }
@@ -178,7 +192,7 @@ napi_value createEngine(napi_env env, napi_callback_info info) {
     if (argc > 0) {
         std::string deviceName;
         if (getString(env, argv[0], "device", deviceName) && deviceName == "jack") {
-            engine.reset();
+            nativeEngine().reset();
             return fail(env, "JACK device requires a JACK-enabled N-API build");
         }
     }
@@ -364,11 +378,18 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
         !current->setRoutedAudioGraph(std::move(routed), engineChannels, engineFrames))
         return fail(env, "Unable to load project into native engine");
 #ifdef TRANSMISSION_NAPI_WITH_JACK
-    if (jackDevice) {
+    if (nativeJackDevice()) {
         auto readStringArray = [&](const char* key) {
             std::vector<std::string> result;
             napi_value meta, arr;
-            if (napi_get_named_property(env, argv[0], "metadata", &meta) != napi_ok) return result;
+            napi_valuetype metaType = napi_undefined;
+            // A property read on an undefined/null receiver throws a V8
+            // TypeError that would leak past every status check below and
+            // surface at the call boundary instead of a clean failure, so
+            // verify the receiver is an object first (same as getObject()).
+            if (napi_get_named_property(env, argv[0], "metadata", &meta) != napi_ok ||
+                napi_typeof(env, meta, &metaType) != napi_ok || metaType != napi_object)
+                return result;
             if (napi_get_named_property(env, meta, key, &arr) != napi_ok) return result;
             bool isArr = false;
             napi_is_array(env, arr, &isArr);
@@ -387,7 +408,7 @@ napi_value loadProject(napi_env env, napi_callback_info info) {
             }
             return result;
         };
-        jackDevice->setNamedConnections(
+        nativeJackDevice()->setNamedConnections(
             readStringArray("systemInputConnections"),
             readStringArray("systemOutputConnections"));
     }
@@ -503,8 +524,15 @@ napi_value setParameter(napi_env env, napi_callback_info info) {
     double value = 0.0;
     if (napi_get_value_double(env, argv[2], &value) != napi_ok || value < 0.0 || value > 1.0)
         return fail(env, "Parameter value must be normalized to [0, 1]");
+    std::uint32_t sampleOffset = 0;
+    if (argc >= 4) {
+        napi_valuetype offsetType = napi_undefined;
+        if (napi_typeof(env, argv[3], &offsetType) != napi_ok) return fail(env, "Parameter sample offset is unreadable");
+        if (offsetType != napi_undefined && !getUint32(env, argv[3], sampleOffset))
+            return fail(env, "Parameter sample offset must be a non-negative integer");
+    }
     std::string error;
-    if (!current->setParameter(nodeId, parameterId, value, error))
+    if (!current->setParameter(nodeId, parameterId, value, sampleOffset, error))
         return fail(env, error.empty() ? "Unable to set native parameter" : error.c_str());
     return undefined(env);
 }
@@ -553,9 +581,9 @@ napi_value getPeaks(napi_env env, napi_callback_info info) {
 
 napi_value disposeEngine(napi_env env, napi_callback_info info) {
     (void)info;
-    engine.reset();
+    nativeEngine().reset();
 #ifdef TRANSMISSION_NAPI_WITH_JACK
-    jackDevice.reset();
+    nativeJackDevice().reset();
 #endif
     return undefined(env);
 }
@@ -1063,6 +1091,19 @@ napi_value renderAudio(napi_env env, napi_callback_info info) {
 }
 } // namespace
 
+// Tear the engine down while the process is still fully alive. The engine
+// and device are process-global singletons, and destroying them from static
+// destructors at exit crashes inside hosted plugin binaries (their module
+// exit runs after too much of the process is already gone). The cleanup hook
+// runs at environment teardown on every exit path, explicit dispose or not;
+// resetting an already-disposed null is a no-op.
+void teardownNativeState(void*) {
+    nativeEngine().reset();
+#ifdef TRANSMISSION_NAPI_WITH_JACK
+    nativeJackDevice().reset();
+#endif
+}
+
 NAPI_MODULE_INIT() {
     const std::array<napi_property_descriptor, 12> properties{{
         {"createEngine", nullptr, createEngine, nullptr, nullptr, nullptr, napi_default, nullptr},
@@ -1079,5 +1120,6 @@ NAPI_MODULE_INIT() {
         {"renderAudio", nullptr, renderAudio, nullptr, nullptr, nullptr, napi_default, nullptr},
     }};
     napi_define_properties(env, exports, properties.size(), properties.data());
+    napi_add_env_cleanup_hook(env, teardownNativeState, nullptr);
     return exports;
 }

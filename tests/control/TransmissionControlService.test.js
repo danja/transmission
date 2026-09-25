@@ -112,4 +112,18 @@ describe('TransmissionControlService', () => {
     ])
     expect(control.diagnostics().native).toEqual({ processedBlocks: 12 })
   })
+
+  it('forwards an explicit sample offset to the running native engine', () => {
+    const bridge = {
+      createEngine: vi.fn(), loadProject: vi.fn(), configureTransport: vi.fn(),
+      startAudio: vi.fn(), stopAudio: vi.fn(), setParameter: vi.fn(),
+      getDiagnostics: vi.fn(() => ({})), getPeaks: vi.fn(() => ({})), dispose: vi.fn()
+    }
+    const engine = new EngineSession({ bridge })
+    const control = new TransmissionControlService({ engine })
+    control.newProject(graph)
+    engine.start()
+    control.setParameter({ expectedRevision: 0, nodeId: 'input', parameterId: 3, value: 0.5, sampleOffset: 64 })
+    expect(bridge.setParameter).toHaveBeenCalledWith('input', 3, 0.5, 64)
+  })
 })

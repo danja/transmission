@@ -67,7 +67,7 @@ public:
     bool setParameter(const std::string& nodeId, std::uint32_t parameterId,
                       double normalizedValue, std::string& error);
     bool enqueueParameter(const std::string& nodeId, std::uint32_t parameterId,
-                          double normalizedValue) noexcept;
+                          double normalizedValue, std::uint32_t sampleOffset) noexcept;
     /**
      * Schedule direct MIDI for instrument nodes. Inputless nodes driven only
      * by this schedule sleep before their first event and after the fixed tail

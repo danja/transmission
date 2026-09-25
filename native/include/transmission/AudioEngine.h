@@ -57,7 +57,7 @@ public:
     bool setRenderAheadBlocks(std::size_t blocks);
     bool setProcessingThreadCount(std::size_t threads);
     bool setParameter(const std::string& nodeId, std::uint32_t parameterId,
-                      double normalizedValue, std::string& error);
+                      double normalizedValue, std::uint32_t sampleOffset, std::string& error);
     bool restoreProcessorState(const std::string& nodeId,
                                const ProcessorState& state, std::string& error);
     bool start();

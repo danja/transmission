@@ -65,10 +65,21 @@ Add built-in modules Oscilloscope & Spectrum analyzer, loaded like the Output bu
   `status` reported playing, but `scripts/probe-project.js` showed BassGen
   emitting MIDI (144 events/30 windows) and Basilico producing audio
   (RMS ~0.10–0.22) — so the graph and plugins are fine and the fault is
-  live-JACK-specific. JACK auto-connect had also wired only `out_1`, leaving
-  `out_2` with no destination. `connections`/`diag` surface both directly.
-  Needs a repro on a live session to tell stale auto-connect state from a real
-  routing bug.
+  live-JACK-specific.
+  Repro attempted headless 2026-09-24 (JACK dummy + NAPI engine, no display
+  needed): engine `running`, graph loaded, but `processedBlocks` 0 and peaks
+  0 — then traced to the environment, not the engine. The only JACK server
+  available is PipeWire's, whose graph never drives any client here (stock
+  `jack_simple_client` also idles; a standalone `jackd` cannot start —
+  `jackdbus` owns JACK). No verdict possible without a rolling server.
+  Two things did clear: (a) auto-connect wired both `out_1`→FL and `out_2`→FR
+  correctly here, so the half-wired report was likely stale state on that
+  machine; (b) found and fixed alongside: NAPI `loadProject` threw a bare
+  `TypeError` on graphs without top-level `metadata` (V8 throw on an
+  undefined receiver leaking past status checks — see MISTAKES.md), fixed
+  with a typeof guard in `napi_bridge.cpp`, verified by bisection.
+  Still needs a session on real hardware: if blocks stay 0 there, suspect the
+  process callback never firing (check `pw-top`/xruns) rather than routing.
 
 - `temp.ttl` interchange failure never reproduced (carried over from the
   `UiProjectCodec` error-message fix, 2026-09-24, fix itself done):
@@ -80,14 +91,6 @@ Add built-in modules Oscilloscope & Spectrum analyzer, loaded like the Output bu
 
 - JUCE assertion failure in `juce_Messaging_linux.cpp:87` observed when hosting Valis inside Transmission. Likely triggered by a JUCE message thread operation happening off the expected thread. Needs a repro and investigation.
 
-- `native/build-ui` (all-off config) does not build: `Vst3EditorHost.cpp:434`
-  fails with `no declaration matches Vst3EditorHost::open(...)` against
-  `Vst3EditorHost.h:28` (missing trailing `LiveStateCallback` parameter).
-  Pre-existing — verified 2026-09-24 by stashing all work and rebuilding
-  pristine (same single error). Unrelated to any current change; needs whoever
-  owns the editor host to reconcile the header and the implementation, then
-  re-verify the all-off `transmission_graph_ui` build.
-
 ## Live generative DJ via MCP
 
 Claude acts as a DJ via MCP, loading and playing generative patches from
@@ -96,7 +99,6 @@ Claude acts as a DJ via MCP, loading and playing generative patches from
 Remaining:
 - Valis effects integration: load a Valis patch as an effect insert in a DJ chain
 - Crossfade transition implementation in dj-runner.js (requires mixer gain params)
-- xoxolo pattern programming for hardcore-techno-160
 
 ### Live MCP setup prerequisites
 
@@ -109,7 +111,6 @@ For `transport_play` and audio control to work via MCP from a Claude session:
 
 ## hardcore-techno-160 patch — remaining gaps
 
-- `:xoxolo` pattern all-zero — intentional until programmed.
 - Gremlin DSP is expensive (~12 ms/block probe average). Enable render-ahead
   before using this patch live; all other nodes remain at previous cost.
 
@@ -117,53 +118,28 @@ For `transport_play` and audio control to work via MCP from a Claude session:
 
 `:JigdawPlugin` nodes load, run and route (see `docs/jigdaw.md`). Still open:
 
-- ~~Asset-override persistence~~ **Done, 2026-09-24.** Format decision:
-  overrides persist like `pluginPath` — absolute local paths, with the
-  vocabulary comment stating a project carrying them opens with shipped
-  defaults elsewhere. Per-node `jigdawAssetOverrides: [{key, path}]`,
-  threaded through the whole chain with version 8→9 (both readers still
-  accept 1–9; unknown records still fail, so the bump is the signal):
-  `Graph.js` (validated frozen field), `TransmissionRdf.js` +
-  `:jigdawAssetOverrides`/`:assetKey`/`:assetPath` (`vocabs/project.ttl`,
-  `Vocabulary.js`, `npm run build:vocab`), `native-ui-project.js`
-  (`JIGDAW_ASSET` record, sorted for determinism, duplicate-key + unknown-node
-  rejection), native `UiProjectCodec` (new `UiProjectJigdawAsset` field,
-  encode/decode, same validations), GTK `captureProject`/`applyProject` (map
-  ↔ vector) + `validateProject` (empty key/path rejected), MCP `nodeSchema`
-  (+ `GraphNode` in `public.d.ts`). Covered by RDF round-trip + invalid-shape
-  tests, interchange↔Turtle round-trip + rejection tests,
-  `UiProjectCodecTest` (v9 + round-trip + 3 failure cases, passing), and an
-  MCP `node_add` keeps-overrides case. UI + engine builds clean; vocab site
-  test passes. Removed the "Not yet persisted — TODO.md" comment on `Node`.
 - `ensureThreadRegistered` one-time-per-thread allocation (WAMR threads the
   audio callback thread didn't create): a JACK thread-init callback
   (`jack_set_thread_init_callback`) would close it properly; not taken on since
   it would need threading into every real-time-ish call site (JACK, offline
   render, NAPI), not just one. Detail was in the removed WAMR write-up.
-- `jigdaw::Chain::process` (in the jigdaw repo, not used here) processes only
-  `min(frames, jig_max_frames())` and leaves the rest of the block stale. Transmission
-  drives `jigdaw::Module` directly and sub-blocks it instead, but the adapter that ships
-  in jigdaw has the bug at any host buffer above 128 frames. Report upstream.
-- ~~`jig:latencyFrames` is read into the profile and then ignored~~ **Done,
-  2026-09-24, surfacing only.** The value now flows everywhere it can without
-  an engine-wide delay-compensation framework (which does not exist — VST3
-  latency is not read either): `jigdaw::Profile::latencyFrames` →
-  `JigdawPluginTopology::latencyFrames` → `transmission_jigdaw_inspect`
-  output, and `jig:latencyFrames` → `profile.latencyFrames` in
-  `readJigdawProfile`, hence in `jigdaw_describe`. Covered by a registry test
-  (128 surfaces, absent defaults 0) and a processor-test topology assert
-  against pulse's real profile. Actual compensation is engine architecture —
-  see Engine features.
 
 ## Engine features
 
 - Plugin delay compensation: no framework exists (VST3
   `getLatencySamples` unread, JigDAW `latencyFrames` surfaced but
   uncompensated). Needs an engine-wide design, not a per-plugin fix.
+- ~~Persisted parameter automation with sample-offset delivery~~ **Done,
+  2026-09-24, offsets only.** `sampleOffset` was already carried
+  control → engine → bridge but dropped at the NAPI boundary; it now
+  threads `AudioEngine` → `RoutedAudioGraph` (rejected when beyond the
+  prepared block) → VST3 `inputParameterChanges` points, with Gain/JigDAW
+  applying at block start / on change as before. Verified headless against
+  a real VST3 (offsets 5/1023 accepted at 1024-frame blocks, 1024+/garbage
+  rejected). Bypass and send automation remain open — no bypass or send
+  concept exists anywhere yet.
 - Suspend schedule-only instrument processors outside their authored activity
   window while preserving a bounded post-note tail.
-- Add persisted VST3 parameter, bypass, and send automation with bounded
-  sample-offset delivery to the native engine.
 - Add a deterministic capture/freeze path for MIDI generator output.
 
 ## MCP Live — Phase 3
@@ -191,6 +167,16 @@ Not yet verified — needs a manual pass:
   menu popups (they render in separate override-redirect windows that
   `import -window <id>` does not capture), so this needs a human or a
   different capture approach.
+
+## Cross-repo dependencies
+
+- Reduce cross-repo dependencies where it can be done without breakage (from
+  INBOX.md, 2026-09-24). Known instances: `JIGDAW_ROOT` / `WAMR_ROOT`
+  local-checkout convention instead of `FetchContent` (already the pattern
+  for both); the transmission-side JigDAW surface that could move into the
+  adapter (profile parsing is already jigdaw-owned). Not started — needs an
+  audit of what transmission includes from `~/github/jigdaw` vs. what could
+  be adapter API.
 
 ## Recurring — check periodically
 

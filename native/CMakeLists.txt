@@ -48,6 +48,12 @@ else()
 endif()
 set_target_properties(transmission_engine PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+if(NOT TRANSMISSION_WITH_VST3)
+  # The editor references Vst3Inspector unconditionally; without VST3 hosting
+  # the stub reports every inspection as unavailable instead of failing to link.
+  target_sources(transmission_engine PRIVATE src/Vst3InspectorStub.cpp)
+endif()
+
 if(TRANSMISSION_WITH_JACK)
   find_path(JACK_INCLUDE_DIR jack/jack.h REQUIRED)
   find_library(JACK_LIBRARY jack REQUIRED)

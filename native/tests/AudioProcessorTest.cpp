@@ -35,11 +35,11 @@ int main() {
     assert(std::fabs(leftOutput[0]) < 0.0001F);
     assert(std::fabs(rightOutput[0] - 1.0F) < 0.0001F);
     assert(balance.enqueueParameter(
-        transmission::GainProcessor::gainParameterId, 0.0));
+        transmission::GainProcessor::gainParameterId, 0.0, 0));
     balance.process(stereoInputs, stereoOutputs, 2, 2);
     assert(std::fabs(rightOutput[0]) < 0.00001F);
     assert(!balance.setParameter(99, 0.5, parameterError));
     assert(!balance.enqueueParameter(
-        transmission::GainProcessor::panParameterId, 1.5));
+        transmission::GainProcessor::panParameterId, 1.5, 0));
     return 0;
 }

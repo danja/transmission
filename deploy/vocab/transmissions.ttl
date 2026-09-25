@@ -50,10 +50,12 @@
 # vocabs/profile.ttl
 # ----------------------------------------------------------------------------
 
-@prefix trn:  <http://purl.org/stuff/transmissions/> .
-@prefix owl:  <http://www.w3.org/2002/07/owl#> .
-@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix trn:      <http://purl.org/stuff/transmissions/> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix dcmitype: <http://purl.org/dc/dcmitype/> .
 
 ## ── Classes ──────────────────────────────────────────────────────────────────
 
@@ -164,6 +166,30 @@ trn:units             a owl:DatatypeProperty ; rdfs:range xsd:string .
 trn:defaultNormalized a owl:DatatypeProperty ; rdfs:range xsd:decimal .
 trn:stepCount         a owl:DatatypeProperty ; rdfs:range xsd:integer .
 trn:parameterFlags    a owl:DatatypeProperty ; rdfs:range xsd:integer .
+
+## ── Collections ──────────────────────────────────────────────────────────────
+##
+## A named set of plugins, published as one document at one URL: something to
+## hand a host that means "these", whether that is a curated set of reverbs,
+## the plugins from one vendor, or the ones a tutorial uses. Membership is
+## dcterms:hasPart and each member's name is rdfs:label, both reused
+## unchanged, so the only term minted here is the class a reader looks for.
+##
+## Proposed upstream from JigDAW (see jigdaw/docs/plugin-collections.md,
+## normative there), because nothing about the shape is specific to a web
+## plugin: a native VST3 catalogue or plugin-universe could publish one the
+## same way. jig:PluginCollection there is now a subclass of this, kept
+## rather than replaced so a collection already published under that class
+## does not stop validating against it.
+
+trn:PluginCollection a owl:Class ;
+    rdfs:subClassOf dcmitype:Collection ;
+    rdfs:label "Plugin Collection" ;
+    rdfs:comment """A named set of plugins, each included by its IRI with dcterms:hasPart
+        and named with rdfs:label in the collection document. A collection is one
+        publisher's opinion about what is worth finding: it confers no trust, carries no
+        code and no digests, and the profile or discovery record at each IRI governs
+        wherever the two disagree.""" .
 
 # ----------------------------------------------------------------------------
 # vocabs/project.ttl

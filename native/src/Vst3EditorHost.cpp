@@ -434,7 +434,8 @@ Vst3EditorHost::~Vst3EditorHost() = default;
 bool Vst3EditorHost::open(
     const std::string&, const std::string&, ParameterEditCallback,
     StateCallback, const ProcessorState&,
-    const std::vector<std::pair<std::uint32_t, double>>&) {
+    const std::vector<std::pair<std::uint32_t, double>>&,
+    LiveStateCallback) {
     return false;
 }
 void Vst3EditorHost::close() noexcept {}

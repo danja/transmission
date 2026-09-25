@@ -59,8 +59,12 @@ public:
         error = "processor does not expose opaque state";
         return false;
     }
-    /** Submit a parameter update without touching control-plane state. */
-    virtual bool enqueueParameter(std::uint32_t /*parameterId*/, double /*normalizedValue*/) noexcept {
+    /** Submit a parameter update without touching control-plane state.
+     * sampleOffset is the frame within the upcoming block the change takes
+     * effect at; only processors with sample-accurate automation (VST3) use
+     * it, the rest apply at the block start. Callers bound it to the block. */
+    virtual bool enqueueParameter(std::uint32_t /*parameterId*/, double /*normalizedValue*/,
+                                  std::uint32_t /*sampleOffset*/) noexcept {
         return false;
     }
     /** Apply queued parameter updates on the audio thread before processing. */
@@ -125,7 +129,8 @@ public:
     bool setParameter(std::uint32_t parameterId, double normalizedValue,
                       std::string& error) override;
     bool enqueueParameter(std::uint32_t parameterId,
-                          double normalizedValue) noexcept override;
+                          double normalizedValue,
+                          std::uint32_t sampleOffset) noexcept override;
     void process(const float* const* inputs, float* const* outputs,
                  std::size_t channels, std::size_t frames) noexcept override;
     void setProcessContext(const AudioProcessContext& context) noexcept override;

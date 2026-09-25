@@ -83,11 +83,11 @@ bool AudioEngine::setProcessingThreadCount(std::size_t threads) {
 }
 
 bool AudioEngine::setParameter(const std::string& nodeId, std::uint32_t parameterId,
-                               double normalizedValue, std::string& error) {
+                               double normalizedValue, std::uint32_t sampleOffset, std::string& error) {
     std::scoped_lock lock(controlMutex_);
     if (diagnostics_.running) {
-        if (!routedAudioGraph_ || !routedAudioGraph_->enqueueParameter(nodeId, parameterId, normalizedValue)) {
-            error = "real-time parameter queue is full or node does not support parameters";
+        if (!routedAudioGraph_ || !routedAudioGraph_->enqueueParameter(nodeId, parameterId, normalizedValue, sampleOffset)) {
+            error = "real-time parameter queue is full, node does not support parameters, or sample offset is out of range";
             return false;
         }
         return true;

@@ -36,7 +36,8 @@ public:
                       std::string& error) override;
     bool captureState(ProcessorState& state, std::string& error) override;
     bool restoreState(const ProcessorState& state, std::string& error) override;
-    bool enqueueParameter(std::uint32_t parameterId, double normalizedValue) noexcept override;
+    bool enqueueParameter(std::uint32_t parameterId, double normalizedValue,
+                          std::uint32_t sampleOffset) noexcept override;
     void applyPendingParameters() noexcept override;
     void setProcessContext(const AudioProcessContext& context) noexcept override;
     std::size_t takeOutputMidi(MidiEvent* events, std::size_t capacity) noexcept override;

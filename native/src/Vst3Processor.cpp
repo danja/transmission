@@ -61,6 +61,7 @@ struct Vst3Processor::Impl {
     std::array<std::atomic<std::uint8_t>, maxPendingParameters> pendingParameterSlots{};
     std::array<std::atomic<std::uint32_t>, maxPendingParameters> pendingParameterIds{};
     std::array<std::atomic<double>, maxPendingParameters> pendingParameterValues{};
+    std::array<std::atomic<std::uint32_t>, maxPendingParameters> pendingParameterOffsets{};
 
     ~Impl() {
         if (processing && processor) processor->setProcessing(false);
@@ -288,7 +289,7 @@ bool Vst3Processor::setParameter(std::uint32_t parameterId, double normalizedVal
         error = "VST3 parameter value must be normalized to [0, 1]";
         return false;
     }
-    if (!enqueueParameter(parameterId, normalizedValue)) {
+    if (!enqueueParameter(parameterId, normalizedValue, 0)) {
         error = "VST3 parameter queue is full";
         return false;
     }
@@ -404,7 +405,8 @@ bool Vst3Processor::restoreState(const ProcessorState& state,
     return true;
 }
 
-bool Vst3Processor::enqueueParameter(std::uint32_t parameterId, double normalizedValue) noexcept {
+bool Vst3Processor::enqueueParameter(std::uint32_t parameterId, double normalizedValue,
+                                     std::uint32_t sampleOffset) noexcept {
     if (!ready() || normalizedValue < 0.0 || normalizedValue > 1.0) return false;
     for (std::size_t index = 0; index < Impl::maxPendingParameters; ++index) {
         std::uint8_t available = 0;
@@ -412,6 +414,7 @@ bool Vst3Processor::enqueueParameter(std::uint32_t parameterId, double normalize
                 available, 1, std::memory_order_acquire, std::memory_order_relaxed)) {
             impl_->pendingParameterIds[index].store(parameterId, std::memory_order_relaxed);
             impl_->pendingParameterValues[index].store(normalizedValue, std::memory_order_relaxed);
+            impl_->pendingParameterOffsets[index].store(sampleOffset, std::memory_order_relaxed);
             impl_->pendingParameterSlots[index].store(2, std::memory_order_release);
             return true;
         }
@@ -433,7 +436,11 @@ void Vst3Processor::applyPendingParameters() noexcept {
             queueIndex);
         if (!queue) continue;
         Steinberg::int32 pointIndex = 0;
-        if (queue->addPoint(0, impl_->pendingParameterValues[index].load(std::memory_order_relaxed), pointIndex) ==
+        // The offset was bounded to the block by the graph at enqueue time,
+        // so the point always lands inside the block being built here.
+        const auto offset = static_cast<Steinberg::int32>(
+            impl_->pendingParameterOffsets[index].load(std::memory_order_relaxed));
+        if (queue->addPoint(offset, impl_->pendingParameterValues[index].load(std::memory_order_relaxed), pointIndex) ==
             Steinberg::kResultOk) impl_->hasParameterChanges = true;
     }
 }

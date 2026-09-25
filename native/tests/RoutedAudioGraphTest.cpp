@@ -91,9 +91,10 @@ public:
         process(inputs, outputs, channels, frames);
     }
 
-    bool enqueueParameter(std::uint32_t id, double value) noexcept override {
+    bool enqueueParameter(std::uint32_t id, double value, std::uint32_t sampleOffset) noexcept override {
         parameterId = id;
         parameterValue = value;
+        parameterOffset = sampleOffset;
         ++parameterChanges;
         return true;
     }
@@ -101,6 +102,7 @@ public:
     std::size_t receivedMidi = 0;
     std::uint32_t parameterId = 0;
     double parameterValue = 0.0;
+    std::uint32_t parameterOffset = 0;
     std::size_t parameterChanges = 0;
 };
 
@@ -243,6 +245,13 @@ int main() {
     mapped.processWithMidi(inputs, outputs, 1, 4, &controllerEvent, 1);
     assert(mappedCapture->parameterChanges == 1);
     assert(mappedCapture->receivedMidi == 1);
+    // Sample offsets thread through the graph, bounded by the block.
+    assert(mapped.enqueueParameter("target", 7, 0.5, 2));
+    assert(mappedCapture->parameterId == 7);
+    assert(mappedCapture->parameterOffset == 2);
+    assert(!mapped.enqueueParameter("target", 7, 0.5, 4));
+    assert(!mapped.enqueueParameter("target", 7, 0.5, 100));
+    assert(!mapped.enqueueParameter("missing", 7, 0.5, 0));
     sleepingScheduled.setProcessContext(
         {5.0 + transmission::RoutedAudioGraph::scheduledInstrumentTailBeats,
          60.0, true});

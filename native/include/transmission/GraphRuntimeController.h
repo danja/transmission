@@ -24,7 +24,8 @@ public:
                std::string& error);
     void stop() noexcept;
     bool setParameter(const std::string& nodeId, std::uint32_t parameterId,
-                      double normalizedValue, std::string& error);
+                      double normalizedValue, std::string& error,
+                      std::uint32_t sampleOffset = 0);
     bool setPluginState(const std::string& nodeId,
                         const ProcessorState& state, std::string& error);
     bool setRenderAheadBlocks(std::size_t blocks);

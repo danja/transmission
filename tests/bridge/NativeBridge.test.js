@@ -15,6 +15,13 @@ describe('NativeBridge', () => {
     expect(calls).toEqual([['node', 'gain', 0.5, 32], ['dispose']])
   })
 
+  it('forwards the sample offset with parameter changes', () => {
+    const calls = []
+    const bridge = new NativeBridge({ setParameter: (...args) => calls.push(args) })
+    bridge.setParameter('node', 7, 0.25, 120)
+    expect(calls).toEqual([['node', 7, 0.25, 120]])
+  })
+
   it('rejects calls after disposal', () => {
     const bridge = new NativeBridge({ getDiagnostics: () => ({}) })
     bridge.dispose()

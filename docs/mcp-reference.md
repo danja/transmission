@@ -95,7 +95,7 @@ All graph mutations require stopped audio and the current `expectedRevision`.
 
 | Tool | Description |
 |------|-------------|
-| `parameter_set` | Set a normalised VST3 parameter value; applies live |
+| `parameter_set` | Set a normalised VST3 parameter value; applies live, with an optional sample offset inside the upcoming block |
 | `parameters_set_batch` | Set multiple parameters on one node atomically |
 | `arrangement_update` | Replace arrangement length, MIDI clips, and gain lanes |
 | `clip_add` | Add a MIDI clip with note events |

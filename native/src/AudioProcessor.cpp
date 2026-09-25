@@ -120,7 +120,8 @@ bool GainProcessor::setParameter(std::uint32_t parameterId,
 }
 
 bool GainProcessor::enqueueParameter(
-    std::uint32_t parameterId, double normalizedValue) noexcept {
+    std::uint32_t parameterId, double normalizedValue,
+    std::uint32_t /*sampleOffset*/) noexcept {
     return applyNormalizedParameter(parameterId, normalizedValue);
 }
 

@@ -210,6 +210,16 @@ export class TransmissionHttpClient {
     return this._post('/plugins/jigdaw/describe', turtle, 'text/turtle')
   }
 
+  async listJigdawCollection(url) {
+    const turtle = [
+      `@prefix trn: <${TRN}> .`,
+      '',
+      '[] a trn:ListJigdawCollection ;',
+      `    trn:url ${turtleLiteral(url)} .`
+    ].join('\n') + '\n'
+    return this._post('/plugins/jigdaw/collection', turtle, 'text/turtle')
+  }
+
   async captureProjectMidi({ filePath, durationBeats = 64 }) {
     const turtle = [
       `@prefix trn: <${TRN}> .`,

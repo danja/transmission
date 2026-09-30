@@ -9,6 +9,7 @@ const JIG = 'http://purl.org/stuff/jigdaw/'
 const TRN = 'http://purl.org/stuff/transmissions/'
 const LV2 = 'http://lv2plug.in/ns/lv2core#'
 const UNITS = 'http://lv2plug.in/ns/extensions/units#'
+const DCTERMS = 'http://purl.org/dc/terms/'
 const RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#'
 const RDFS = 'http://www.w3.org/2000/01/rdf-schema#'
 
@@ -122,6 +123,61 @@ export function jigdawGraphNode(profile, { id, label = '', x = 0, y = 0 } = {}) 
     settings: { pluginIri: profile.iri },
     parameters: [],
     metadata: { x, y }
+  }
+}
+
+/** A JigDAW collection could be read but is not one a host can open. */
+export class JigdawCollectionError extends Error {
+  constructor(message, iri) {
+    super(message)
+    this.name = 'JigdawCollectionError'
+    this.iri = iri
+  }
+}
+
+/**
+ * Open a JigDAW plugin collection: one Turtle document at one URL listing
+ * plugin IRIs by name. The whole document is refused unless it holds exactly
+ * one `jig:PluginCollection`; a missing description is reported, not refused.
+ *
+ * A collection carries no profiles, resources or digests — the profile at each
+ * member IRI is the only statement of what a plugin is — so members are the
+ * IRI plus the collection's copy of the name, sorted by name, and `describe`
+ * remains the step before wiring anything. Relative IRIs resolve against the
+ * URL the collection was fetched from, which is what lets one collection file
+ * work on localhost and the live site alike.
+ *
+ * `fetch` is injected so that tests never reach the network.
+ */
+export async function readJigdawCollection(url, { fetch: fetchImplementation = fetchResource } = {}) {
+  if (!url || typeof url !== 'string') throw new TypeError('A JigDAW collection URL is required')
+  const { text, base } = await fetchImplementation(url)
+  const dataset = await parseTurtle(text, { baseIRI: base })
+  const subjects = [...dataset.match(null, named(`${RDF}type`), named(`${JIG}PluginCollection`))]
+    .map(quad => quad.subject)
+  if (subjects.length === 0)
+    throw new JigdawCollectionError('This document declares no jig:PluginCollection', url)
+  if (subjects.length > 1)
+    throw new JigdawCollectionError(
+      'This document declares more than one jig:PluginCollection, so which collection ' +
+      'it is would depend on serialisation order', url)
+  const subject = subjects[0]
+  const first = predicate => [...dataset.match(subject, named(predicate))][0]?.object ?? null
+  const members = [...dataset.match(subject, named(`${DCTERMS}hasPart`))]
+    .map(quad => quad.object)
+    .filter(term => term.termType === 'NamedNode')
+    .map(term => ({
+      iri: term.value,
+      label: [...dataset.match(term, named(`${RDFS}label`))][0]?.object.value ?? ''
+    }))
+    .sort((left, right) =>
+      (left.label || left.iri).localeCompare(right.label || right.iri))
+  return {
+    iri: subject.value,
+    retrievedFrom: base,
+    label: first(`${RDFS}label`)?.value ?? '',
+    comment: first(`${RDFS}comment`)?.value ?? '',
+    members
   }
 }
 

@@ -7,8 +7,8 @@ import { Graph } from '../model/Graph.js'
 import { Arrangement } from '../model/Arrangement.js'
 import { vocabulary as ns } from './Vocabulary.js'
 
-export async function parseTurtle(text) {
-  const parser = new Parser({ format: 'text/turtle' })
+export async function parseTurtle(text, { baseIRI } = {}) {
+  const parser = new Parser({ format: 'text/turtle', ...(baseIRI ? { baseIRI } : {}) })
   const dataset = rdf.dataset()
   const stream = parser.import(Readable.from([text]))
   for await (const quad of stream) dataset.add(quad)

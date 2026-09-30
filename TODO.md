@@ -1,27 +1,5 @@
 # TODO
 
-## MCP parity with the GTK UI — audited, no open gaps
-
-First-pass audit (2026-09-24) of `TransmissionMcpServer.js` against the GTK
-UI's feature set. Node/connection creation is generic enough
-(`type`/`settings` free-form) to cover Gain, AudioClip, MidiClip, and
-JigdawPlugin kinds. Both concrete gaps found are now closed:
-`midi_mapping_add`/`midi_mapping_remove` (2026-09-24) and audio render
-`arrangement_render_audio` (2026-09-24, needs the native addon).
-
-Remaining audit list, all verdict: correctly out of MCP scope, no work:
-- Settings (JACK startup command/autostart, plugin search paths, JigDAW
-  collection URLs): editor-owned, in the GTK app's own
-  `~/.config/transmission/config.ttl` (ad-hoc tab format — a different file
-  from the server's Turtle `./config.ttl`; see `docs/mcp-live.md`). Server
-  operators use CLI flags + `trn:ServerConfig` instead.
-- System input/output JACK port strings: already covered end to end
-  (`graph.metadata.system{In,Out}putConnections` ↔ RDF ↔ `project_get` /
-  `setProjectMetadata`); free-form by design, fuzzy-matched to JACK ports.
-- Node port-label metadata: GTK-only display names with no vocabulary term
-  and no `Graph` field; per repo convention editor metadata stays out of the
-  execution model. Port counts (the execution-relevant part) are covered.
-
 ## Instance data lives in the vocabulary namespace
 
 Not urgent, and worth knowing. Saved projects bind the default `:` prefix to
@@ -89,7 +67,28 @@ Add built-in modules Oscilloscope & Spectrum analyzer, loaded like the Output bu
   race with the file being written. Needs a repro against the freshly rebuilt
   binary — the new error message should name the exact field if it recurs.
 
-- JUCE assertion failure in `juce_Messaging_linux.cpp:87` observed when hosting Valis inside Transmission. Likely triggered by a JUCE message thread operation happening off the expected thread. Needs a repro and investigation.
+- ~~JUCE assertion failure in `juce_Messaging_linux.cpp:87` when hosting Valis~~ —
+  **reproduced and diagnosed 2026-09-30, fix is Valis-side.** The assertion is
+  JUCE's "message thread overloaded by tasks taking too long" in
+  `InternalMessageQueue::postMessage`: it fires when 128 posted messages are
+  still unprocessed. Valis is the source because **its in-process MCP server
+  has no subscriptions/pubsub and `juce::MessageManager` is created without an
+  event loop** (JUCE defaults `JUCE_DISPATCH_POSTMESSAGE_FIFO` on and
+  `addEventToPost` on Linux to X11 `DispatchEvent`), and Transmission is a GTK
+  host that pumps no JUCE events. Every MCP `tools/call` and resource read goes
+  through `McpServer.cpp`'s `onMessageThread`, which `MessageManager::callAsync`
+  + `WaitableEvent::wait(5000)` — every concurrent caller queues one message.
+  Two plugin instances are involved: the audio instance runs the MCP server, and
+  a second instance (the live UI opens the editor on a separate provider) owns
+  the JUCE message thread that services them.
+  Reproduced headless with a harness calling `Vst3EditorHost::open` (exactly what
+  the UI's double-click does) while `Vst3Processor` processes audio, with Valis'
+  MCP on and 256 concurrent `/mcp` calls: **671 assertions in 20 s**. At 8
+  concurrent callers: 0 — which is why this looked intermittent.
+  Fix belongs upstream: the MCP server should not block a request thread per
+  call on the message thread (reply via a callback/pollable), or Valis should
+  supply its own JUCE event loop. Not a Transmission bug and nothing to fix
+  here; transmission merely hosts the plugin.
 
 ## Live generative DJ via MCP
 
@@ -116,7 +115,23 @@ For `transport_play` and audio control to work via MCP from a Claude session:
 
 ## JigDAW hosting — remaining gaps
 
-`:JigdawPlugin` nodes load, run and route (see `docs/jigdaw.md`). Still open:
+`:JigdawPlugin` nodes load, run and route (see `docs/jigdaw.md`; re-verified
+2026-09-30: `transmission_jigdaw_inspect` + `transmission_jigdaw_probe` on
+`file:///home/danny/github/jigdaw/plugins/pulse/` healthy, and
+`scripts/probe-project.js projects/patches/jigdaw-pulse.ttl` renders 30 s with
+BassGen → Pulse audio). Discovery is documented in `docs/jigdaw.md` ("Finding
+plugins"): the canonical collection `https://strandz.it/jigdaw/collections/jigdaw.ttl`
+pasted into Settings > Plugins, the gallery, and `jigdaw_describe` for single IRIs.
+No site changes were needed — profiles and the collection already serve Turtle with
+CORS. Still open:
+
+- MCP collection browsing: closed 2026-09-30 with the `jigdaw_collection` tool
+  (`readJigdawCollection` → `listJigdawCollection` → MCP + `POST
+  /plugins/jigdaw/collection`, verified live against the strandz collection: 23
+  members, relative IRIs resolved, describe follows). A collection carries no
+  profiles, so each member still goes through `jigdaw_describe` before wiring.
+- plugin-universe.com is not currently a source of Jig plugins (native catalogue;
+  its JigDAW submission flow is in progress upstream). Watch, don't build around.
 
 - `ensureThreadRegistered` one-time-per-thread allocation (WAMR threads the
   audio callback thread didn't create): a JACK thread-init callback
@@ -129,15 +144,6 @@ For `transport_play` and audio control to work via MCP from a Claude session:
 - Plugin delay compensation: no framework exists (VST3
   `getLatencySamples` unread, JigDAW `latencyFrames` surfaced but
   uncompensated). Needs an engine-wide design, not a per-plugin fix.
-- ~~Freeze generator output back into arrangement clips~~ **Done, 2026-09-25.**
-  `clip_freeze` composes the existing pieces: `engine.captureMidi` →
-  note on/off pairing (`freezeClipFromEvents`: velocity-zero offs, stray-off
-  and other-node filtering, overlap keeps first, open notes extend to the
-  clip end, past-end durations clamped) → `addArrangementClip` validation.
-  Source must name a graph node, target is validated by the arrangement
-  model, duplicates rejected. Covered without native code (stubbed capture)
-  plus a live-HTTP round trip. Determinism caveat stands: frozen output is
-  only as deterministic as the generator.
 - Bypass and send automation: no bypass or send concept exists anywhere
   (verified 2026-09-24) — needs model + engine design, not just plumbing.
 
@@ -169,13 +175,27 @@ Not yet verified — needs a manual pass:
 
 ## Cross-repo dependencies
 
-- Reduce cross-repo dependencies where it can be done without breakage (from
-  INBOX.md, 2026-09-24). Known instances: `JIGDAW_ROOT` / `WAMR_ROOT`
-  local-checkout convention instead of `FetchContent` (already the pattern
-  for both); the transmission-side JigDAW surface that could move into the
-  adapter (profile parsing is already jigdaw-owned). Not started — needs an
-  audit of what transmission includes from `~/github/jigdaw` vs. what could
-  be adapter API.
+Audited 2026-09-30 (from INBOX.md). The jigdaw surface transmission uses is already
+the adapter's public API and nothing else: `jigdaw::Chain::fetchProfile`, `fetchUrl`,
+`verifyIntegrity`, `Profile`/`Module`/`Port`, `Midi`, transport constants
+(`native/src/JigdawProcessor.cpp`, plus `fetchUrl` for collection documents in
+`native/src/native_graph_ui_main.cpp`). Profile parsing is jigdaw-owned; nothing
+transmission-side duplicates it except `parsePluginCollection`, an ad-hoc string
+scan over the tiny `jig:PluginCollection` shape (labels + `dcterms:hasPart`) rather
+than a second Turtle parser — moving it into the adapter is possible but would drag
+a GTK `PluginCacheEntry` type across the boundary, so it stays.
+
+- `JIGDAW_ROOT` local-checkout convention instead of `FetchContent`: keep. Both repos
+  pin the same way and the adapter has no stable install target yet; fetching a
+  moving main would trade a path for version drift.
+- `JIGDAW_HTTPLIB_DIR` defaulting into `~/github/downspout/third_party/cpp-httplib`:
+  keep. jigdaw's own CMake expects the same path, so this is one shared checkout, not
+  two dependencies — and the fix belongs upstream (jigdaw vendoring httplib or taking
+  it via its package manager), not in transmission's flags.
+- `trn:WAM` vocab drift (plugin-universe proposed it upstream; `npm test` failed until
+  adopted): closed 2026-09-30 by adding it to `vocabs/formats.ttl` + rebuilt
+  `deploy/vocab/transmissions.ttl`. The `site.test.js` pair-watch covers future drift
+  in both directions.
 
 ## Recurring — check periodically
 

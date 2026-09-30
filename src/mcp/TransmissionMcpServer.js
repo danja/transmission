@@ -126,6 +126,20 @@ function registerResources(server, control) {
     annotations: { ...readOnly, openWorldHint: true }
   }, async ({ iri, id }) => result(await control.describeJigdawPlugin(iri, { id })))
 
+  // Next to jigdaw_describe and registered just as unconditionally: browsing a
+  // collection is how an agent finds an IRI to describe.
+  server.registerTool('jigdaw_collection', {
+    title: 'List a JigDAW plugin collection',
+    description:
+      'Open a JigDAW plugin collection URL and list the plugin IRIs it names, ' +
+      'with the collection\'s copy of each name. A collection carries no profiles, ' +
+      'so follow up with jigdaw_describe on a member IRI before wiring a JigdawPlugin node.',
+    inputSchema: {
+      url: z.string().min(1)
+    },
+    annotations: { ...readOnly, openWorldHint: true }
+  }, async ({ url }) => result(await control.listJigdawCollection(url)))
+
   if (control.pluginCatalogue) {
     server.registerResource(
       'plugin-catalogue',

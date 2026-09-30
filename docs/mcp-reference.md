@@ -119,11 +119,15 @@ All graph mutations require stopped audio and the current `expectedRevision`.
 | Tool | Description |
 |------|-------------|
 | `jigdaw_describe` | Dereference a JigDAW plugin IRI and return its profile plus the graph node to add for it |
+| `jigdaw_collection` | Open a JigDAW collection URL and list the plugin IRIs it names |
 
 A JigDAW plugin has no catalogue to be listed in, so `jigdaw_describe` is available whether or
 not a plugin catalogue is configured, and it is the step to take before wiring a
 `JigdawPlugin` node: the port counts it returns are read from the profile, and the host reads
-the same profile and overwrites whatever a project declared. See [JigDAW plugins](jigdaw).
+the same profile and overwrites whatever a project declared. `jigdaw_collection` is the
+step before that: it opens a collection such as
+`https://strandz.it/jigdaw/collections/jigdaw.ttl` and returns the member IRIs to
+describe. See [JigDAW plugins](jigdaw).
 
 ---
 

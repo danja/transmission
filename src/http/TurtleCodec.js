@@ -243,6 +243,15 @@ export async function parseJigdawDescribe(turtleBody) {
   return { iri, id }
 }
 
+export async function parseJigdawCollection(turtleBody) {
+  const dataset = await parseTurtle(turtleBody)
+  const subject = findSubjectOfType(dataset, `${TRN}ListJigdawCollection`)
+  if (!subject) throw new ParseError('Body must contain a trn:ListJigdawCollection subject')
+  const url = stringValue(getOne(dataset, subject, `${TRN}url`))
+  if (!url) throw new ParseError('trn:ListJigdawCollection requires trn:url')
+  return { url }
+}
+
 export async function parseCaptureMidi(turtleBody) {
   const dataset = await parseTurtle(turtleBody)
   const subject = findSubjectOfType(dataset, `${TRN}CaptureProjectMidi`)

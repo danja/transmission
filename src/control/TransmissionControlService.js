@@ -2,7 +2,7 @@ import { isAbsolute, relative, resolve } from 'node:path'
 import { compileGraph } from '../compiler/GraphCompiler.js'
 import { ProjectSession } from '../session/ProjectSession.js'
 import { serializeGraph } from '../rdf/TransmissionRdf.js'
-import { jigdawGraphNode, readJigdawProfile } from '../registry/JigdawProfile.js'
+import { jigdawGraphNode, readJigdawCollection, readJigdawProfile } from '../registry/JigdawProfile.js'
 
 export class ProjectRevisionError extends Error {
   constructor(expected, actual) {
@@ -349,6 +349,15 @@ export class TransmissionControlService {
   async describeJigdawPlugin(iri, { id = 'jigdaw-1' } = {}) {
     const profile = await readJigdawProfile(iri)
     return { profile, node: jigdawGraphNode(profile, { id }) }
+  }
+
+  /**
+   * Open a JigDAW plugin collection URL and list the plugin IRIs it names.
+   * Browsing, not wiring: a collection carries no profiles, so each member
+   * still goes through `describeJigdawPlugin` before it becomes a node.
+   */
+  async listJigdawCollection(url) {
+    return readJigdawCollection(url)
   }
 
   validatePluginChain(identifiers) {

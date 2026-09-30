@@ -4,5 +4,6 @@ This file should periodically scanned and tasks moved to TODO.md or the plan, as
 
 ## Items
 
-* reduce cross-repo dependencies where it can be done without breakage
-* check builds for warning messages. Any that can be resolved in the local codebase should be 
+* (empty — all items processed 2026-09-30: JigDAW loading re-verified, discovery
+  documented in `docs/jigdaw.md`, cross-repo deps audited, build warnings checked
+  with the `trn:WAM` vocab drift fixed, TODO/MISTAKES cleaned up — see TODO.md)

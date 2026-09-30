@@ -2,10 +2,12 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  JigdawCollectionError,
   JigdawProfileError,
   denormalizeParameter,
   jigdawGraphNode,
   normalizeParameter,
+  readJigdawCollection,
   readJigdawProfile
 } from '../../src/registry/JigdawProfile.js'
 
@@ -188,5 +190,75 @@ describe('parameter scaling', () => {
     const waveform = profile.parameters.find(parameter => parameter.symbol === 'waveform')
     expect(denormalizeParameter(waveform, 0.4)).toBe(1)
     expect(denormalizeParameter(waveform, 1)).toBe(2)
+  })
+})
+
+const collection = `
+@base <https://example.org/collections/jigs/> .
+@prefix jig:     <http://purl.org/stuff/jigdaw/> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<> a jig:PluginCollection ;
+    rdfs:label "Jigs" ;
+    rdfs:comment "Every plugin in the repository." ;
+    dcterms:hasPart <https://example.org/plugins/pulse/> ,
+                    <https://example.org/plugins/bassgen/> .
+
+<https://example.org/plugins/pulse/> rdfs:label "Pulse" .
+<https://example.org/plugins/bassgen/> rdfs:label "BassGen" .
+`
+
+// No @base, like the published collection: relative IRIs resolve against the
+// URL the document was fetched from.
+const relativeCollection = `
+@prefix jig:     <http://purl.org/stuff/jigdaw/> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<> a jig:PluginCollection ;
+    rdfs:label "Jigs" ;
+    dcterms:hasPart <../plugins/pulse/> , <../plugins/nameless/> .
+
+<../plugins/pulse/> rdfs:label "Pulse" .
+`
+
+describe('readJigdawCollection', () => {
+  it('lists the member IRIs with the collection copy of each name, sorted', async () => {
+    const found = await readJigdawCollection('https://example.org/collections/jigs/',
+                                             { fetch: serve(collection) })
+    expect(found.iri).toBe('https://example.org/collections/jigs/')
+    expect(found.retrievedFrom).toBe('https://example.org/collections/jigs/')
+    expect(found.label).toBe('Jigs')
+    expect(found.comment).toBe('Every plugin in the repository.')
+    expect(found.members).toEqual([
+      { iri: 'https://example.org/plugins/bassgen/', label: 'BassGen' },
+      { iri: 'https://example.org/plugins/pulse/', label: 'Pulse' }
+    ])
+  })
+
+  it('resolves relative member IRIs against the fetched URL', async () => {
+    const found = await readJigdawCollection('https://example.org/collections/jigs.ttl',
+                                             { fetch: serve(relativeCollection) })
+    expect(found.iri).toBe('https://example.org/collections/jigs.ttl')
+    expect(found.members).toEqual([
+      { iri: 'https://example.org/plugins/nameless/', label: '' },
+      { iri: 'https://example.org/plugins/pulse/', label: 'Pulse' }
+    ])
+  })
+
+  it('refuses a document with no collection, or more than one', async () => {
+    await expect(readJigdawCollection('https://example.org/not-a-collection/',
+                                      { fetch: serve(instrument) }))
+      .rejects.toThrow(JigdawCollectionError)
+    const two = `${collection}\n<other> a <http://purl.org/stuff/jigdaw/PluginCollection> .`
+    await expect(readJigdawCollection('https://example.org/collections/jigs/',
+                                      { fetch: serve(two) }))
+      .rejects.toThrow(JigdawCollectionError)
+  })
+
+  it('requires a URL', async () => {
+    await expect(readJigdawCollection('', { fetch: serve(collection) }))
+      .rejects.toThrow(TypeError)
   })
 })

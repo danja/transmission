@@ -132,6 +132,33 @@ describe('Transmission MCP server', () => {
       .toBe('https://example.org/plugins/pulse/')
   })
 
+  it('lists a JigDAW collection from its URL, with no catalogue and no scan', async () => {
+    const control = new TransmissionControlService()
+    server = createTransmissionMcpServer(control)
+    client = new Client({ name: 'transmission-jigdaw-collection-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+
+    const tools = await client.listTools()
+    expect(tools.tools.map(tool => tool.name)).toContain('jigdaw_collection')
+
+    const directory = await mkdtemp(join(tmpdir(), 'transmission-jigdaw-collection-'))
+    temporaryDirectories.push(directory)
+    await writeFile(join(directory, 'jigs.ttl'), fixtureCollection)
+
+    const listed = await client.callTool({
+      name: 'jigdaw_collection',
+      arguments: { url: `${pathToFileURL(join(directory, 'jigs.ttl')).href}` }
+    })
+    expect(listed.isError).not.toBe(true)
+    expect(listed.structuredContent.label).toBe('Jigs')
+    expect(listed.structuredContent.members).toEqual([
+      { iri: 'https://example.org/plugins/bassgen/', label: 'BassGen' },
+      { iri: 'https://example.org/plugins/pulse/', label: 'Pulse' }
+    ])
+  })
+
   it('adds and removes MIDI CC mappings over graph operations', async () => {
     const control = new TransmissionControlService()
     server = createTransmissionMcpServer(control)
@@ -239,4 +266,20 @@ const fixtureProfile = `
     jig:location <pulse.wasm> ;
     jig:abi jig:Abi1 ;
     jig:integrity "sha384-abc" .
+`
+
+const fixtureCollection = `
+@base <https://example.org/collections/jigs/> .
+@prefix jig:     <http://purl.org/stuff/jigdaw/> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<> a jig:PluginCollection ;
+    rdfs:label "Jigs" ;
+    rdfs:comment "Every plugin in the repository." ;
+    dcterms:hasPart <https://example.org/plugins/pulse/> ,
+                    <https://example.org/plugins/bassgen/> .
+
+<https://example.org/plugins/pulse/> rdfs:label "Pulse" .
+<https://example.org/plugins/bassgen/> rdfs:label "BassGen" .
 `

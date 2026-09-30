@@ -18,6 +18,7 @@ import {
   parseFreezeGenerator,
   parseParametersBatch,
   parseJigdawDescribe,
+  parseJigdawCollection,
   parseCaptureMidi,
   parseRenderMidi,
   parseRenderAudio,
@@ -211,6 +212,10 @@ export class TransmissionHttpServer {
     if (path === '/plugins/jigdaw/describe') {
       const { iri, id } = await parseJigdawDescribe(body)
       return sendJson(res, 200, await control.describeJigdawPlugin(iri, { id }))
+    }
+    if (path === '/plugins/jigdaw/collection') {
+      const { url } = await parseJigdawCollection(body)
+      return sendJson(res, 200, await control.listJigdawCollection(url))
     }
 
     sendJson(res, 404, { error: 'Not Found' })

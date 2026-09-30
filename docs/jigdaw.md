@@ -12,6 +12,30 @@ there is no registry and no install step distinct from having fetched it.
 
 That is the whole of adding one to a project.
 
+## Finding plugins
+
+There is no registry. The convenient discovery path is a plugin collection: one
+Turtle file at one URL listing plugin IRIs by name
+(`jig:PluginCollection`, specified in
+[jigdaw's docs/plugin-collections.md](https://github.com/danja/jigdaw/blob/main/docs/plugin-collections.md)).
+
+- The canonical collection is `https://strandz.it/jigdaw/collections/jigdaw.ttl` —
+  every plugin in the JigDAW repository. Paste it into **Settings > Plugins** under
+  "JigDAW plugin collections" and the startup scan lists its members in the unified
+  "Add Plugin…" dialog. It is served as `text/turtle` with permissive CORS, so the
+  same URL works for browser hosts.
+- The human-browsable form is the
+  [gallery](https://strandz.it/jigdaw/web/gallery.html), one card per plugin with
+  links to its profile.
+- Over MCP there is no catalogue to browse: `jigdaw_collection` opens a collection
+  URL and lists the plugin IRIs it names, and `jigdaw_describe` takes a single
+  plugin IRI (from a collection or the gallery) and returns its profile plus
+  the graph node to add, with real port counts. Describe before wiring.
+- [Plugin Universe](https://plugin-universe.com/) is a catalogue of native plugins
+  (VST3/CLAP/LV2…); its JigDAW submission flow is still in progress upstream, so it
+  is not currently a source of Jig plugins. No changes were needed on the jigdaw
+  side — profiles and the collection already serve correctly.
+
 ## What is implemented
 
 Both published module ABIs, through jigdaw's own `jigdaw_core` and its wasm3 runtime:

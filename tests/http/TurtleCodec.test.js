@@ -11,6 +11,7 @@ import {
   parseFreezeGenerator,
   parseParametersBatch,
   parseJigdawDescribe,
+  parseJigdawCollection,
   parseCaptureMidi,
   parseRenderMidi,
   parseRenderAudio,
@@ -228,6 +229,11 @@ describe('live control codecs', () => {
     await expect(parseJigdawDescribe(turtle)).resolves.toEqual({ iri: 'file:///plugins/pulse/', id: 'jigdaw-1' })
   })
 
+  it('parses a JigDAW collection request', async () => {
+    const turtle = `@prefix trn: <${TRN}> . [] a trn:ListJigdawCollection ; trn:url "https://example.org/collections/jigs.ttl" .`
+    await expect(parseJigdawCollection(turtle)).resolves.toEqual({ url: 'https://example.org/collections/jigs.ttl' })
+  })
+
   it('parses capture and render requests', async () => {
     const capture = await parseCaptureMidi(`
 @prefix trn: <${TRN}> .
@@ -248,6 +254,7 @@ describe('live control codecs', () => {
     const other = `@prefix trn: <${TRN}> . [] a trn:Other .`
     await expect(parseParametersBatch(other)).rejects.toThrow(ParseError)
     await expect(parseJigdawDescribe(other)).rejects.toThrow(ParseError)
+    await expect(parseJigdawCollection(other)).rejects.toThrow(ParseError)
     await expect(parseCaptureMidi(other)).rejects.toThrow(ParseError)
     await expect(parseRenderMidi(other)).rejects.toThrow(ParseError)
     const noNode = `@prefix trn: <${TRN}> . [] a trn:SetParametersBatch ; trn:expectedRevision 0 ; trn:parametersJson "[]" .`
@@ -256,6 +263,8 @@ describe('live control codecs', () => {
     await expect(parseParametersBatch(noParams)).rejects.toThrow(ParseError)
     const noIri = `@prefix trn: <${TRN}> . [] a trn:DescribeJigdawPlugin .`
     await expect(parseJigdawDescribe(noIri)).rejects.toThrow(ParseError)
+    const noUrl = `@prefix trn: <${TRN}> . [] a trn:ListJigdawCollection .`
+    await expect(parseJigdawCollection(noUrl)).rejects.toThrow(ParseError)
     const noFile = `@prefix trn: <${TRN}> . [] a trn:CaptureProjectMidi .`
     await expect(parseCaptureMidi(noFile)).rejects.toThrow(ParseError)
     const noRenderFile = `@prefix trn: <${TRN}> . [] a trn:RenderMidi .`

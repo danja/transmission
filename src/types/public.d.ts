@@ -135,6 +135,7 @@ export interface TransmissionControlApi {
   setParameter(input: { expectedRevision: number, nodeId: string, parameterId: number, value: number, sampleOffset?: number }): unknown
   setParameters(input: { expectedRevision: number, nodeId: string, parameters: Array<{ id: number, normalizedValue: number }>, sampleOffset?: number }): unknown
   describeJigdawPlugin(iri: string, options?: { id?: string }): Promise<unknown>
+  listJigdawCollection(url: string): Promise<JigdawCollection>
   captureProjectMidi(input: { filePath: string, durationBeats?: number }): Promise<unknown>
   renderMidi(filePath: string): Promise<unknown>
   renderAudio(input: { filePath: string, totalBeats?: number, tempo?: number, sampleRate?: number, blockSize?: number }): Promise<unknown>
@@ -241,6 +242,33 @@ export interface JigdawProfile {
 export declare class JigdawProfileError extends Error {
   readonly iri: string
 }
+
+/** One member of a JigDAW plugin collection: an IRI plus the collection's copy of its name. */
+export interface JigdawCollectionMember {
+  iri: string
+  label: string
+}
+
+/** A jig:PluginCollection document, opened in full or not at all. */
+export interface JigdawCollection {
+  /** The collection's own IRI, resolved against the URL it was fetched from. */
+  iri: string
+  /** Where this copy was actually read from, after redirects. */
+  retrievedFrom: string
+  label: string
+  comment: string
+  /** Members sorted by label, the profile at each IRI being authoritative. */
+  members: JigdawCollectionMember[]
+}
+
+export declare class JigdawCollectionError extends Error {
+  readonly iri: string
+}
+
+export declare function readJigdawCollection(
+  url: string,
+  options?: { fetch?: (url: string) => Promise<{ text: string; base: string }> }
+): Promise<JigdawCollection>
 
 export declare function readJigdawProfile(
   iri: string,

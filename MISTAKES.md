@@ -1,106 +1,49 @@
 # Mistakes
 
-## napi_get_named_property on a possibly-undefined receiver leaks a V8 TypeError
+Kept short: recurring patterns only. One-offs and fixed-and-forgotten entries removed 2026-09-30.
 
-**What happened:** `loadProject` on a compiled graph without top-level
-`metadata` threw `TypeError: Cannot convert undefined or null to object`
-with no message, instead of loading cleanly or failing with a named error.
-Bisected to `readStringArray`'s `napi_get_named_property(env, argv[0],
-"metadata", &meta)` followed by a read on `meta`: when the property is
-absent V8 throws on the undefined receiver, and that pending exception slips
-past every `!= napi_ok` status check to surface at the call boundary.
+## NAPI: typeof-check any receiver that can be undefined/null
 
-**Fix:** typeof-guard the receiver first (`napi_typeof` + object check, the
-same shape as the file's own `getObject()`), in `native/src/napi_bridge.cpp`.
+`loadProject` on a graph without top-level `metadata` threw a bare V8 `TypeError`
+instead of loading cleanly: `napi_get_named_property` on an absent property leaves a
+pending exception that slips past every `!= napi_ok` status check to the call boundary.
+Fixed with a `napi_typeof` + object guard in `native/src/napi_bridge.cpp`.
 
-**Prevention:** Any NAPI read chain that touches a value which can be
-undefined/null (optional object, array element, `argv[i]` past `argc`) must
-typeof-check before the next property access. Status checks alone do not
-catch a V8-thrown TypeError — it is already pending by the time the status
-is read.
+**Rule:** any NAPI read chain touching a possibly-undefined value (`argv[i]` past
+`argc`, optional objects, array elements) typeof-checks before the next property
+access. Status checks alone do not catch it.
 
-## Interchange version bump — rebuilt the tests but not every consumer binary
+## Format version bumps are reader + writer + every baked-in binary
 
-**What happened:** After bumping the interchange writer to v9 (with all
-readers in source accepting 1–9), `scripts/probe-project.js` failed with
-"invalid native UI project interchange at line 1" — the prebuilt
-`transmission_vst3_project_probe` binary still embedded the v8-only codec.
+Two instances of the same break: the v7→v8 bump changed the interchange writer but not
+the reader (a scripted replacement whose pattern never matched — unchecked), and the
+v8→v9 bump rebuilt the tests but not the prebuilt `*_probe`/`*_inspect`/UI binaries,
+which bake the codec in at build time. Both surfaced as "invalid native UI project
+interchange at line 1".
 
-**Root cause:** The existing version-bump entry covers reader+writer in
-source, but native helper binaries (`*_probe`, `*_inspect`, the UI itself)
-bake the codec in at build time. A format change is not done when the
-source is consistent; it is done when every shipped binary is rebuilt.
-Rebuilding the probe fixed it immediately.
+**Rule:** a version bump edits reader and writer in the same change, asserts scripted
+patterns matched, rebuilds all native targets linking the codec
+(`grep -rl UiProjectCodec native/src/*_main.cpp`), and ends with one end-to-end probe
+plus `npx vitest run tests/rdf/NativeUiProject.test.js`.
 
-**Prevention:** A version bump ends with rebuilding all native targets that
-link the codec and re-running one end-to-end probe, not just the unit
-harness. `grep -rl UiProjectCodec native/src/*_main.cpp` lists the
-consumers to rebuild.
+## A field whose meaning depends on kind/encoding: grep every reader
 
-## edit tool — newString dropping the trailing newline glues two lines
+Two instances: `napi_bridge.cpp` read `settings.pluginPath` by short key while
+`TransmissionRdf.js` stores full-URI keys with array values (every VST3 node silently
+became a PassThrough), and the double-click handler dispatched a `:JigdawPlugin` node
+on `!pluginPath.empty()` and opened the VST3 editor on an IRI.
 
-**What happened:** Four times across sessions, an `edit` whose `newString`
-dropped the source's trailing newline fused two lines into one (e.g.
-`})` + `function connectionMatches...` on one line, `it(...)` + `const
-control...` on one line). Twice the fused line was still valid syntax, so
-only a re-read of the edited region caught it; once the compiler caught it.
+**Rule:** when a field is reused for a new kind or a new key format lands in the JS
+layer, grep every reader (`grep -n "pluginPath" native/src/*.cpp`) and make each one
+state which kinds/keys it is for. Check the C++ N-API consumers with every RDF
+property change.
 
-**Root cause:** Issuing a second "paired" edit with no real purpose (a no-op
-whitespace touch-up, or an `oldString` ending at a line boundary while the
-`newString` does not reproduce it). The tool does exactly what it is told:
-byte replacement, no line-structure awareness.
+## edit tool: keep line boundaries intact
 
-**Prevention:** Never issue an edit without a functional purpose. When
-`oldString` ends at a line boundary, `newString` must end at one too —
-check the last character before calling. Always re-read the edited region
-afterwards (this caught every occurrence so far).
+Repeated fused-line edits from `newString` dropping the source's trailing newline when
+`oldString` ended at a line boundary. Harmless when the compiler catches it; twice it
+didn't.
 
-## napi_bridge.cpp — wrong settings key format for pluginPath
-
-**What happened:** VST3 plugins loaded via the MCP/Node control path produced silence. BassGen and Basilico were silently replaced by PassThroughProcessors, so no MIDI or audio was generated.
-
-**Root cause:** `napi_bridge.cpp` read `settings.pluginPath` using the short property name `"pluginPath"` as a string. But `TransmissionRdf.js`'s `settingsObject()` stores settings keyed by full URI (e.g. `"http://purl.org/stuff/transmissions/pluginPath"`) with array values. The key lookup always missed, leaving `pluginPath` empty, so every node fell through to `PassThroughProcessor`.
-
-**Fix:** Added `readPluginPath()` helper in `napi_bridge.cpp` that tries the short key first, then falls back to the full URI key and extracts element 0 from the array value. Applied to both `loadProject` and `captureMidi`.
-
-**Prevention:** When a new RDF property key format is introduced in the JS layer, immediately check all C++ N-API consumers that read the same field. Add a native integration test that loads a minimal project with a VST3 node and asserts the plugin path is non-empty after `loadProject`.
-
-## UiProjectCodec.cpp — version bump applied to the writer but not the reader
-
-**What happened:** The native UI interchange version was raised from 7 to 8 to carry the new
-`JigdawPlugin` node kind. The writer was changed, the reader was not, and every project the
-Node helper produced was then rejected by every native binary with "invalid native UI project
-interchange at line 1" — a message about line 1 for a change made everywhere else.
-
-**Root cause:** The edit was made with a scripted string replacement whose pattern did not
-match the file's actual indentation, and the script did not check that it had replaced
-anything. Two of the three edits in the same run did apply, so the file looked changed.
-
-**Fix:** Widened the reader's accepted version list. The accepted versions and the written
-version are three lines apart in the same file and should be read together whenever either
-moves.
-
-**Prevention:** A scripted edit asserts that its pattern matched before writing the file. A
-format version is a reader and a writer, and changing one without the other is not a partial
-change, it is a break: bump both in the same edit and run a round trip afterwards. The round
-trip here is `npx vitest run tests/rdf/NativeUiProject.test.js`, which asserts the version
-string in both directions and would have caught it.
-
-## native_graph_ui_main.cpp — a new node kind reused pluginPath and inherited its readers
-
-**What happened:** Double-clicking a `:JigdawPlugin` node opened the VST3 editor, which
-reported "https://strandz.it/jigdaw/plugins/pulse/ is not a module directory".
-
-**Root cause:** A JigDAW node stores its plugin IRI in `Node::pluginPath`, the same slot a
-VST3 node stores its bundle path in, because the UI interchange record carries one resource
-per node. The double-click handler dispatched on `!node->pluginPath.empty()` rather than on
-the node's kind, so the new kind silently inherited a branch written for a different one.
-
-**Fix:** Dispatch on `kind == NodeKind::Plugin`, and give JigDAW nodes their own branch —
-a parameter panel generated from the profile's `lv2:port` declarations, since a JigDAW
-plugin has no editor a native host can open.
-
-**Prevention:** This is the same shape as the `pluginPath` entry above: a field whose
-meaning depends on the node kind, read by code that does not check the kind. When a field is
-reused for a new kind, grep every reader of that field and make each one state which kinds it
-is for. `grep -n "pluginPath" native/src/*.cpp` was the whole audit and it was not done.
+**Rule:** no functional purpose, no edit. When `oldString` ends at a line boundary,
+`newString` must too — check the last character before calling, re-read the region
+after.

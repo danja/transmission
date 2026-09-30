@@ -563,6 +563,15 @@ trn:LADSPA     a trn:PluginFormat ; rdfs:label "LADSPA" .
 trn:AAX        a trn:PluginFormat ; rdfs:label "AAX" .
 trn:Standalone a trn:PluginFormat ; rdfs:label "Standalone" .
 
+## A browser plugin built on the Web Audio Modules standard: the processor is
+## JavaScript on an AudioWorklet and the signal processing is WebAssembly,
+## loaded as a WAM rather than fetched from the plugin's own IRI. A specific
+## format rather than a generic technology, so a catalogue can say "WAM" the
+## way it says "VST3" — and distinct from "Jig", which is the JigDAW format.
+## Mirrored from plugin-universe's vocabs/trn-extensions.ttl, which proposed it
+## upstream; tests/vocab/site.test.js fails if the two drift.
+trn:WAM        a trn:PluginFormat ; rdfs:label "WAM" .
+
 ## A plugin that runs in a browser. Not a native binary and not a wrapper around
 ## one: the processor is JavaScript on an AudioWorklet and the signal processing
 ## is WebAssembly, fetched from the plugin's own IRI. Added for JigDAW, whose

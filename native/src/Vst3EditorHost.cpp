@@ -423,6 +423,9 @@ void Vst3EditorHost::close() noexcept {
     impl_->parameterEdit = {};
     impl_->stateChanged = {};
     impl_->destroyWindow();
+    // The run loop calls interfaces the plug-in allocated; stop it before the
+    // provider that owns them is released.
+    impl_->hostContext.shutdown();
     impl_->provider.reset();
     impl_->module.reset();
 }

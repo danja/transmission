@@ -2,6 +2,23 @@
 
 Kept short: recurring patterns only. One-offs and fixed-and-forgotten entries removed 2026-09-30.
 
+## A plug-in was silently getting no event loop (Linux)
+
+A JUCE VST3 asserted 671 times in 20 s under load. The instinct was a plugin-side
+bug, and the first fix was attempted there — it did remove a real use-after-free
+and a silent wrong-answer bug, but barely moved the assertion count (671 → 419).
+
+**Rule:** when a framework asserts that something is "never being serviced", find
+out who is *supposed* to service it before patching the producer. JUCE on Linux
+says so in its own header: the host must supply `Linux::IRunLoop`, and
+`juce_audio_plugin_client_VST3.cpp` loads it in `setHostContext`. Transmission was
+calling `setPluginContext` (a different, SDK-internal pointer) and never
+`setHostContext` at all, so nothing reached the plug-in.
+
+Two lessons: a mitigation that only partly works means the cause is still
+unfound; and a partially effective patch is still worth keeping when it fixed real
+bugs it happened to uncover — just not reported as the fix.
+
 ## NAPI: typeof-check any receiver that can be undefined/null
 
 `loadProject` on a graph without top-level `metadata` threw a bare V8 `TypeError`

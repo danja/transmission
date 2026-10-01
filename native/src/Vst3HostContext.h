@@ -26,7 +26,8 @@
 
 #include <chrono>
 #include <condition_variable>
-#include <cstdio>
+#include <shared_mutex>
+#include <utility>
 #include <cstdint>
 #include <mutex>
 #include <thread>
@@ -51,13 +52,22 @@ public:
     ~Vst3HostContext() = default;
 
     // TUID is char[16], so this is the SDK's `const TUID` = `const char*`.
+    /**
+     * Stops calling into the plug-in. Must happen before the plug-in's own
+     * objects are released: the handler and timer interfaces the run loop
+     * calls are allocated by the plug-in and die with it, so a callback still
+     * in flight across that teardown is a use-after-free. Members are
+     * destroyed in reverse declaration order, which puts the run loop's thread
+     * after the provider that owns those interfaces — so this is explicit.
+     */
+    void shutdown() noexcept { runLoop_.shutdown(); }
+
     Steinberg::tresult PLUGIN_API queryInterface(const Steinberg::TUID iid,
                                                  void** obj) override {
         if (obj == nullptr) return Steinberg::kInvalidArgument;
         if (Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::Linux::IRunLoop::iid)) {
             *obj = static_cast<Steinberg::Linux::IRunLoop*>(&runLoop_);
             runLoop_.addRef();
-            std::fprintf(stderr, "Vst3HostContext: IRunLoop requested\n");
             return Steinberg::kResultTrue;
         }
         return Steinberg::Vst::HostApplication::queryInterface(iid, obj);
@@ -73,7 +83,7 @@ private:
      */
     class RunLoop : public Steinberg::Linux::IRunLoop {
     public:
-        ~RunLoop() { stop(); }
+        ~RunLoop() { shutdown(); }
 
         // Defined here rather than via DECLARE_FUNKNOWN_METHODS, whose bodies
         // live in pluginterfacesupport.cpp: this is a private nested class, so
@@ -120,7 +130,6 @@ private:
             }
 
             ensureThread();
-            std::fprintf(stderr, "Vst3HostContext: fd %d registered\n", fd);
             return Steinberg::kResultTrue;
         }
 
@@ -134,7 +143,7 @@ private:
                     if (it->handler != handler) continue;
                     // Wait for any call already running on this handler: the
                     // plug-in is free to destroy it the moment we return.
-                    const std::lock_guard<std::mutex> callbacks(callbacks_);
+                    const std::unique_lock<std::shared_mutex> callbacks(callbacks_);
                     it = fds_.erase(it);
                     removed = true;
                 }
@@ -162,7 +171,6 @@ private:
             }
 
             ensureThread();
-            std::fprintf(stderr, "Vst3HostContext: timer registered\n");
             return Steinberg::kResultTrue;
         }
 
@@ -174,7 +182,7 @@ private:
                 if (stopping_) return Steinberg::kResultFalse;
                 for (auto it = timers_.begin(); it != timers_.end(); ++it) {
                     if (it->handler != handler) continue;
-                    const std::lock_guard<std::mutex> callbacks(callbacks_);
+                    const std::unique_lock<std::shared_mutex> callbacks(callbacks_);
                     it = timers_.erase(it);
                     removed = true;
                 }
@@ -206,7 +214,10 @@ private:
             wakeCondition_.notify_all();
         }
 
-        void stop() {
+        public:
+        // Waits for any callback in progress before returning, so the caller
+        // may release the plug-in's handlers immediately afterwards.
+        void shutdown() {
             {
                 const std::lock_guard<std::mutex> lock(mutex_);
                 if (stopping_) return;
@@ -215,6 +226,9 @@ private:
             wake();
             if (thread_.joinable()) thread_.join();
         }
+
+    private:
+        void stop() { shutdown(); }
 
         void run() {
             while (true) {
@@ -266,23 +280,46 @@ private:
                         : ::poll(descriptors.data(),
                                  static_cast<nfds_t>(descriptors.size()), timeout);
 
-                const auto now = std::chrono::steady_clock::now();
-                const std::lock_guard<std::mutex> lock(mutex_);
-                if (stopping_) return;
+                // Collect what is due, then call it with no state lock held: a
+                // plug-in may register or unregister from inside a callback,
+                // which would deadlock a lock held across the call.
+                std::vector<std::pair<Steinberg::Linux::FileDescriptor,
+                                      Steinberg::Linux::IEventHandler*>> readyFds;
+                std::vector<Steinberg::Linux::ITimerHandler*> readyTimers;
+                {
+                    const std::lock_guard<std::mutex> lock(mutex_);
+                    if (stopping_) return;
 
-                if (ready > 0) {
-                    for (std::size_t index = 0; index < descriptors.size(); ++index) {
-                        if ((descriptors[index].revents & POLLIN) == 0) continue;
-                        const std::lock_guard<std::mutex> callbacks(callbacks_);
-                        handlers[index]->onFDIsSet(descriptors[index].fd);
+                    if (ready > 0) {
+                        for (std::size_t index = 0; index < descriptors.size(); ++index) {
+                            if ((descriptors[index].revents & POLLIN) == 0) continue;
+                            for (const auto& entry : fds_) {
+                                if (entry.fd == descriptors[index].fd) {
+                                    readyFds.emplace_back(entry.fd, entry.handler);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    const auto now = std::chrono::steady_clock::now();
+                    for (auto& entry : timers_) {
+                        if (now < entry.due) continue;
+                        entry.due = now + std::chrono::milliseconds(entry.interval);
+                        readyTimers.push_back(entry.handler);
                     }
                 }
 
-                for (auto it = timers_.begin(); it != timers_.end(); ++it) {
-                    if (now < it->due) continue;
-                    it->due = now + std::chrono::milliseconds(it->interval);
-                    const std::lock_guard<std::mutex> callbacks(callbacks_);
-                    it->handler->onTimer();
+                // Shared, so unregistering — which takes it exclusively —
+                // waits for any call already in progress before the plug-in is
+                // entitled to destroy the handler.
+                for (const auto& [fd, handler] : readyFds) {
+                    const std::shared_lock<std::shared_mutex> callbacks(callbacks_);
+                    handler->onFDIsSet(fd);
+                }
+                for (auto* handler : readyTimers) {
+                    const std::shared_lock<std::shared_mutex> callbacks(callbacks_);
+                    handler->onTimer();
                 }
             }
         }
@@ -294,7 +331,7 @@ private:
         mutable std::mutex mutex_;
         // Held across a callback so unregistering cannot pull a handler out
         // from under a call that is already on the stack.
-        mutable std::mutex callbacks_;
+        mutable std::shared_mutex callbacks_;
         std::mutex threadMutex_;
         std::mutex wakeMutex_;
         std::condition_variable wakeCondition_;

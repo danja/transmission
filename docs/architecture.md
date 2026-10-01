@@ -84,6 +84,27 @@ the visible project.
 Saving or closing first stops audio and captures processor state. This ensures
 that VST3 state methods are never called concurrently with audio processing.
 
+### Hosting plugins on Linux
+
+Linux has no global event loop, and the VST3 specification says the host must
+supply one: `Steinberg::Linux::IRunLoop`, delivered through
+`IPluginFactory3::setHostContext`. A plug-in handed none of it has nowhere to run
+its message queue or its timers; a JUCE plug-in accumulates posts until the
+framework's limit and then asserts.
+
+`native/src/Vst3HostContext.h` is that host context: it is the host application
+and, in addition, a run loop on its own thread — `poll()` for descriptors, a
+deadline for timers. A thread rather than a main loop, because the engine loads
+plugins with no main loop of its own. It starts nothing until a plugin registers
+interest, and it is shut down before the plugin is released, since the interfaces
+it calls belong to the plugin.
+
+Two details that matter. Callbacks are made holding no state lock, because a
+plugin may register from inside one; a separate shared lock is held instead, one
+that `unregister*` takes exclusively, so a handler cannot be destroyed while a
+call to it is in flight. And the run loop is torn down explicitly rather than
+left to member destruction order, which would put it after the plugin.
+
 ## Editing and runtime compilation
 
 The GTK canvas owns mutable editor state: visible nodes, cables, positions,

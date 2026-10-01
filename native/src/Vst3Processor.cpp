@@ -71,6 +71,9 @@ struct Vst3Processor::Impl {
         if (processing && processor) processor->setProcessing(false);
         if (active && component) component->setActive(false);
         processData.unprepare();
+        // First, before anything the plug-in owns goes away: the run loop's
+        // callbacks go to interfaces the plug-in allocated.
+        hostContext.shutdown();
         // Release queried interfaces before the provider unloads the module.
         processor = nullptr;
         controller = nullptr;

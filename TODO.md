@@ -173,6 +173,41 @@ Not yet verified — needs a manual pass:
   `import -window <id>` does not capture), so this needs a human or a
   different capture approach.
 
+## VST3 plugins on Linux need a run loop from the host
+
+Fixed 2026-10-01. The VST3 specification states it outright
+(`pluginterfaces/gui/iplugview.h`): *"On Linux the host has to provide this
+interface to the plug-in as there's no global event run loop defined as on
+other platforms."* Transmission wasn't, so a JUCE plug-in had nowhere to run
+its message queue — posts accumulated to the framework's limit (assert at 128
+in `juce_Messaging_linux.cpp`) and its timers never fired. Reproduced 671
+assertions in 20 s with Valis under load.
+
+Two defects, both now fixed:
+- `Vst3Processor`/`Vst3EditorHost` set only `PluginContextFactory::setPluginContext`
+  and never called `IPluginFactory3::setHostContext`, which is where JUCE loads
+  its run loop. Nothing was reaching the plug-in at all.
+- `native/src/Vst3HostContext.h` (new) is the host context, and supplies a
+  `Steinberg::Linux::IRunLoop` on its own thread — `poll()` for descriptors, a
+  deadline for timers. A thread rather than a GLib main loop because the engine
+  loads plug-ins with no main loop at all. Nothing starts until a plug-in
+  registers, so a project with no such plug-in pays nothing.
+
+Thread discipline: callbacks are made with no state lock held (a plug-in may
+register from inside one) and under a shared lock that `unregister*` takes
+exclusively, so a handler cannot be destroyed under a call in flight. The loop
+is shut down explicitly before the provider is released, since the interfaces
+it calls belong to the plug-in.
+
+Result: 256 concurrent callers, 5822 requests, all answered, zero assertions
+during the run. Residual asserts at teardown are JUCE's own leaked-object and
+singleton reports from unloading a JUCE module in a non-JUCE host — unrelated.
+
+Upstream is worth knowing: Valis also bounds its own in-flight message-thread
+work (`src/mcp/McpServer.cpp`), which fixed a use-after-free on its request
+timeout and a silent wrong-answer path there. That gate is defence in depth
+now, not the fix.
+
 ## Cross-repo dependencies
 
 Audited 2026-09-30 (from INBOX.md). The jigdaw surface transmission uses is already

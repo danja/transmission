@@ -324,6 +324,9 @@ if(TRANSMISSION_WITH_GTK_UI)
     src/JackConnectionManager.cpp
     src/Vst3EditorHost.cpp
   )
+  # Header-only. Supplies the Linux VST3 run loop that the specification says
+  # a host must provide, which the engine needs as much as the UI does.
+  target_sources(transmission_graph_ui PRIVATE src/Vst3HostContext.h)
   target_link_libraries(transmission_graph_ui PRIVATE PkgConfig::GTK3 transmission_engine)
   target_include_directories(transmission_graph_ui PRIVATE include)
   if(MSVC)

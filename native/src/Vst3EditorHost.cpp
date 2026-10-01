@@ -2,6 +2,8 @@
 
 #ifdef TRANSMISSION_UI_WITH_VST3
 
+#include "Vst3HostContext.h"
+
 #include "public.sdk/source/vst/hosting/hostclasses.h"
 #include "public.sdk/source/vst/hosting/module.h"
 #include "public.sdk/source/vst/hosting/plugprovider.h"
@@ -78,7 +80,7 @@ private:
 
 struct Vst3EditorHost::Impl {
     VST3::Hosting::Module::Ptr module;
-    Steinberg::Vst::HostApplication hostApplication;
+    Vst3HostContext hostContext;
     std::unique_ptr<Steinberg::Vst::PlugProvider> provider;
     Steinberg::IPtr<Steinberg::Vst::IEditController> controller;
     Steinberg::IPtr<Steinberg::Vst::IComponent> component;
@@ -292,7 +294,7 @@ bool Vst3EditorHost::open(const std::string& modulePath,
     std::string error;
     impl_->module = VST3::Hosting::Module::create(modulePath, error);
     if (!impl_->module) return fail(error.empty() ? "module load failed" : error.c_str());
-    Steinberg::Vst::PluginContextFactory::instance().setPluginContext(&impl_->hostApplication);
+    Steinberg::Vst::PluginContextFactory::instance().setPluginContext(&impl_->hostContext);
     VST3::Hosting::ClassInfo selected;
     bool found = false;
     for (const auto& info : impl_->module->getFactory().classInfos()) {

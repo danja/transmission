@@ -1,4 +1,6 @@
 #include "transmission/Vst3Processor.h"
+
+#include "Vst3HostContext.h"
 #include "transmission/Vst3MidiEventConversion.h"
 
 #include "public.sdk/source/vst/hosting/hostclasses.h"
@@ -25,7 +27,9 @@ namespace transmission {
 
 struct Vst3Processor::Impl {
     VST3::Hosting::Module::Ptr module;
-    Steinberg::Vst::HostApplication hostApplication;
+    // Supplies a Linux run loop as well as the host application, so a plugin's
+    // message queue and timers run even with no editor open on this instance.
+    Vst3HostContext hostContext;
     std::unique_ptr<Steinberg::Vst::PlugProvider> provider;
     Steinberg::IPtr<Steinberg::Vst::IComponent> component;
     Steinberg::FUnknownPtr<Steinberg::Vst::IAudioProcessor> processor;
@@ -101,7 +105,7 @@ bool Vst3Processor::initialize(const std::string& modulePath,
     if (!candidate->module) return false;
 
     Steinberg::Vst::PluginContextFactory::instance().setPluginContext(
-        &candidate->hostApplication);
+        &candidate->hostContext);
     VST3::Hosting::ClassInfo selected;
     bool found = false;
     for (const auto& info : candidate->module->getFactory().classInfos()) {

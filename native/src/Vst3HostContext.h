@@ -26,6 +26,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
 #include <cstdint>
 #include <mutex>
 #include <thread>
@@ -56,6 +57,7 @@ public:
         if (Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::Linux::IRunLoop::iid)) {
             *obj = static_cast<Steinberg::Linux::IRunLoop*>(&runLoop_);
             runLoop_.addRef();
+            std::fprintf(stderr, "Vst3HostContext: IRunLoop requested\n");
             return Steinberg::kResultTrue;
         }
         return Steinberg::Vst::HostApplication::queryInterface(iid, obj);
@@ -118,6 +120,7 @@ private:
             }
 
             ensureThread();
+            std::fprintf(stderr, "Vst3HostContext: fd %d registered\n", fd);
             return Steinberg::kResultTrue;
         }
 
@@ -159,6 +162,7 @@ private:
             }
 
             ensureThread();
+            std::fprintf(stderr, "Vst3HostContext: timer registered\n");
             return Steinberg::kResultTrue;
         }
 

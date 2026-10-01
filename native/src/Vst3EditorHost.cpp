@@ -295,6 +295,10 @@ bool Vst3EditorHost::open(const std::string& modulePath,
     impl_->module = VST3::Hosting::Module::create(modulePath, error);
     if (!impl_->module) return fail(error.empty() ? "module load failed" : error.c_str());
     Steinberg::Vst::PluginContextFactory::instance().setPluginContext(&impl_->hostContext);
+    // Before any instance is created, since a factory caches its host context.
+    // This is also how a JUCE plug-in finds its Linux run loop.
+    impl_->module->getFactory().setHostContext(&impl_->hostContext);
+
     VST3::Hosting::ClassInfo selected;
     bool found = false;
     for (const auto& info : impl_->module->getFactory().classInfos()) {

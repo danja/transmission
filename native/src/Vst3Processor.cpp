@@ -106,6 +106,13 @@ bool Vst3Processor::initialize(const std::string& modulePath,
 
     Steinberg::Vst::PluginContextFactory::instance().setPluginContext(
         &candidate->hostContext);
+    // A factory caches its host context, so this has to be set before any
+    // instance is created — and a JUCE plug-in reads its Linux run loop from
+    // here (setHostContext in juce_audio_plugin_client_VST3.cpp). Without it a
+    // plug-in gets no event loop at all: its message queue fills to the
+    // framework limit and its timers never fire.
+    candidate->module->getFactory().setHostContext(&candidate->hostContext);
+
     VST3::Hosting::ClassInfo selected;
     bool found = false;
     for (const auto& info : candidate->module->getFactory().classInfos()) {
